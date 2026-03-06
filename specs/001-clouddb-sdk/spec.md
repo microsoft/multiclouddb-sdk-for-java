@@ -61,7 +61,7 @@ As an application developer, I can use the SDK to ensure that the required datab
 
 **Why this priority**: Applications need database and collection resources to exist before CRUD/query operations can succeed. Without portable provisioning, developers must write provider-specific setup code (Cosmos SDK, DynamoDB SDK, Spanner Admin API), which defeats the "write once, run anywhere" goal and leaks provider details into application code.
 
-**Independent Test**: A sample application can call `ensureDatabase` and `ensureContainer` to set up its resources, then perform CRUD operations, switching providers by configuration only. No provider-specific provisioning code is needed.
+**Independent Test**: A sample application can call `provisionSchema` (or individual `ensureDatabase` and `ensureContainer`) to set up its resources, then perform CRUD operations, switching providers by configuration only. No provider-specific provisioning code is needed.
 
 **Acceptance Scenarios**:
 
@@ -69,6 +69,7 @@ As an application developer, I can use the SDK to ensure that the required datab
 2. **Given** a valid configuration for any supported provider, **When** the application calls `ensureContainer(resourceAddress)`, **Then** the collection/container/table is created with the SDK's standard schema (partition key, sort key, data column) if it does not exist, or the call succeeds silently if it already exists.
 3. **Given** a provider where databases are implicit (e.g., DynamoDB has no explicit database concept), **When** the application calls `ensureDatabase(databaseName)`, **Then** the call succeeds as a no-op without error.
 4. **Given** a race condition where two processes simultaneously provision the same resource, **When** both call `ensureContainer`, **Then** both succeed without error (idempotent behavior).
+5. **Given** a schema map of multiple databases and collections, **When** the application calls `provisionSchema(schema)`, **Then** all databases and containers are created in parallel without provider-specific code, and the call is equivalent to calling `ensureDatabase` and `ensureContainer` individually for each entry.
 
 ---
 
@@ -194,6 +195,18 @@ Portability is the default mode of the SDK.
 - **FR-037**: Provisioning methods MUST handle concurrent creation race conditions gracefully (e.g., catching "resource already exists" exceptions from the underlying provider SDK).
 - **FR-038**: Provisioning methods MUST be exposed in the SPI as default no-op methods, allowing providers to override with their specific implementation while maintaining backward compatibility.
 
+#### Bulk Schema Provisioning Requirements
+
+- **FR-043**: The SDK MUST provide `provisionSchema(Map<String, List<String>> schema)` on both the public client and SPI interfaces, enabling applications to provision all databases and containers in a single call.
+- **FR-044**: The default SPI implementation of `provisionSchema` MUST create databases in parallel (Phase 1), wait for all to complete, then create containers in parallel (Phase 2), using a bounded thread pool (max 10 threads).
+- **FR-045**: Providers MAY override `provisionSchema` for provider-specific optimizations while maintaining the same contract.
+
+#### Cloud Authentication Requirements
+
+- **FR-046**: The Cosmos DB provider MUST support `DefaultAzureCredential` as a fallback when no account key is provided, enabling Managed Identity, Azure CLI, environment variable, and other credential types in the DefaultAzureCredential chain.
+- **FR-047**: When using `DefaultAzureCredential` (RBAC mode), the Cosmos DB provider MUST use the Azure Resource Manager SDK (`azure-resourcemanager-cosmos`) for database creation, because Cosmos data-plane RBAC does not support control-plane operations.
+- **FR-048**: The management SDK configuration (`subscriptionId`, `resourceGroupName`) MUST be optional; when absent, provisioning falls back to data-plane calls with a warning log.
+
 #### Partition-Key-Scoped Query Requirements
 
 - **FR-039**: `QueryRequest` MUST support an optional `partitionKey(String value)` builder method that specifies the partition key value to scope the query to.
@@ -256,7 +269,7 @@ The following operators and functions form the portable query subset, available 
 - **Expression Parameters**: A map of named parameter values (`@paramName` → value) that are bound to the expression before execution.
 - **Expression Translator**: A component within each provider adapter that converts a portable expression into the provider's native query format.
 - **Native Expression**: A text string using provider-specific syntax, passed through without translation. Tagged to prevent cross-provider misuse.
-- **Resource Provisioning**: The ability to create database and collection resources portably. `ensureDatabase` creates a database/namespace; `ensureContainer` creates a collection/container/table with the SDK's standard schema.
+- **Resource Provisioning**: The ability to create database and collection resources portably. `ensureDatabase` creates a database/namespace; `ensureContainer` creates a collection/container/table with the SDK's standard schema. `provisionSchema` bulk-creates multiple databases and containers in parallel via a single call.
 - **Query Page**: A single page of results and an optional continuation token.
 - **Capability**: A named feature/behavior that can be supported or unsupported by a provider.
 - **Error**: A provider-neutral categorization of failures with retryability and provider details.
@@ -277,6 +290,8 @@ The following operators and functions form the portable query subset, available 
 - **SC-010**: Complex expressions combining 3 or more conditions with mixed boolean logic (`AND`, `OR`, `NOT`, parentheses) produce correct results on all providers.
 - **SC-011**: A developer can provision database and collection resources using `ensureDatabase` and `ensureContainer` without any provider-specific code, and the same provisioning code works across all providers by changing configuration only.
 - **SC-012**: Calling `ensureDatabase` and `ensureContainer` on resources that already exist succeeds idempotently without error on all providers.
+- **SC-015**: `provisionSchema` creates all specified databases and containers in parallel, equivalent to individual `ensureDatabase`/`ensureContainer` calls, on all supported providers.
+- **SC-016**: The Cosmos DB provider authenticates via `DefaultAzureCredential` when no account key is provided, and uses the Azure Resource Manager SDK for database creation in RBAC mode.
 - **SC-013**: A query with `partitionKey` set returns only items within that partition on all supported providers.
 - **SC-014**: A query with both `partitionKey` and a filter expression correctly scopes to the partition first, then applies the filter, on all supported providers.
 
@@ -290,7 +305,8 @@ The following operators and functions form the portable query subset, available 
 - The portable query subset targets WHERE-clause filtering only. Projections (SELECT specific fields), aggregations (COUNT, SUM, etc.), and joins are outside the current scope.
 - `field_exists` maps to `IS_DEFINED` on Cosmos DB, `IS NOT MISSING` on DynamoDB PartiQL, and `IS NOT NULL` on Spanner. This is a semantic approximation: on Spanner, a column always exists in the schema, so the check tests for non-null values.
 - Queries MUST support partition-key-scoped execution. When a partition key value is specified on a query request, the SDK MUST use each provider's native efficient mechanism to scope the query to that partition only (e.g., Cosmos DB `setPartitionKey()` on query options, DynamoDB PartiQL WHERE condition on the partition key column). Queries without a partition key scope may still result in cross-partition scans. Applications SHOULD use `Key.of(partitionKey, sortKey)` to co-locate related documents and then scope queries by partition key for efficient retrieval.
-- `ensureDatabase` and `ensureContainer` are convenience methods for development and startup scenarios. They create resources with the SDK's standard schema defaults and are not intended for advanced provisioning (e.g., custom throughput, indexing policies, TTL settings). For production provisioning with fine-grained control, developers should use provider SDKs directly or infrastructure-as-code tools.
+- `ensureDatabase`, `ensureContainer`, and `provisionSchema` are convenience methods for development and startup scenarios. They create resources with the SDK's standard schema defaults and are not intended for advanced provisioning (e.g., custom throughput, indexing policies, TTL settings). For production provisioning with fine-grained control, developers should use provider SDKs directly or infrastructure-as-code tools.
+- The Cosmos DB provider uses the Azure Resource Manager management SDK (`azure-resourcemanager-cosmos`) for database creation when operating in RBAC/`DefaultAzureCredential` mode, because Cosmos data-plane RBAC does not have permissions for control-plane operations like creating databases. Key-based authentication continues to use data-plane calls.
 
 ## Acceptance Checklist
 
@@ -345,3 +361,10 @@ This checklist is used to accept the feature as “done” at the spec level.
 - [ ] `ensureContainer` creates a collection/container/table with the SDK's standard schema if it does not exist, or succeeds silently if it already exists, on all supported providers.
 - [ ] Provisioning requires no provider-specific code in the application; the same calls work for Cosmos DB, DynamoDB, and Spanner.
 - [ ] Providers where a concept does not apply (e.g., DynamoDB has no explicit database) handle the call as a no-op without error.
+- [ ] `provisionSchema` bulk-provisions multiple databases and containers in parallel via a single call, equivalent to individual `ensureDatabase`/`ensureContainer` calls.
+
+### Cloud Authentication
+
+- [ ] The Cosmos DB provider authenticates via `DefaultAzureCredential` when no account key is configured, supporting Managed Identity, Azure CLI, and environment variable credentials.
+- [ ] In RBAC mode, the Cosmos DB provider uses the Azure Resource Manager SDK for database creation (data-plane RBAC cannot create databases).
+- [ ] Management SDK config (`subscriptionId`, `resourceGroupName`) is optional; when absent, provisioning falls back to data-plane calls with a warning.

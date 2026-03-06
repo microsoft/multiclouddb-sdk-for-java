@@ -340,6 +340,7 @@ description: "Tasks for implementing Hyperscale DB SDK (Java)"
 - **Polish (Phase 9)**: Depends on completing the desired user stories
 - **US1d — Resource Provisioning (Phase 10)**: Depends on Foundational (Phase 2); needs HyperscaleDbClient, HyperscaleDbProviderClient, DefaultHyperscaleDbClient, and working provider adapters. Can proceed independently of US1b/US1c.
 - **US1e — Partition-Key-Scoped Queries (Phase 11)**: Depends on US1b (needs QueryRequest + working query infrastructure). Sample app fixes depend on US1d (provisioning).
+- **Bulk Provisioning + Cloud Auth (Phase 13)**: Depends on US1d (extends provisioning with provisionSchema API); Cosmos cloud auth depends on Cosmos provider adapter (Phase 3).
 
 ### Dependency Graph
 
@@ -357,6 +358,8 @@ graph TD
     US1 --> US1d[Phase 10: US1d P2 Resource Provisioning]
     US1b --> US1e[Phase 11: US1e P1 Partition-Key-Scoped Queries]
     US1d --> US1e
+    US1d --> P13[Phase 13: Bulk Provisioning + Cloud Auth]
+    US1 --> P13
 ```
 
 ### User Story Dependencies
@@ -524,4 +527,56 @@ All three providers share consistent key semantics: `Key.partitionKey()` → dis
 
 - [x] Task T127: Build & validate — `mvn clean install -DskipTests` then targeted
   unit test run to confirm compilation and test pass.
+
+---
+
+## Phase 13 — Bulk Schema Provisioning, Cloud Authentication & Management SDK (T128–T135)
+
+Adds `provisionSchema(Map<String, List<String>>)` bulk provisioning API, `DefaultAzureCredential`
+support in the Cosmos provider, and `azure-resourcemanager-cosmos` management SDK integration for
+RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use single `provisionSchema` call.
+
+### Implementation — provisionSchema API
+
+- [x] Task T128: Add `provisionSchema(Map<String, List<String>>)` default method to
+  `HyperscaleDbProviderClient` (SPI) with parallel CompletableFuture implementation:
+  Phase 1 creates all databases in parallel, Phase 2 creates all containers in parallel,
+  bounded thread pool (max 10 threads).
+  `hyperscaledb-api/src/main/java/com/hyperscaledb/spi/HyperscaleDbProviderClient.java`
+
+- [x] Task T129: Add `provisionSchema(Map<String, List<String>>)` to public API
+  `HyperscaleDbClient.java`.
+  `hyperscaledb-api/src/main/java/com/hyperscaledb/api/HyperscaleDbClient.java`
+
+- [x] Task T130: Add `provisionSchema` delegation with timing/diagnostics to
+  `DefaultHyperscaleDbClient.java` (consistent with existing ensureDatabase/ensureContainer pattern).
+  `hyperscaledb-api/src/main/java/com/hyperscaledb/api/internal/DefaultHyperscaleDbClient.java`
+
+### Implementation — Cosmos Cloud Authentication
+
+- [x] Task T131: Add `DefaultAzureCredential` fallback to `CosmosProviderClient` constructor --
+  when `key` config is absent, authenticate via `DefaultAzureCredentialBuilder` which supports
+  Managed Identity, Azure CLI, environment variables, and other credential types.
+  `hyperscaledb-provider-cosmos/src/main/java/com/hyperscaledb/provider/cosmos/CosmosProviderClient.java`
+
+- [x] Task T132: Add `azure-identity` 1.12.0 dependency to `hyperscaledb-provider-cosmos/pom.xml`
+  and version property to parent `pom.xml`.
+  `hyperscaledb-provider-cosmos/pom.xml`, `pom.xml`
+
+### Implementation — Azure Resource Manager SDK for Provisioning
+
+- [x] Task T133: Add `azure-resourcemanager-cosmos` 2.51.0 + `azure-core-management` 1.17.0
+  dependencies to `hyperscaledb-provider-cosmos/pom.xml` and version properties to parent `pom.xml`.
+  `hyperscaledb-provider-cosmos/pom.xml`, `pom.xml`
+
+- [x] Task T134: Update `CosmosProviderClient.ensureDatabase()` to use `CosmosManager` ARM SDK
+  for database creation in RBAC mode (when `cosmosManager` is initialized), falling back to
+  data-plane `createDatabaseIfNotExists` for key-based auth or when management config is incomplete.
+  `hyperscaledb-provider-cosmos/src/main/java/com/hyperscaledb/provider/cosmos/CosmosProviderClient.java`
+
+### Integration — Sample App Simplification
+
+- [x] Task T135: Simplify `ResourceProvisioner` to use single `client.provisionSchema(SCHEMA)` call
+  instead of manually iterating databases/containers. Cloud and emulator properties files created.
+  `hyperscaledb-samples/src/main/java/com/hyperscaledb/samples/riskplatform/infra/ResourceProvisioner.java`
 

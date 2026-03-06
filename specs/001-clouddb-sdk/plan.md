@@ -13,11 +13,13 @@ Add a portable query expression language to the Hyperscale DB SDK. Developers wr
 
 A native expression mode allows provider-specific syntax to bypass the translator. Expression validation catches unsupported functions, missing parameters, and malformed syntax before execution.
 
-Additionally, the SDK provides portable resource provisioning via `ensureDatabase(String)` and `ensureContainer(ResourceAddress)`. These methods allow applications to create database and collection resources without provider-specific code:
+Additionally, the SDK provides portable resource provisioning via `ensureDatabase(String)`, `ensureContainer(ResourceAddress)`, and `provisionSchema(Map<String, List<String>>)`. The first two methods create individual database and collection resources. `provisionSchema` is a higher-level bulk API that creates all databases in parallel, waits for completion, then creates all containers in parallel using a bounded thread pool. Applications can provision their entire schema with a single call:
 
-- **Cosmos DB** → `createDatabaseIfNotExists` + `createContainerIfNotExists` (partition key: `/partitionKey`)
+- **Cosmos DB** → `createDatabaseIfNotExists` + `createContainerIfNotExists` (partition key: `/partitionKey`); in RBAC mode, uses Azure Resource Manager SDK for database creation
 - **DynamoDB** → No-op for database (no explicit concept); `CreateTable` with hash key (`partitionKey`) + sort key (`sortKey`), PAY_PER_REQUEST billing
 - **Spanner** → No-op for database; DDL `CREATE TABLE` with `partitionKey STRING(MAX)`, `sortKey STRING(MAX)`, `data STRING(MAX)`, primary key `(partitionKey, sortKey)`
+
+The Cosmos DB provider also supports `DefaultAzureCredential` as a fallback when no account key is provided, enabling Managed Identity, Azure CLI, and environment variable authentication. When using RBAC credentials, the provider uses `azure-resourcemanager-cosmos` (Azure Resource Manager SDK) for database creation because Cosmos data-plane RBAC does not support control-plane operations.
 
 Provisioning methods are idempotent and handle concurrent creation race conditions gracefully.
 
@@ -51,14 +53,14 @@ The SDK is fully implemented with CRUD + query + paging + conformance tests (47 
 ## Technical Context
 
 **Language/Version**: Java 17 LTS (Eclipse Adoptium Temurin-17.0.10.7-hotspot)
-**Primary Dependencies**: Jackson 2.17.0, SLF4J 2.0.12, Azure Cosmos SDK 4.60.0, AWS SDK v2 2.25.16 (DynamoDB + DynamoDB Enhanced), Google Cloud Spanner 6.62.0
+**Primary Dependencies**: Jackson 2.17.0, SLF4J 2.0.12, Azure Cosmos SDK 4.60.0, Azure Identity 1.12.0, Azure Resource Manager Cosmos 2.51.0, Azure Core Management 1.17.0, AWS SDK v2 2.25.16 (DynamoDB + DynamoDB Enhanced), Google Cloud Spanner 6.62.0
 **Storage**: Cosmos DB (NoSQL), DynamoDB, Spanner (via provider SDKs)
 **Testing**: JUnit 5.10.2, Mockito 5.11.0, Maven Surefire/Failsafe
 **Target Platform**: JVM 17+ (server-side)
 **Project Type**: Multi-module Maven library (7 modules)
 **Performance Goals**: Expression translation overhead < 1ms per query (thin wrapper principle)
 **Constraints**: No runtime dependencies beyond Jackson for AST serialization; parser must be hand-written (no ANTLR/grammar-generator dependency)
-**Scale/Scope**: ~25 new/modified Java source files, ~30 new test cases for expression translation, provisioning API across 7 files
+**Scale/Scope**: ~25 new/modified Java source files, ~30 new test cases for expression translation, provisioning API across 7 files, cloud authentication (DefaultAzureCredential + ARM management SDK) in Cosmos provider
 
 ## Constitution Check
 
@@ -99,7 +101,7 @@ specs/001-clouddb-sdk/
 
 ```text
 hyperscaledb-api/src/main/java/com/hyperscaledb/api/
-├── HyperscaleDbClient.java              # MODIFIED: add ensureDatabase + ensureContainer
+├── HyperscaleDbClient.java              # MODIFIED: add ensureDatabase + ensureContainer + provisionSchema
 ├── QueryRequest.java               # MODIFIED: add nativeExpression field + partitionKey field
 ├── QueryPage.java                  # Unchanged (already supports warnings)
 ├── Capability.java                 # MODIFIED: add query DSL capabilities
@@ -123,13 +125,13 @@ hyperscaledb-api/src/main/java/com/hyperscaledb/api/
 │   └── ExpressionTranslator.java   # NEW: SPI — translate Expression AST → native string
 
 hyperscaledb-api/src/main/java/com/hyperscaledb/api/internal/
-└── DefaultHyperscaleDbClient.java       # MODIFIED: provisioning delegation with diagnostics/timing
+└── DefaultHyperscaleDbClient.java       # MODIFIED: provisioning delegation (ensureDatabase/ensureContainer/provisionSchema) with diagnostics/timing
 
 hyperscaledb-api/src/main/java/com/hyperscaledb/api/spi/  (NOTE: SPI interface lives in hyperscaledb-api)
-└── HyperscaleDbProviderClient.java      # MODIFIED: add default no-op ensureDatabase + ensureContainer
+└── HyperscaleDbProviderClient.java      # MODIFIED: add default no-op ensureDatabase + ensureContainer; add default parallel provisionSchema
 
 hyperscaledb-provider-cosmos/src/main/java/com/hyperscaledb/provider/cosmos/
-├── CosmosProviderClient.java       # MODIFIED: use translator for portable expressions + provisioning
+├── CosmosProviderClient.java       # MODIFIED: use translator for portable expressions + provisioning + DefaultAzureCredential + ARM management SDK
 ├── CosmosExpressionTranslator.java # NEW: AST → Cosmos SQL
 └── CosmosCapabilities.java         # MODIFIED: add query DSL capabilities
 
@@ -153,4 +155,4 @@ hyperscaledb-conformance/src/test/java/com/hyperscaledb/conformance/
 
 ## Complexity Tracking
 
-No constitution violations to justify. The design adds ~15 new types to `hyperscaledb-api`, which is consistent with the thin wrapper principle (lightweight data types and a single parser, not a re-implementation of database query processing). The provisioning API (`ensureDatabase`/`ensureContainer`) adds 2 methods to the public client and SPI with default no-op implementations, maintaining the thin wrapper principle by delegating directly to each provider's native idempotent creation calls.
+No constitution violations to justify. The design adds ~15 new types to `hyperscaledb-api`, which is consistent with the thin wrapper principle (lightweight data types and a single parser, not a re-implementation of database query processing). The provisioning API (`ensureDatabase`/`ensureContainer`/`provisionSchema`) adds 3 methods to the public client and SPI with default implementations (no-op for ensureDatabase/ensureContainer, parallel executor for provisionSchema), maintaining the thin wrapper principle by delegating directly to each provider's native idempotent creation calls. The Cosmos provider has additional complexity for `DefaultAzureCredential` support and ARM management SDK integration for RBAC-mode provisioning, but this is provider-internal and does not affect the portable surface.
