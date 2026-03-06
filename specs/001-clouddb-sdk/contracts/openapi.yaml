@@ -1,0 +1,481 @@
+openapi: 3.1.0
+info:
+  title: CloudDB SDK Portable Contract (Conceptual)
+  version: 0.1.0
+  description: |
+    This OpenAPI document is a technology-agnostic CONTRACT describing the CloudDB SDK portable operations.
+
+    Note: CloudDB is a client SDK, not an HTTP service. This contract models SDK calls as request/response
+    shapes to enable conformance testing across providers and future language implementations.
+
+servers: []
+
+paths:
+  /create:
+    post:
+      operationId: create
+      summary: Insert a new item/row by key. Fails if the item already exists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateResponse'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloudDbError'
+
+  /read:
+    post:
+      operationId: read
+      summary: Read one item/row by key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReadRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadResponse'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloudDbError'
+
+  /update:
+    post:
+      operationId: update
+      summary: Update an existing item/row by key. Fails if the item does not exist.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateResponse'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloudDbError'
+
+  /upsert:
+    post:
+      operationId: upsert
+      summary: Create or replace an item/row by key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpsertResponse'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloudDbError'
+
+  /delete:
+    post:
+      operationId: delete
+      summary: Delete one item/row by key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteResponse'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloudDbError'
+
+  /query:
+    post:
+      operationId: query
+      summary: Execute a read query with paging.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryResponse'
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloudDbError'
+
+components:
+  schemas:
+    ProviderId:
+      type: string
+      enum: [cosmos, dynamo, spanner]
+
+    ResourceAddress:
+      type: object
+      required: [database, collection]
+      properties:
+        database:
+          type: string
+        collection:
+          type: string
+
+    Key:
+      type: object
+      required: [partitionKey]
+      properties:
+        partitionKey:
+          type: string
+          description: The distribution/hash key that determines data placement.
+        sortKey:
+          type: string
+          description: The item identifier/range key within a partition.
+        components:
+          description: Composite key components when required by the provider.
+
+    Document:
+      type: object
+      description: JSON-like portable document payload.
+      additionalProperties: true
+
+    OperationOptions:
+      type: object
+      properties:
+        timeout_ms:
+          type: integer
+          minimum: 1
+        cancellation_token:
+          type: string
+          description: Conceptual cancellation token identifier.
+        retry_policy:
+          type: object
+          description: Portable retry policy configuration.
+
+    PortabilityWarning:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        scope:
+          type: string
+        provider:
+          $ref: '#/components/schemas/ProviderId'
+
+    CreateRequest:
+      type: object
+      required: [provider, resource, key, document]
+      properties:
+        provider:
+          $ref: '#/components/schemas/ProviderId'
+        resource:
+          $ref: '#/components/schemas/ResourceAddress'
+        key:
+          $ref: '#/components/schemas/Key'
+        document:
+          $ref: '#/components/schemas/Document'
+        options:
+          $ref: '#/components/schemas/OperationOptions'
+
+    CreateResponse:
+      type: object
+      properties:
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortabilityWarning'
+
+    ReadRequest:
+      type: object
+      required: [provider, resource, key]
+      properties:
+        provider:
+          $ref: '#/components/schemas/ProviderId'
+        resource:
+          $ref: '#/components/schemas/ResourceAddress'
+        key:
+          $ref: '#/components/schemas/Key'
+        options:
+          $ref: '#/components/schemas/OperationOptions'
+
+    ReadResponse:
+      type: object
+      properties:
+        document:
+          $ref: '#/components/schemas/Document'
+        found:
+          type: boolean
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortabilityWarning'
+
+    UpdateRequest:
+      type: object
+      required: [provider, resource, key, document]
+      properties:
+        provider:
+          $ref: '#/components/schemas/ProviderId'
+        resource:
+          $ref: '#/components/schemas/ResourceAddress'
+        key:
+          $ref: '#/components/schemas/Key'
+        document:
+          $ref: '#/components/schemas/Document'
+        options:
+          $ref: '#/components/schemas/OperationOptions'
+
+    UpdateResponse:
+      type: object
+      properties:
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortabilityWarning'
+
+    UpsertRequest:
+      type: object
+      required: [provider, resource, key, document]
+      properties:
+        provider:
+          $ref: '#/components/schemas/ProviderId'
+        resource:
+          $ref: '#/components/schemas/ResourceAddress'
+        key:
+          $ref: '#/components/schemas/Key'
+        document:
+          $ref: '#/components/schemas/Document'
+        options:
+          $ref: '#/components/schemas/OperationOptions'
+
+    UpsertResponse:
+      type: object
+      properties:
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortabilityWarning'
+
+    DeleteRequest:
+      type: object
+      required: [provider, resource, key]
+      properties:
+        provider:
+          $ref: '#/components/schemas/ProviderId'
+        resource:
+          $ref: '#/components/schemas/ResourceAddress'
+        key:
+          $ref: '#/components/schemas/Key'
+        options:
+          $ref: '#/components/schemas/OperationOptions'
+
+    DeleteResponse:
+      type: object
+      properties:
+        deleted:
+          type: boolean
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortabilityWarning'
+
+    QueryRequest:
+      type: object
+      required: [provider, resource]
+      properties:
+        provider:
+          $ref: '#/components/schemas/ProviderId'
+        resource:
+          $ref: '#/components/schemas/ResourceAddress'
+        query:
+          type: object
+          properties:
+            expression:
+              type: string
+              description: |
+                Portable query expression using SQL-subset WHERE clause syntax.
+                Supports operators: =, <>, <, >, <=, >=, AND, OR, NOT, IN, BETWEEN.
+                Named parameters use @paramName syntax.
+                Portable functions: starts_with, contains, field_exists, string_length, collection_size.
+                Mutually exclusive with native_expression.
+                When both expression and native_expression are null/empty, returns all items (full scan).
+            native_expression:
+              type: string
+              description: |
+                Provider-specific expression passed through without translation.
+                Mutually exclusive with expression. When set, the expression is sent
+                directly to the provider's native query API.
+            target_provider:
+              $ref: '#/components/schemas/ProviderId'
+              description: |
+                Optional hint for native_expression indicating which provider's syntax is used.
+                The SDK uses this to validate that the native expression matches the active provider.
+            parameters:
+              type: object
+              additionalProperties: true
+              description: |
+                Named parameter values. Keys correspond to @paramName references in the expression.
+                For portable expressions, the SDK translates these to provider-specific parameter formats.
+            page_size:
+              type: integer
+              minimum: 1
+            continuation_token:
+              type: string
+        options:
+          $ref: '#/components/schemas/OperationOptions'
+
+    QueryResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Document'
+        continuation_token:
+          type: string
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortabilityWarning'
+
+    CloudDbError:
+      type: object
+      required: [category, message, provider, operation, retryable]
+      properties:
+        category:
+          type: string
+          enum:
+            - InvalidRequest
+            - AuthenticationFailed
+            - AuthorizationFailed
+            - NotFound
+            - Conflict
+            - Throttled
+            - TransientFailure
+            - PermanentFailure
+            - ProviderError
+        message:
+          type: string
+        provider:
+          $ref: '#/components/schemas/ProviderId'
+        operation:
+          type: string
+        retryable:
+          type: boolean
+        provider_details:
+          type: object
+          additionalProperties: true
+
+    ExpressionValidationError:
+      type: object
+      description: |
+        Returned when a portable expression fails validation before execution.
+        This is a sub-type of CloudDbError with category InvalidRequest.
+      required: [category, message, provider, operation, retryable, validation_details]
+      properties:
+        category:
+          type: string
+          enum: [InvalidRequest]
+        message:
+          type: string
+        provider:
+          $ref: '#/components/schemas/ProviderId'
+        operation:
+          type: string
+          enum: [query]
+        retryable:
+          type: boolean
+          enum: [false]
+        validation_details:
+          type: object
+          properties:
+            error_type:
+              type: string
+              enum:
+                - UNSUPPORTED_FUNCTION
+                - UNSUPPORTED_OPERATOR
+                - MISSING_PARAMETER
+                - MALFORMED_SYNTAX
+                - UNSUPPORTED_CAPABILITY
+            expression:
+              type: string
+              description: The original portable expression that failed validation.
+            position:
+              type: integer
+              description: Character position in the expression where the error was detected.
+            details:
+              type: string
+              description: Human-readable details about the validation failure.
+
+    QueryCapability:
+      type: object
+      description: |
+        Represents a query-related capability that a provider may or may not support.
+      required: [name, supported]
+      properties:
+        name:
+          type: string
+          enum:
+            - PORTABLE_QUERY_EXPRESSION
+            - LIKE_OPERATOR
+            - ORDER_BY
+            - ENDS_WITH
+            - REGEX_MATCH
+            - CASE_FUNCTIONS
+        supported:
+          type: boolean
+        notes:
+          type: string

@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.hyperscaledb</groupId>
+        <artifactId>hyperscaledb-sdk-java</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>hyperscaledb-samples</artifactId>
+    <name>Hyperscale DB Samples</name>
+    <description>Sample applications demonstrating Hyperscale DB SDK usage</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.hyperscaledb</groupId>
+            <artifactId>hyperscaledb-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.hyperscaledb</groupId>
+            <artifactId>hyperscaledb-spi</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Provider modules (runtime scope for ServiceLoader) -->
+        <dependency>
+            <groupId>com.hyperscaledb</groupId>
+            <artifactId>hyperscaledb-provider-cosmos</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.hyperscaledb</groupId>
+            <artifactId>hyperscaledb-provider-dynamo</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.hyperscaledb</groupId>
+            <artifactId>hyperscaledb-provider-spanner</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Native SDKs (compile scope for resource provisioning via nativeClient) -->
+        <dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-cosmos</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
+        </dependency>
+
+        <!-- Jackson for JSON -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- Logging -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+        </dependency>
+
+        <!-- Bridge commons-logging (used by AWS/Cosmos SDKs) to SLF4J -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>jcl-over-slf4j</artifactId>
+            <version>2.0.12</version>
+            <scope>runtime</scope>
+        </dependency>
+    </dependencies>
+</project>

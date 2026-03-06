@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.hyperscaledb</groupId>
+        <artifactId>hyperscaledb-sdk-java</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>hyperscaledb-conformance</artifactId>
+    <name>Hyperscale DB Conformance Tests</name>
+    <description>Shared conformance test suite for Hyperscale DB provider adapters</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.hyperscaledb</groupId>
+            <artifactId>hyperscaledb-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.hyperscaledb</groupId>
+            <artifactId>hyperscaledb-spi</artifactId>
+        </dependency>
+
+        <!-- Provider modules (runtime scope for ServiceLoader) -->
+        <dependency>
+            <groupId>com.hyperscaledb</groupId>
+            <artifactId>hyperscaledb-provider-cosmos</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.hyperscaledb</groupId>
+            <artifactId>hyperscaledb-provider-dynamo</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.hyperscaledb</groupId>
+            <artifactId>hyperscaledb-provider-spanner</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Test -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Bridge commons-logging (used by Apache HttpClient in AWS SDK) to SLF4J -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>jcl-over-slf4j</artifactId>
+            <version>2.0.12</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- Use local truststore with Cosmos emulator cert -->
+                    <argLine>
+                        -Djavax.net.ssl.trustStore=${project.basedir}/../.tools/cacerts-local
+                        -Djavax.net.ssl.trustStorePassword=changeit
+                    </argLine>
+                    <!-- Force emulator endpoints so env vars don't override -->
+                    <systemPropertyVariables>
+                        <cosmos.endpoint>https://localhost:8081</cosmos.endpoint>
+                        <cosmos.key>C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==</cosmos.key>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
