@@ -1,4 +1,4 @@
-# ===========================================================================
+# ---------------------------------------------------------------------------
 #  Risk Platform: Azure Cosmos DB (Cloud / Entra ID)
 #  -- HOW TO USE -------------------------------------------------------------
 #  1. Copy this file to the same directory and remove the .template extension:
@@ -6,7 +6,7 @@
 #          risk-platform-cosmos-cloud.properties
 #  2. Fill in YOUR values below (marked with <...>)
 #  3. The *.properties file is git-ignored -- it will never be committed.
-# ===========================================================================
+# ---------------------------------------------------------------------------
 
 hyperscaledb.provider=cosmos
 

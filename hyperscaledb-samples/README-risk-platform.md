@@ -21,7 +21,15 @@ dark-themed executive dashboard for portfolio risk analytics.
    - [Option C: Cosmos DB (Azure Cloud)](#option-c-run-against-cosmos-db-azure-cloud)
    - [Option D: DynamoDB (AWS Cloud)](#option-d-run-against-dynamodb-aws-cloud)
    - [Switching Between Providers](#switching-between-providers)
+     - [Provider Parameters](#provider-parameters)
+     - [Full Examples Per Provider](#full-examples-per-provider)
    - [Running Both Providers Side by Side](#running-both-providers-side-by-side)
+     - [What You Need](#what-you-need)
+     - [Terminal 1 — Cosmos DB Emulator](#terminal-1--cosmos-db-emulator)
+     - [Terminal 2 — DynamoDB Local](#terminal-2--dynamodb-local)
+     - [Terminal 3 — DynamoDB Admin GUI (optional)](#terminal-3--dynamodb-admin-gui-optional)
+     - [Terminal 4 — Risk Platform on Cosmos DB](#terminal-4--risk-platform-on-cosmos-db-emulator-port-8090)
+     - [Terminal 5 — Risk Platform on DynamoDB](#terminal-5--risk-platform-on-dynamodb-local-port-8091)
 5. [Troubleshooting](#troubleshooting)
 6. [Dashboard](#dashboard)
 7. [REST API](#rest-api)
@@ -32,7 +40,9 @@ dark-themed executive dashboard for portfolio risk analytics.
     - [Set JAVA_HOME](#set-java_home)
     - [Install Maven](#install-maven)
     - [Install Azure CLI](#install-azure-cli)
+      - [Azure Setup for Option C](#azure-setup-for-option-c)
     - [Install AWS CLI](#install-aws-cli)
+      - [AWS Setup for Option D](#aws-setup-for-option-d)
     - [Install OpenSSL (Windows)](#install-openssl-windows-only--needed-for-option-a)
     - [Install Node.js (optional)](#install-nodejs-optional--for-dynamodb-admin-gui)
 
@@ -111,13 +121,7 @@ verify. If anything is missing, see
 
 #### Verify JDK
 
-**Windows (PowerShell):**
-
-```powershell
-java -version
-```
-
-**macOS / Linux (Bash):**
+**macOS / Linux / Windows:**
 
 ```bash
 java -version
@@ -135,13 +139,7 @@ openjdk version "17.x.x" ...
 
 #### Verify Maven
 
-**Windows (PowerShell):**
-
-```powershell
-mvn -version
-```
-
-**macOS / Linux (Bash):**
+**macOS / Linux / Windows:**
 
 ```bash
 mvn -version
@@ -246,13 +244,7 @@ java -version
 
 Run from the **repo root** (`hyperscale-db-sdk-for-java/`).
 
-**Windows (PowerShell):**
-
-```powershell
-mvn clean install -DskipTests
-```
-
-**macOS / Linux (Bash):**
+**macOS / Linux / Windows:**
 
 ```bash
 mvn clean install -DskipTests
@@ -891,6 +883,10 @@ This option connects to a **real Azure Cosmos DB account** using
 > - Your identity signed in with `az login`
 > - The **Cosmos DB Built-in Data Contributor** data-plane RBAC role assigned to your identity
 > - **Contributor** or **Owner** ARM role on the resource group (for auto-provisioning databases/containers)
+>
+> **First time?** See [Azure Setup for Option C](#azure-setup-for-option-c) for
+> step-by-step instructions on signing in, collecting credential values, and
+> assigning the required RBAC role.
 
 ---
 
@@ -898,8 +894,6 @@ This option connects to a **real Azure Cosmos DB account** using
 
 The cloud properties file contains your subscription ID, tenant ID, and endpoint.
 **It is git-ignored and must never be committed.**
-
-A template is provided. Copy it and fill in your values:
 
 **macOS / Linux:**
 ```bash
@@ -913,8 +907,7 @@ Copy-Item hyperscaledb-samples\src\main\resources\risk-platform-cosmos-cloud.pro
           hyperscaledb-samples\src\main\resources\risk-platform-cosmos-cloud.properties
 ```
 
-Then open the file and fill in the four values below. The commands in C1 will
-print each value for you.
+Open the file and fill in your values:
 
 ```ini
 hyperscaledb.provider=cosmos
@@ -925,192 +918,45 @@ hyperscaledb.connection.resourceGroupName=<YOUR-RESOURCE-GROUP>
 hyperscaledb.connection.tenantId=<YOUR-TENANT-ID>
 ```
 
-> ⚠️ **Do not add a `key=` line.** Leaving it absent enables Entra ID
-> (`DefaultAzureCredential`) automatically. Adding a key switches to key-based auth.
+> Not sure where to find these values? → [Sign In and Collect Credential Values](#sign-in-and-collect-credential-values)
 
 ---
 
-#### C1 — Sign in and collect your credential values
+#### C1 — Configure Azure credentials (one-time setup)
 
-##### macOS / Linux
-
+**macOS / Linux / Windows:**
 ```bash
-# Sign in to Azure CLI
 az login
-
-# Print your tenant ID  → paste into hyperscaledb.connection.tenantId
-az account show --query tenantId -o tsv
-
-# Print your subscription ID  → paste into hyperscaledb.connection.subscriptionId
-az account show --query id -o tsv
-
-# If you have multiple subscriptions, list them all and pick the right one
-az account list --query "[].{Name:name, ID:id, TenantID:tenantId}" -o table
-
-# Set the correct subscription (replace with your subscription ID)
-az account set --subscription "<YOUR-SUBSCRIPTION-ID>"
-
-# Print the resource group of your Cosmos DB account  → paste into hyperscaledb.connection.resourceGroupName
-az cosmosdb show --name "<YOUR-COSMOS-ACCOUNT-NAME>" --query resourceGroup -o tsv
-
-# Print the endpoint URL  → paste into hyperscaledb.connection.endpoint
-az cosmosdb show --name "<YOUR-COSMOS-ACCOUNT-NAME>" --query documentEndpoint -o tsv
 ```
 
-##### Windows (PowerShell)
-
-```powershell
-# Sign in to Azure CLI
-az login
-
-# Print your tenant ID  → paste into hyperscaledb.connection.tenantId
-az account show --query tenantId -o tsv
-
-# Print your subscription ID  → paste into hyperscaledb.connection.subscriptionId
-az account show --query id -o tsv
-
-# If you have multiple subscriptions, list them all and pick the right one
-az account list --query "[].{Name:name, ID:id, TenantID:tenantId}" -o table
-
-# Set the correct subscription (replace with your subscription ID)
-az account set --subscription "<YOUR-SUBSCRIPTION-ID>"
-
-# Print the resource group of your Cosmos DB account  → paste into hyperscaledb.connection.resourceGroupName
-az cosmosdb show --name "<YOUR-COSMOS-ACCOUNT-NAME>" --query resourceGroup -o tsv
-
-# Print the endpoint URL  → paste into hyperscaledb.connection.endpoint
-az cosmosdb show --name "<YOUR-COSMOS-ACCOUNT-NAME>" --query documentEndpoint -o tsv
-```
-
-> **Multiple tenants / subscriptions?**
-> The `tenantId` property is critical when your CLI account has access to
-> multiple Azure AD tenants. It pins both `DefaultAzureCredential` and the
-> ARM management client to the correct tenant, preventing
-> `InvalidAuthenticationTokenTenant` 401 errors. Always set it explicitly.
+> - First time with Azure CLI? → [Sign In and Collect Credential Values](#sign-in-and-collect-credential-values)
+> - RBAC role not yet assigned? → [Grant the Cosmos DB RBAC Role](#grant-the-cosmos-db-data-plane-rbac-role)
+> - Credentials already configured? Skip to C2.
 
 ---
 
-#### C2 — Grant the Cosmos DB data-plane RBAC role (one-time per account)
+#### C2 — Build the project
 
-Your identity needs the **Cosmos DB Built-in Data Contributor** role to read and
-write data. This is separate from ARM RBAC — it is a Cosmos-native data-plane role.
-
-> Run this **once** per Cosmos DB account. If the role is already assigned,
-> this command is safe to re-run (it will error with a conflict, which you can ignore).
-
-##### macOS / Linux
-
+**macOS / Linux / Windows:**
 ```bash
-# Get your principal (object) ID
-PRINCIPAL_ID=$(az ad signed-in-user show --query id -o tsv)
-echo "Your principal ID: $PRINCIPAL_ID"
-
-# Assign the Cosmos DB Built-in Data Contributor role
-az cosmosdb sql role assignment create \
-  --account-name "<YOUR-COSMOS-ACCOUNT-NAME>" \
-  --resource-group "<YOUR-RESOURCE-GROUP>" \
-  --role-definition-name "Cosmos DB Built-in Data Contributor" \
-  --scope "/" \
-  --principal-id "$PRINCIPAL_ID"
-```
-
-##### Windows (PowerShell)
-
-```powershell
-# Get your principal (object) ID
-$PRINCIPAL_ID = az ad signed-in-user show --query id -o tsv
-Write-Host "Your principal ID: $PRINCIPAL_ID"
-
-# Assign the Cosmos DB Built-in Data Contributor role
-az cosmosdb sql role assignment create `
-  --account-name "<YOUR-COSMOS-ACCOUNT-NAME>" `
-  --resource-group "<YOUR-RESOURCE-GROUP>" `
-  --role-definition-name "Cosmos DB Built-in Data Contributor" `
-  --scope "/" `
-  --principal-id $PRINCIPAL_ID
-```
-
-> **Why is this needed?**
-> When a Cosmos DB account has **local auth disabled** (Entra-ID-only mode),
-> the data-plane rejects any request that isn't authorized by a Cosmos-native RBAC
-> role — even if you have Contributor on the ARM resource. This role assignment
-> is what allows reads and writes.
-
----
-
-#### C3 — Verify prerequisites
-
-##### macOS / Linux
-
-```bash
-# Confirm you are signed in and on the right subscription/tenant
-az account show --query "{Name:name, SubscriptionID:id, TenantID:tenantId}" -o table
-
-# Confirm the Cosmos DB account is reachable
-az cosmosdb show \
-  --name "<YOUR-COSMOS-ACCOUNT-NAME>" \
-  --resource-group "<YOUR-RESOURCE-GROUP>" \
-  --query "{Name:name, Endpoint:documentEndpoint, Location:location}" -o table
-
-# Confirm the RBAC role is assigned to your identity
-az cosmosdb sql role assignment list \
-  --account-name "<YOUR-COSMOS-ACCOUNT-NAME>" \
-  --resource-group "<YOUR-RESOURCE-GROUP>" \
-  --query "[].{Role:roleDefinitionId, Principal:principalId}" -o table
-```
-
-##### Windows (PowerShell)
-
-```powershell
-# Confirm you are signed in and on the right subscription/tenant
-az account show --query "{Name:name, SubscriptionID:id, TenantID:tenantId}" -o table
-
-# Confirm the Cosmos DB account is reachable
-az cosmosdb show `
-  --name "<YOUR-COSMOS-ACCOUNT-NAME>" `
-  --resource-group "<YOUR-RESOURCE-GROUP>" `
-  --query "{Name:name, Endpoint:documentEndpoint, Location:location}" -o table
-
-# Confirm the RBAC role is assigned to your identity
-az cosmosdb sql role assignment list `
-  --account-name "<YOUR-COSMOS-ACCOUNT-NAME>" `
-  --resource-group "<YOUR-RESOURCE-GROUP>" `
-  --query "[].{Role:roleDefinitionId, Principal:principalId}" -o table
-```
-
----
-
-#### C4 — Build the project
-
-##### macOS / Linux
-
-```bash
-mvn clean install -DskipTests
-```
-
-##### Windows (PowerShell)
-
-```powershell
 mvn clean install -DskipTests
 ```
 
 ---
 
-#### C5 — Launch the Risk Platform (Cosmos DB Cloud)
+#### C3 — Launch the Risk Platform (Cosmos DB Cloud)
 
 Run from the **repo root**. No truststore needed — Azure Cosmos DB uses a
 publicly trusted TLS certificate.
 
-##### macOS / Linux
-
+**macOS / Linux:**
 ```bash
 mvn -pl hyperscaledb-samples exec:java \
   -Dexec.mainClass=com.hyperscaledb.samples.riskplatform.RiskPlatformApp \
   -Drisk.config=risk-platform-cosmos-cloud.properties
 ```
 
-##### Windows (PowerShell)
-
+**Windows (PowerShell):**
 ```powershell
 mvn -pl hyperscaledb-samples exec:java `
   "-Dexec.mainClass=com.hyperscaledb.samples.riskplatform.RiskPlatformApp" `
@@ -1135,24 +981,24 @@ Expected output:
   Seeding demo data...
   Demo data seeded successfully.
 
-╔═══════════════════════════════════════════════════════════╗
-║   RISK ANALYSIS PLATFORM — Multi-Tenant Demo             ║
-╠═══════════════════════════════════════════════════════════╣
-║   Provider:  Azure Cosmos DB                            ║
-║   Dashboard: http://localhost:8090                      ║
-║   API:       http://localhost:8090/api                  ║
-╚═══════════════════════════════════════════════════════════╝
++----------------------------------------------------------+
+|   RISK ANALYSIS PLATFORM -- Multi-Tenant Demo            |
++----------------------------------------------------------+
+|   Provider:  Azure Cosmos DB                            |
+|   Dashboard: http://localhost:8090                      |
+|   API:       http://localhost:8090/api                  |
++----------------------------------------------------------+
 ```
 
 ---
 
-#### C6 — Open the dashboard
+#### C4 — Open the dashboard
 
 Navigate to **http://localhost:8090** in your browser.
 
 ---
 
-#### C7 — Stop the app
+#### C5 — Stop the app
 
 Press `Ctrl+C` in the terminal running Maven.
 
@@ -1171,15 +1017,75 @@ Get-NetTCPConnection -LocalPort 8090 -ErrorAction SilentlyContinue |
 
 ---
 
+#### C6 — Clean up Cosmos DB resources (optional)
+
+> **Note:** Cosmos DB databases persist until explicitly deleted. Run this when
+> you no longer need the demo data and want to remove all provisioned databases.
+
+A cleanup script is provided in `hyperscaledb-samples/scripts/`. It reads your
+account name and resource group directly from the properties file — no manual
+editing required.
+
+**macOS / Linux:**
+```bash
+# First time only — make the script executable
+chmod +x hyperscaledb-samples/scripts/cleanup-cosmos.sh
+
+./hyperscaledb-samples/scripts/cleanup-cosmos.sh
+```
+
+**Windows (PowerShell):**
+```powershell
+.\hyperscaledb-samples\scripts\cleanup-cosmos.ps1
+```
+
+To override the account or resource group without editing any file:
+
+**macOS / Linux:**
+```bash
+COSMOS_ACCOUNT=my-account RESOURCE_GROUP=my-rg \
+  ./hyperscaledb-samples/scripts/cleanup-cosmos.sh
+```
+
+**Windows (PowerShell):**
+```powershell
+.\hyperscaledb-samples\scripts\cleanup-cosmos.ps1 -CosmosAccount my-account -ResourceGroup my-rg
+```
+
+Example output:
+```
+Account        : allekim-test-sm
+Resource Group : my-resource-group
+
+The following Cosmos DB databases will be deleted:
+  - riskplatform-admin
+  - acme-capital-risk-db
+  - vanguard-partners-risk-db
+  - summit-wealth-risk-db
+  - _shared-risk-db
+
+Proceed? [y/N] y
+
+  Deleted : riskplatform-admin
+  Deleted : acme-capital-risk-db
+  Deleted : vanguard-partners-risk-db
+  Deleted : summit-wealth-risk-db
+  Deleted : _shared-risk-db
+
+All databases deleted successfully.
+```
+
+---
+
 #### Troubleshooting Option C
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `InvalidAuthenticationTokenTenant` (401) | Your CLI/credential is signed into a different tenant than the one owning the subscription | Set `hyperscaledb.connection.tenantId` in the properties file to the value from `az account show --query tenantId -o tsv`. This pins both `DefaultAzureCredential` and the ARM client to the right tenant. |
-| `Request blocked by Auth … cannot be authorized by AAD token in data plane` (403, subStatus 5300) | The **Cosmos DB Built-in Data Contributor** data-plane role is not assigned to your identity | Run the `az cosmosdb sql role assignment create` command in Step C2 above |
+| `InvalidAuthenticationTokenTenant` (401) | CLI token issued for a different tenant than the subscription's tenant | Set `hyperscaledb.connection.tenantId` — see [Sign In and Collect Credential Values](#sign-in-and-collect-credential-values) |
+| `Request blocked by Auth … cannot be authorized by AAD token in data plane` (403, subStatus 5300) | Cosmos DB Built-in Data Contributor role not assigned | See [Grant the Cosmos DB RBAC Role](#grant-the-cosmos-db-data-plane-rbac-role) |
 | `DefaultAzureCredential authentication failed` | Not signed in to Azure CLI | Run `az login`, then verify with `az account show` |
-| `The subscription … must match the tenant` (401) | Multiple Azure tenants in your account; token issued for wrong tenant | Run `az account list -o table` to identify the correct subscription, then `az account set --subscription <ID>` and ensure `tenantId` in the properties file matches |
-| `Address already in use` on port 8090 | A previous instance is still running | Run the kill command in Step C7 above |
+| `The subscription … must match the tenant` (401) | Multiple Azure tenants; token issued for wrong tenant | Run `az account list -o table`, then `az account set --subscription <ID>` |
+| `Address already in use` on port 8090 | A previous instance is still running | Run the kill command in Step C5 above |
 | App exits silently after provisioning | First-run ARM deployments timed out | Re-run the app — it checks resource existence first and skips already-created resources |
 
 ---
@@ -1187,105 +1093,371 @@ Get-NetTCPConnection -LocalPort 8090 -ErrorAction SilentlyContinue |
 ### Option D: Run against DynamoDB (AWS Cloud)
 
 This option connects to the **real Amazon DynamoDB service** using the
-AWS default credential provider chain. No explicit access key/secret is needed
-in the properties file.
+AWS default credential provider chain.
+**No access key or secret is stored in the properties file** — credentials are
+picked up automatically from your AWS CLI configuration or IAM role.
 
-#### D1 — Install the AWS CLI
+> **What you need:**
+> - An AWS account with permissions to create and manage DynamoDB tables
+> - AWS CLI installed and on your PATH — not installed? → [Install AWS CLI](#install-aws-cli)
+> - Credentials configured via `aws configure` (or IAM role / environment variables)
+> - **AmazonDynamoDBFullAccess** policy (or equivalent) attached to your IAM identity
+>
+> **First time?** See [AWS Setup for Option D](#aws-setup-for-option-d) for
+> step-by-step instructions on creating an IAM user, access keys, and
+> configuring credentials.
 
-Download and install from https://aws.amazon.com/cli/. Verify:
+---
 
-```powershell
-aws --version
+#### D0 — Create the properties file (one-time setup)
+
+The cloud properties file contains your AWS region.
+**It is git-ignored and must never be committed.**
+
+**macOS / Linux:**
+```bash
+cp hyperscaledb-samples/src/main/resources/risk-platform-dynamo-cloud.properties.template \
+   hyperscaledb-samples/src/main/resources/risk-platform-dynamo-cloud.properties
 ```
 
-#### D2 — Configure AWS credentials
-
+**Windows (PowerShell):**
 ```powershell
+Copy-Item hyperscaledb-samples\src\main\resources\risk-platform-dynamo-cloud.properties.template `
+          hyperscaledb-samples\src\main\resources\risk-platform-dynamo-cloud.properties
+```
+
+Open the file and set your AWS region:
+
+```ini
+hyperscaledb.provider=dynamo
+hyperscaledb.connection.region=us-east-1
+```
+
+> Not sure which region to use? → [AWS Regions](#aws-regions)
+
+---
+
+#### D1 — Configure AWS credentials (one-time setup)
+
+**macOS / Linux / Windows:**
+```bash
 aws configure
 ```
 
-Enter:
-
 | Prompt | Value |
 |--------|-------|
-| AWS Access Key ID | Your IAM access key |
-| AWS Secret Access Key | Your IAM secret key |
-| Default region name | `us-east-1` (or your preferred region) |
+| AWS Access Key ID | Your IAM access key ID |
+| AWS Secret Access Key | Your IAM secret access key |
+| Default region name | e.g. `us-east-1` — see [AWS Regions](#aws-regions) |
 | Default output format | `json` |
 
-> **For production**, use IAM roles instead of long-lived access keys.
-> The SDK automatically picks up EC2 instance profiles, ECS task roles,
-> and Lambda execution roles.
+> - No access key yet? → [Create an IAM User and Access Key](#create-an-iam-user-and-access-key)
+> - Using corporate SSO? → [AWS SSO Alternative](#aws-sso-alternative-no-long-lived-keys)
+> - Credentials already configured? Skip to D2.
 
-#### D3 — Verify AWS access
+---
 
-```powershell
-aws dynamodb list-tables --region us-east-1
+#### D2 — Build the project
+
+**macOS / Linux / Windows:**
+```bash
+mvn clean install -DskipTests
 ```
 
-You should see `{ "TableNames": [] }` or a list of existing tables.
+---
 
-#### D4 — Launch the Risk Platform (DynamoDB Cloud)
+#### D3 — Launch the Risk Platform (DynamoDB Cloud)
 
-From the **repo root**:
+Run from the **repo root**.
 
+**macOS / Linux:**
+```bash
+mvn -pl hyperscaledb-samples exec:java \
+  -Dexec.mainClass=com.hyperscaledb.samples.riskplatform.RiskPlatformApp \
+  -Drisk.config=risk-platform-dynamo-cloud.properties
+```
+
+**Windows (PowerShell):**
 ```powershell
 mvn -pl hyperscaledb-samples exec:java `
   "-Dexec.mainClass=com.hyperscaledb.samples.riskplatform.RiskPlatformApp" `
   "-Drisk.config=risk-platform-dynamo-cloud.properties"
 ```
 
-#### D5 — Open the dashboard
+On first run, the app auto-provisions all DynamoDB tables then seeds demo data.
+Subsequent runs skip existing tables and start immediately.
+
+Expected output:
+```
+  Starting Risk Analysis Platform...
+  Loaded config: risk-platform-dynamo-cloud.properties
+  Provisioning resources for Amazon DynamoDB...
+    Table: acme-capital-risk-db__portfolios
+    Table: acme-capital-risk-db__positions
+    Table: acme-capital-risk-db__risk_metrics
+    Table: acme-capital-risk-db__alerts
+    ...
+  Resource provisioning complete.
+  Seeding demo data...
+  Demo data seeded successfully.
+
++----------------------------------------------------------+
+|   RISK ANALYSIS PLATFORM -- Multi-Tenant Demo            |
++----------------------------------------------------------+
+|   Provider:  Amazon DynamoDB                             |
+|   Dashboard: http://localhost:8090                       |
+|   API:       http://localhost:8090/api                   |
++----------------------------------------------------------+
+```
+
+---
+
+#### D4 — Open the dashboard
 
 Navigate to **http://localhost:8090** in your browser.
 
-#### D6 — Stop and clean up
+---
+
+#### D5 — Stop the app
 
 Press `Ctrl+C` in the terminal running Maven.
 
-> **Cost note:** DynamoDB charges for read/write capacity and storage.
-> The demo creates a small number of tables and items. To avoid ongoing
-> charges, delete the tables after testing:
->
-> ```powershell
-> # List tables created by the Risk Platform
-> aws dynamodb list-tables --region us-east-1
-> # Delete each table (example)
-> aws dynamodb delete-table --table-name acme-capital-risk-db__portfolios --region us-east-1
-> ```
+If the port is still in use on the next run:
+
+**macOS / Linux:**
+```bash
+lsof -ti:8090 | xargs kill -9
+```
+
+**Windows (PowerShell):**
+```powershell
+Get-NetTCPConnection -LocalPort 8090 -ErrorAction SilentlyContinue |
+  ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+```
+
+---
+
+#### D6 — Clean up AWS resources (avoid ongoing charges)
+
+> **Cost note:** DynamoDB charges for storage and on-demand read/write capacity.
+> Delete the tables after testing to avoid ongoing charges.
+
+A cleanup script is provided in `hyperscaledb-samples/scripts/`. It reads your
+region automatically from `aws configure` (or prompts you), lists what it will
+delete, and asks for confirmation before proceeding.
+
+**macOS / Linux:**
+```bash
+# First time only — make the script executable
+chmod +x hyperscaledb-samples/scripts/cleanup-dynamo.sh
+
+./hyperscaledb-samples/scripts/cleanup-dynamo.sh
+```
+
+**Windows (PowerShell):**
+```powershell
+.\hyperscaledb-samples\scripts\cleanup-dynamo.ps1
+```
+
+To override the region without editing any file, pass it inline:
+
+**macOS / Linux:**
+```bash
+AWS_REGION=eu-west-1 ./hyperscaledb-samples/scripts/cleanup-dynamo.sh
+```
+
+> `chmod +x` only needs to be run once. After that, the script is permanently executable.
+
+**Windows (PowerShell):**
+```powershell
+.\hyperscaledb-samples\scripts\cleanup-dynamo.ps1 -Region eu-west-1
+```
+
+Example output:
+```
+Region : us-east-1
+
+The following tables will be deleted in region 'us-east-1':
+  - acme-capital-risk-db__portfolios
+  - acme-capital-risk-db__positions
+  ...
+  - _shared-risk-db__market_data
+
+Proceed? [y/N] y
+
+  Deleted : acme-capital-risk-db__portfolios
+  Deleted : acme-capital-risk-db__positions
+  ...
+  Deleted : _shared-risk-db__market_data
+
+All tables deleted successfully.
+```
+
+---
+
+#### Troubleshooting Option D
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `Unable to load credentials from any provider in the chain` | No credentials configured | Run `aws configure` (see Step D1) or set `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` environment variables |
+| `ExpiredTokenException` | Temporary credentials (SSO / assumed role) have expired | Run `aws sso login --profile <profile>` — see [AWS SSO Alternative](#aws-sso-alternative-no-long-lived-keys) |
+| `AccessDeniedException` on `CreateTable` | IAM identity lacks DynamoDB permissions | See [Verify IAM Permissions](#verify-iam-permissions) |
+| `ResourceNotFoundException` | Table does not exist when reading | Re-run the app — auto-provisioning will recreate missing tables |
+| `The security token included in the request is invalid` | Wrong region or credentials | Run `aws sts get-caller-identity` to verify account; check region — see [AWS Regions](#aws-regions) |
+| `Address already in use` on port 8090 | A previous instance is still running | Run the kill command in Step D5 above |
 
 ---
 
 ### Switching Between Providers
 
-To switch from one provider to the other:
+The application code is **identical** across all providers — only the
+properties file and a few JVM arguments change. Stop the app (`Ctrl+C`),
+then re-run with the parameters for the desired provider.
 
-1. Stop the Risk Platform (`Ctrl+C`)
-2. Stop the prior emulator if needed, start the other one (for local options)
-3. Re-run the `mvn -pl hyperscaledb-samples exec:java ...` command with the
-   desired properties file:
-   - `risk-platform-cosmos.properties` — Cosmos DB Emulator
-   - `risk-platform-dynamo.properties` — DynamoDB Local
-   - `risk-platform-cosmos-cloud.properties` — Azure Cosmos DB (cloud)
-   - `risk-platform-dynamo-cloud.properties` — Amazon DynamoDB (cloud)
+#### Run command (all providers)
 
-The application code is **identical** — only the properties file changes.
+**macOS / Linux:**
+```bash
+mvn -pl hyperscaledb-samples exec:java \
+  -Dexec.mainClass=com.hyperscaledb.samples.riskplatform.RiskPlatformApp \
+  -Drisk.config=<CONFIG_FILE> \
+  [<EXTRA_ARGS>]
+```
+
+**Windows (PowerShell):**
+```powershell
+mvn -pl hyperscaledb-samples exec:java `
+  "-Dexec.mainClass=com.hyperscaledb.samples.riskplatform.RiskPlatformApp" `
+  "-Drisk.config=<CONFIG_FILE>" `
+  [<EXTRA_ARGS>]
+```
+
+Replace `<CONFIG_FILE>` and `<EXTRA_ARGS>` using the table below.
+
+---
+
+#### Provider parameters
+
+| Option | Provider | `<CONFIG_FILE>` | `<EXTRA_ARGS>` | Prerequisites |
+|--------|----------|-----------------|----------------|---------------|
+| **A** | Cosmos DB Emulator | `risk-platform-cosmos.properties` | `-Djavax.net.ssl.trustStore=.tools/cacerts-local`<br>`-Djavax.net.ssl.trustStorePassword=changeit` | Emulator running ([Step A1](#a1--install-and-start-the-emulator)), truststore created ([Step A3](#a3--create-the-ssl-truststore)) |
+| **B** | DynamoDB Local | `risk-platform-dynamo.properties` | *(none)* | DynamoDB Local running ([Step B2](#b2--start-dynamodb-local)) |
+| **C** | Cosmos DB Cloud | `risk-platform-cosmos-cloud.properties` | *(none)* | `az login` done ([Step C1](#c1--configure-azure-credentials-one-time-setup)), RBAC role assigned ([Azure Setup](#grant-the-cosmos-db-data-plane-rbac-role)) |
+| **D** | DynamoDB Cloud | `risk-platform-dynamo-cloud.properties` | *(none)* | `aws configure` done ([Step D1](#d1--configure-aws-credentials-one-time-setup)) |
+
+> **Custom port?** Add `-Drisk.port=<PORT>` to `<EXTRA_ARGS>` to run on any
+> port instead of the default `8090`. See [Changing the Port](#changing-the-port).
+
+---
+
+#### Full examples per provider
+
+**Option A — Cosmos DB Emulator**
+
+**macOS / Linux:**
+```bash
+mvn -pl hyperscaledb-samples exec:java \
+  -Dexec.mainClass=com.hyperscaledb.samples.riskplatform.RiskPlatformApp \
+  -Drisk.config=risk-platform-cosmos.properties \
+  -Djavax.net.ssl.trustStore=.tools/cacerts-local \
+  -Djavax.net.ssl.trustStorePassword=changeit
+```
+
+**Windows (PowerShell):**
+```powershell
+mvn -pl hyperscaledb-samples exec:java `
+  "-Dexec.mainClass=com.hyperscaledb.samples.riskplatform.RiskPlatformApp" `
+  "-Drisk.config=risk-platform-cosmos.properties" `
+  "-Djavax.net.ssl.trustStore=$PWD/.tools/cacerts-local" `
+  "-Djavax.net.ssl.trustStorePassword=changeit"
+```
+
+---
+
+**Option B — DynamoDB Local**
+
+**macOS / Linux / Windows:**
+```bash
+mvn -pl hyperscaledb-samples exec:java \
+  -Dexec.mainClass=com.hyperscaledb.samples.riskplatform.RiskPlatformApp \
+  -Drisk.config=risk-platform-dynamo.properties
+```
+
+---
+
+**Option C — Cosmos DB Cloud**
+
+**macOS / Linux / Windows:**
+```bash
+mvn -pl hyperscaledb-samples exec:java \
+  -Dexec.mainClass=com.hyperscaledb.samples.riskplatform.RiskPlatformApp \
+  -Drisk.config=risk-platform-cosmos-cloud.properties
+```
+
+---
+
+**Option D — DynamoDB Cloud**
+
+**macOS / Linux / Windows:**
+```bash
+mvn -pl hyperscaledb-samples exec:java \
+  -Dexec.mainClass=com.hyperscaledb.samples.riskplatform.RiskPlatformApp \
+  -Drisk.config=risk-platform-dynamo-cloud.properties
+```
+
+---
 
 ### Running Both Providers Side by Side
 
-You can run **two instances simultaneously** on different ports to compare
-Cosmos DB and DynamoDB side by side. Make sure both emulators are running first
-(see Steps A1 and B2 above), then open **four terminals**:
+Run **two Risk Platform instances simultaneously** on different ports to compare
+Cosmos DB and DynamoDB side by side.
 
-**Terminal 1** — DynamoDB Local (if not already running, see B1 for download):
+#### What you need
 
+| Terminal | Role | Port | Prerequisites |
+|----------|------|------|---------------|
+| 1 | Cosmos DB Emulator | 8081 | [Step A1](#a1--install-and-start-the-emulator), [Step A3](#a3--create-the-ssl-truststore) |
+| 2 | DynamoDB Local | 8000 | [Step B1](#b1--download-and-extract-dynamodb-local) |
+| 3 (optional) | DynamoDB Admin GUI | 8001 | Node.js 18+ ([Install Node.js](#install-nodejs-optional--for-dynamodb-admin-gui)) |
+| 4 | Risk Platform — Cosmos DB | 8090 | Terminals 1 & 3 running |
+| 5 | Risk Platform — DynamoDB | 8091 | Terminal 2 running |
+
+---
+
+#### Terminal 1 — Cosmos DB Emulator
+
+Start as described in [Step A1](#a1--install-and-start-the-emulator). Make sure
+the tray icon shows **Running** before continuing.
+
+---
+
+#### Terminal 2 — DynamoDB Local
+
+**macOS / Linux:**
+```bash
+cd .tools/dynamodb-local
+java -Djava.library.path=./DynamoDBLocal_lib -jar DynamoDBLocal.jar -sharedDb -inMemory
+```
+
+**Windows (PowerShell):**
 ```powershell
 cd .tools\dynamodb-local
 java "-Djava.library.path=./DynamoDBLocal_lib" -jar DynamoDBLocal.jar -sharedDb -inMemory
 ```
 
-**Terminal 2** — DynamoDB Admin GUI (optional, requires Node.js 18+):
+> Not downloaded yet? See [Step B1](#b1--download-and-extract-dynamodb-local).
 
+---
+
+#### Terminal 3 — DynamoDB Admin GUI (optional)
+
+**macOS / Linux:**
+```bash
+export DYNAMO_ENDPOINT=http://localhost:8000
+dynamodb-admin
+```
+
+**Windows (PowerShell):**
 ```powershell
 $env:DYNAMO_ENDPOINT = 'http://localhost:8000'
 dynamodb-admin
@@ -1293,12 +1465,22 @@ dynamodb-admin
 
 Open **http://localhost:8001** to browse DynamoDB tables and items.
 
-**Terminal 3** — Risk Platform on Cosmos DB (port 8090):
+---
 
+#### Terminal 4 — Risk Platform on Cosmos DB Emulator (port 8090)
+
+**macOS / Linux:**
+```bash
+mvn -pl hyperscaledb-samples exec:java \
+  -Dexec.mainClass=com.hyperscaledb.samples.riskplatform.RiskPlatformApp \
+  -Drisk.config=risk-platform-cosmos.properties \
+  -Djavax.net.ssl.trustStore=.tools/cacerts-local \
+  -Djavax.net.ssl.trustStorePassword=changeit \
+  -Drisk.port=8090
+```
+
+**Windows (PowerShell):**
 ```powershell
-$env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\jdk-17.0.10.7-hotspot'
-$env:PATH      = "$env:JAVA_HOME\bin;$env:PATH"
-
 mvn -pl hyperscaledb-samples exec:java `
   "-Dexec.mainClass=com.hyperscaledb.samples.riskplatform.RiskPlatformApp" `
   "-Drisk.config=risk-platform-cosmos.properties" `
@@ -1307,25 +1489,29 @@ mvn -pl hyperscaledb-samples exec:java `
   "-Drisk.port=8090"
 ```
 
-**Terminal 4** — Risk Platform on DynamoDB (port 8091):
+> Truststore not created yet? See [Step A3](#a3--create-the-ssl-truststore).
 
-```powershell
-$env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\jdk-17.0.10.7-hotspot'
-$env:PATH      = "$env:JAVA_HOME\bin;$env:PATH"
+---
 
-mvn -pl hyperscaledb-samples exec:java `
-  "-Dexec.mainClass=com.hyperscaledb.samples.riskplatform.RiskPlatformApp" `
-  "-Drisk.config=risk-platform-dynamo.properties" `
-  "-Drisk.port=8091"
+#### Terminal 5 — Risk Platform on DynamoDB Local (port 8091)
+
+**macOS / Linux / Windows:**
+```bash
+mvn -pl hyperscaledb-samples exec:java \
+  -Dexec.mainClass=com.hyperscaledb.samples.riskplatform.RiskPlatformApp \
+  -Drisk.config=risk-platform-dynamo.properties \
+  -Drisk.port=8091
 ```
 
-Then open browser windows:
+---
 
-| Window | URL | Purpose |
-|--------|-----|----------|
-| Left   | http://localhost:8090 | Risk Platform — Azure Cosmos DB |
-| Right  | http://localhost:8091 | Risk Platform — Amazon DynamoDB |
-| Optional | http://localhost:8001 | DynamoDB Admin GUI (table/item browser) |
+#### Open the dashboards
+
+| Browser window | URL | Provider |
+|----------------|-----|----------|
+| Left | http://localhost:8090 | Azure Cosmos DB Emulator |
+| Right | http://localhost:8091 | Amazon DynamoDB Local |
+| Optional | http://localhost:8001 | DynamoDB Admin GUI |
 
 Both dashboards show the same tenants, portfolios, and risk data — the only
 difference is the underlying database engine. The **Provider** indicator in the
@@ -1340,9 +1526,10 @@ dashboard header shows which one you're looking at.
 | `risk-platform-cosmos-cloud.properties.template` | Azure Cosmos DB | *(fill in your values)* | DefaultAzureCredential (Entra ID) | ✅ Yes (no secrets) |
 | `risk-platform-dynamo.properties` | Amazon DynamoDB | `http://localhost:8000` (local) | Fake static credentials | ✅ Yes |
 | `risk-platform-dynamo-cloud.properties` | Amazon DynamoDB | AWS DynamoDB service | Default AWS credential chain | ❌ **No — git-ignored** |
+| `risk-platform-dynamo-cloud.properties.template` | Amazon DynamoDB | *(fill in your values)* | Default AWS credential chain | ✅ Yes (no secrets) |
 
 > **Cloud properties files are git-ignored.** Copy the `.template` file,
-> fill in your values, and keep it local. See Step C0 for instructions.
+> fill in your values, and keep it local. See Step C0 / D0 for instructions.
 
 ### Changing the Port
 
@@ -1463,24 +1650,30 @@ The platform auto-seeds three realistic tenant firms on startup:
 ## Project Structure
 
 ```
-hyperscaledb-samples/src/main/
-├── java/com/hyperscaledb/samples/riskplatform/
-│   ├── RiskPlatformApp.java        # HTTP server + REST endpoints
-│   ├── data/
-│   │   └── DemoDataSeeder.java     # Realistic demo data for 3 tenants
-│   ├── infra/
-│   │   └── ResourceProvisioner.java # Auto-creates DBs/containers/tables
-│   ├── model/
-│   │   └── Models.java             # Domain model builders (Portfolio, Position, Risk, etc.)
-│   └── tenant/
-│       └── TenantManager.java      # Tenant isolation + database routing
-└── resources/
-    ├── risk-platform-cosmos.properties        # Cosmos DB emulator config
-    ├── risk-platform-cosmos-cloud.properties   # Cosmos DB cloud config (Entra ID)
-    ├── risk-platform-dynamo.properties        # DynamoDB Local config
-    ├── risk-platform-dynamo-cloud.properties   # DynamoDB cloud config (AWS)
-    └── static/riskplatform/
-        └── index.html                   # Executive dashboard SPA
+hyperscaledb-samples/
+├── scripts/
+│   ├── cleanup-cosmos.sh          # Cosmos DB database cleanup script (macOS / Linux)
+│   ├── cleanup-cosmos.ps1         # Cosmos DB database cleanup script (Windows)
+│   ├── cleanup-dynamo.sh          # DynamoDB table cleanup script (macOS / Linux)
+│   └── cleanup-dynamo.ps1         # DynamoDB table cleanup script (Windows)
+└── src/main/
+    ├── java/com/hyperscaledb/samples/riskplatform/
+    │   ├── RiskPlatformApp.java        # HTTP server + REST endpoints
+    │   ├── data/
+    │   │   └── DemoDataSeeder.java     # Realistic demo data for 3 tenants
+    │   ├── infra/
+    │   │   └── ResourceProvisioner.java # Auto-creates DBs/containers/tables
+    │   ├── model/
+    │   │   └── Models.java             # Domain model builders (Portfolio, Position, Risk, etc.)
+    │   └── tenant/
+    │       └── TenantManager.java      # Tenant isolation + database routing
+    └── resources/
+        ├── risk-platform-cosmos.properties        # Cosmos DB emulator config
+        ├── risk-platform-cosmos-cloud.properties   # Cosmos DB cloud config (Entra ID)
+        ├── risk-platform-dynamo.properties        # DynamoDB Local config
+        ├── risk-platform-dynamo-cloud.properties   # DynamoDB cloud config (AWS)
+        └── static/riskplatform/
+            └── index.html                   # Executive dashboard SPA
 ```
 
 ---
@@ -1716,22 +1909,120 @@ az --version
 # → azure-cli  2.x.x  ...
 ```
 
-Then sign in:
+Once installed, proceed to [Azure Setup for Option C](#azure-setup-for-option-c) for
+sign-in, collecting credential values, and RBAC role assignment.
 
+---
+
+### Azure Setup for Option C
+
+This section covers everything you need to set up Azure credentials for the
+first time. Once complete, you won't need to repeat these steps — only the run
+commands in [Option C](#option-c-run-against-cosmos-db-azure-cloud) are needed
+on subsequent runs.
+
+---
+
+#### Sign In and Collect Credential Values
+
+Run `az login` to authenticate, then use the commands below to find the four
+values needed in your properties file.
+
+**macOS / Linux / Windows:**
 ```bash
+# Sign in (opens a browser window)
 az login
+
+# Print your tenant ID  -> paste into hyperscaledb.connection.tenantId
+az account show --query tenantId -o tsv
+
+# Print your subscription ID  -> paste into hyperscaledb.connection.subscriptionId
+az account show --query id -o tsv
+
+# If you have multiple subscriptions, list them all and pick the right one
+az account list --query "[].{Name:name, ID:id, TenantID:tenantId}" -o table
+
+# Set the correct subscription
+az account set --subscription "<YOUR-SUBSCRIPTION-ID>"
+
+# Print the resource group  -> paste into hyperscaledb.connection.resourceGroupName
+az cosmosdb show --name "<YOUR-COSMOS-ACCOUNT-NAME>" --query resourceGroup -o tsv
+
+# Print the endpoint URL  -> paste into hyperscaledb.connection.endpoint
+az cosmosdb show --name "<YOUR-COSMOS-ACCOUNT-NAME>" --query documentEndpoint -o tsv
 ```
 
-A browser window will open to complete authentication. After signing in, verify:
+> **Multiple tenants / subscriptions?**
+> The `tenantId` property is critical — it pins both `DefaultAzureCredential`
+> and the ARM management client to the correct tenant, preventing
+> `InvalidAuthenticationTokenTenant` 401 errors. Always set it explicitly.
 
+---
+
+#### Grant the Cosmos DB Data-Plane RBAC Role
+
+Your identity needs the **Cosmos DB Built-in Data Contributor** role to read and
+write data. This is a Cosmos-native data-plane role, separate from ARM RBAC.
+
+> Run this **once** per Cosmos DB account. Safe to re-run if already assigned.
+
+**macOS / Linux:**
 ```bash
-az account show --query "{Name:name, TenantID:tenantId, SubscriptionID:id}" -o table
+# Get your principal (object) ID
+PRINCIPAL_ID=$(az ad signed-in-user show --query id -o tsv)
+echo "Your principal ID: $PRINCIPAL_ID"
+
+# Assign the role
+az cosmosdb sql role assignment create \
+  --account-name "<YOUR-COSMOS-ACCOUNT-NAME>" \
+  --resource-group "<YOUR-RESOURCE-GROUP>" \
+  --role-definition-name "Cosmos DB Built-in Data Contributor" \
+  --scope "/" \
+  --principal-id "$PRINCIPAL_ID"
 ```
 
-> **Multiple accounts / tenants?** Use `az account list -o table` to see all
-> subscriptions and `az account set --subscription <ID>` to select the right one.
-> Then set `hyperscaledb.connection.tenantId` in your properties file to match
-> (run `az account show --query tenantId -o tsv`).
+**Windows (PowerShell):**
+```powershell
+# Get your principal (object) ID
+$PRINCIPAL_ID = az ad signed-in-user show --query id -o tsv
+Write-Host "Your principal ID: $PRINCIPAL_ID"
+
+# Assign the role
+az cosmosdb sql role assignment create `
+  --account-name "<YOUR-COSMOS-ACCOUNT-NAME>" `
+  --resource-group "<YOUR-RESOURCE-GROUP>" `
+  --role-definition-name "Cosmos DB Built-in Data Contributor" `
+  --scope "/" `
+  --principal-id $PRINCIPAL_ID
+```
+
+> **Why is this needed?**
+> When a Cosmos DB account has **local auth disabled** (Entra-ID-only mode),
+> the data-plane rejects any request not authorized by a Cosmos-native RBAC role
+> — even if you have Contributor on the ARM resource. This assignment grants
+> read and write access.
+
+---
+
+#### Verify Azure Prerequisites
+
+**macOS / Linux / Windows:**
+```bash
+# Confirm signed in and on the right subscription/tenant
+az account show --query "{Name:name, SubscriptionID:id, TenantID:tenantId}" -o table
+
+# Confirm the Cosmos DB account is reachable
+az cosmosdb show \
+  --name "<YOUR-COSMOS-ACCOUNT-NAME>" \
+  --resource-group "<YOUR-RESOURCE-GROUP>" \
+  --query "{Name:name, Endpoint:documentEndpoint, Location:location}" -o table
+
+# Confirm the RBAC role is assigned
+az cosmosdb sql role assignment list \
+  --account-name "<YOUR-COSMOS-ACCOUNT-NAME>" \
+  --resource-group "<YOUR-RESOURCE-GROUP>" \
+  --query "[].{Role:roleDefinitionId, Principal:principalId}" -o table
+```
 
 ---
 
@@ -1787,35 +2078,325 @@ aws --version
 # → aws-cli/2.x.x ...
 ```
 
-Then configure credentials:
+Once installed, proceed to [AWS Setup for Option D](#aws-setup-for-option-d) for
+credential configuration, IAM user creation, region selection, and permission setup.
 
-**macOS / Linux:**
+---
 
+### AWS Setup for Option D
+
+This section covers everything you need to set up AWS credentials for the first
+time. Once complete, you won't need to repeat these steps — only the run
+commands in [Option D](#option-d-run-against-dynamodb-aws-cloud) are needed on
+subsequent runs.
+
+---
+
+#### AWS Regions
+
+Set `hyperscaledb.connection.region` in your properties file to the AWS region
+where you want DynamoDB tables created.
+
+**How to find your region:**
+
+| Method | Where to look |
+|--------|--------------|
+| Already ran `aws configure` | `aws configure get region` |
+| AWS Console | Top-right corner of any page — e.g. `US East (N. Virginia)` |
+| Existing DynamoDB tables | AWS Console → DynamoDB → Tables — region shown in the browser URL |
+| Account admin | Ask which region your team uses for DynamoDB |
+
+**Common region codes:**
+
+| Region name | Code |
+|-------------|------|
+| US East (N. Virginia) | `us-east-1` |
+| US East (Ohio) | `us-east-2` |
+| US West (Oregon) | `us-west-2` |
+| EU (Ireland) | `eu-west-1` |
+| EU (Frankfurt) | `eu-central-1` |
+| Asia Pacific (Tokyo) | `ap-northeast-1` |
+| Asia Pacific (Sydney) | `ap-southeast-2` |
+
+> Pick the region **closest to you** if starting fresh, or the region where
+> your existing DynamoDB tables live if you have prior data. If unsure, use
+> `us-east-1` — it is the oldest and most commonly used AWS region.
+
+**Commands to discover your region:**
+
+**macOS / Linux / Windows:**
+```bash
+# Print your currently configured region
+aws configure get region
+
+# Check if you have existing DynamoDB tables in common regions
+aws dynamodb list-tables --region us-east-1 --output table
+aws dynamodb list-tables --region us-west-2 --output table
+```
+
+> **macOS / Linux** — list all available regions:
+> ```bash
+> aws ec2 describe-regions \
+>   --query "Regions[?starts_with(RegionName,'us') || starts_with(RegionName,'eu') || starts_with(RegionName,'ap')].RegionName" \
+>   --output table 2>/dev/null
+> ```
+>
+> **Windows (PowerShell)** — list all available regions:
+> ```powershell
+> aws ec2 describe-regions `
+>   --query "Regions[].RegionName" `
+>   --output table 2>$null
+> ```
+
+---
+
+#### Configure AWS Credentials
+
+Run the interactive wizard to store your credentials in `~/.aws/credentials`:
+
+**macOS / Linux / Windows:**
 ```bash
 aws configure
 ```
-
-**Windows (PowerShell):**
-
-```powershell
-aws configure
-```
-
-Enter when prompted:
 
 | Prompt | Value |
 |--------|-------|
-| AWS Access Key ID | Your IAM access key |
-| AWS Secret Access Key | Your IAM secret key |
-| Default region name | `us-east-1` (or your preferred region) |
+| AWS Access Key ID | Your IAM access key ID |
+| AWS Secret Access Key | Your IAM secret access key |
+| Default region name | Region code — see [AWS Regions](#aws-regions) above |
 | Default output format | `json` |
 
-Verify access:
+**Verify:**
 
 ```bash
 aws sts get-caller-identity
-# → { "UserId": "...", "Account": "...", "Arn": "..." }
+# Expected:
+# {
+#   "UserId": "AIDAXXXXXXXXXXXXXXXXX",
+#   "Account": "123456789012",
+#   "Arn": "arn:aws:iam::123456789012:user/hyperscaledb-dev"
+# }
 ```
+
+**Multiple profiles:**
+
+**macOS / Linux / Windows:**
+```bash
+aws configure list-profiles
+```
+
+Then set the profile for your session:
+
+**macOS / Linux:**
+```bash
+export AWS_PROFILE=<YOUR-PROFILE-NAME>
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:AWS_PROFILE = "<YOUR-PROFILE-NAME>"
+```
+
+---
+
+#### Create an IAM User and Access Key
+
+Follow these steps if you don't have an IAM user or access key yet.
+Everything is done in the **AWS Management Console** — no CLI needed.
+
+---
+
+##### Part A — Create a new IAM user (skip if you already have one)
+
+**Step A1 — Sign in to the AWS Console**
+
+Open [https://console.aws.amazon.com](https://console.aws.amazon.com) and sign
+in as the **root user** or an existing administrator.
+
+**Step A2 — Open IAM**
+
+In the top search bar, type **IAM** and click the IAM service.
+
+**Step A3 — Create the user**
+
+- In the left sidebar, click **Users** → **Create user**.
+- Enter a **User name** (e.g. `hyperscaledb-dev`).
+- **Do NOT check** "Provide user access to the AWS Management Console" —
+  this user only needs programmatic (CLI/SDK) access, not console sign-in.
+- Click **Next**.
+
+**Step A4 — Attach permission policies**
+
+On the "Set permissions" page, choose **Attach policies directly**, then
+decide which policy to attach:
+
+| Option | Policy to attach | When to use |
+|--------|-----------------|-------------|
+| **Quick start** | `AmazonDynamoDBFullAccess` | Development / personal use. Grants full DynamoDB access. |
+| **Least privilege** | Custom inline policy (see below) | Team / shared environments. Grants only what the SDK needs. |
+
+**Quick start — attach AmazonDynamoDBFullAccess:**
+
+- Search for `AmazonDynamoDBFullAccess`, check the box, click **Next** → **Create user**.
+
+**Least privilege — create a custom policy:**
+
+- Click **Create policy** (opens a new tab).
+- Select the **JSON** tab and paste the policy below, replacing
+  `<YOUR-AWS-REGION>` and `<YOUR-ACCOUNT-ID>`:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "HyperscaleDbDynamoAccess",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:CreateTable",
+        "dynamodb:DescribeTable",
+        "dynamodb:ListTables",
+        "dynamodb:PutItem",
+        "dynamodb:GetItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:BatchGetItem"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:<YOUR-AWS-REGION>:<YOUR-ACCOUNT-ID>:table/*"
+      ]
+    }
+  ]
+}
+```
+
+- Click **Next**, name the policy `HyperscaleDbDynamoPolicy`, click **Create policy**.
+- Go back to the user creation tab, refresh, search for `HyperscaleDbDynamoPolicy`,
+  check it, click **Next** → **Create user**.
+
+> **How to find your Account ID:**
+> Top-right corner of the AWS Console, or run:
+> `aws sts get-caller-identity --query Account --output tsv`
+
+**Step A5 — Confirm the user was created**
+
+You should now see `hyperscaledb-dev` in the Users list.
+
+---
+
+##### Part B — Create the access key
+
+**Step B1 — Open your user**
+
+In IAM → **Users**, click your username.
+
+**Step B2 — Go to Security credentials**
+
+- Click the **Security credentials** tab.
+- Scroll down to **Access keys** → click **Create access key**.
+
+**Step B3 — Select use case**
+
+- Select **Command Line Interface (CLI)**.
+- Check the confirmation checkbox and click **Next** → **Create access key**.
+
+**Step B4 — Copy both values immediately**
+
+| Field | Where to paste |
+|-------|----------------|
+| **Access key ID** | `AWS Access Key ID` prompt in `aws configure` |
+| **Secret access key** | `AWS Secret Access Key` prompt in `aws configure` |
+
+> ⚠️ The **Secret access key is shown only once**. If you close this page
+> without copying it, delete the key and create a new one.
+> Store it in a password manager — never in a source file or properties file.
+
+---
+
+#### Verify IAM Permissions
+
+Run this smoke test to confirm your identity has the required DynamoDB permissions:
+
+**macOS / Linux / Windows:**
+```bash
+aws sts get-caller-identity --output table
+
+aws dynamodb create-table \
+  --table-name sdk-permission-test \
+  --attribute-definitions AttributeName=id,AttributeType=S \
+  --key-schema AttributeName=id,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST \
+  --region <YOUR-AWS-REGION>
+
+aws dynamodb delete-table --table-name sdk-permission-test --region <YOUR-AWS-REGION>
+```
+
+**macOS / Linux:**
+```bash
+echo "Permissions OK"
+```
+
+**Windows (PowerShell):**
+```powershell
+Write-Host "Permissions OK"
+```
+
+**Required permissions:**
+
+| Permission | Purpose in this app |
+|------------|---------------------|
+| `dynamodb:CreateTable` | Auto-provisioning tenant tables on first startup |
+| `dynamodb:DescribeTable` | Checking whether a table already exists before creating |
+| `dynamodb:ListTables` | Listing tables during verification |
+| `dynamodb:PutItem` | Writing demo data and all create/upsert operations |
+| `dynamodb:GetItem` | Reading a single item by key |
+| `dynamodb:UpdateItem` | Updating existing items |
+| `dynamodb:DeleteItem` | Deleting items |
+| `dynamodb:Query` | Partition-scoped queries (e.g. positions for a portfolio) |
+| `dynamodb:Scan` | Cross-partition queries when no partition key is specified |
+| `dynamodb:BatchWriteItem` | Bulk-writing demo seed data efficiently |
+| `dynamodb:BatchGetItem` | Bulk-reading multiple items in one request |
+
+> `dynamodb:DeleteTable` is **not required** to run the app. It is only needed
+> for the cleanup commands in Step D6. You can delete tables manually from the
+> AWS Console if you prefer not to grant this permission.
+
+---
+
+#### AWS SSO Alternative (no long-lived keys)
+
+If your organisation uses **AWS IAM Identity Center (SSO)**, use `aws sso login`
+instead of `aws configure` with static access keys:
+
+**macOS / Linux / Windows:**
+```bash
+# One-time SSO profile setup
+aws configure sso
+
+# Log in (opens a browser window)
+aws sso login --profile <YOUR-SSO-PROFILE-NAME>
+
+# Verify
+aws sts get-caller-identity
+```
+
+Then set the profile for your session:
+
+**macOS / Linux:**
+```bash
+export AWS_PROFILE=<YOUR-SSO-PROFILE-NAME>
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:AWS_PROFILE = "<YOUR-SSO-PROFILE-NAME>"
+```
+
+> SSO sessions expire (typically after 8–12 hours). Re-run
+> `aws sso login --profile <profile>` when you get an `ExpiredTokenException`.
 
 ---
 
@@ -1861,3 +2442,4 @@ Verify:
 node -v
 # → v18.x.x or higher
 ```
+
