@@ -31,6 +31,15 @@ buildNumber.properties
 dynamodb-local-metadata.json
 shared-local-instance.db
 
+# -- Cloud credentials / properties (never commit) -----------------------
+# These files contain region, access keys, endpoints, and secrets.
+# Copy the *.template.properties files and fill in your own values locally.
+risk-platform-cosmos-cloud.properties
+risk-platform-dynamo-cloud.properties
+*-cloud.properties
+# Allow templates to be committed (they contain no real credentials)
+!*-cloud.properties.template
+
 # ── OS files ────────────────────────────────────────────
 .DS_Store
 Thumbs.db

@@ -9,6 +9,9 @@ import com.azure.identity.DefaultAzureCredentialBuilder;
 import com.azure.resourcemanager.cosmos.CosmosManager;
 import com.azure.resourcemanager.cosmos.models.SqlDatabaseCreateUpdateParameters;
 import com.azure.resourcemanager.cosmos.models.SqlDatabaseResource;
+import com.azure.resourcemanager.cosmos.models.SqlContainerCreateUpdateParameters;
+import com.azure.resourcemanager.cosmos.models.SqlContainerResource;
+import com.azure.resourcemanager.cosmos.models.ContainerPartitionKey;
 import com.hyperscaledb.api.*;
 import com.hyperscaledb.api.query.TranslatedQuery;
 import com.hyperscaledb.spi.HyperscaleDbProviderClient;
@@ -69,7 +72,14 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             this.resourceGroupName = null;
             this.accountName = null;
         } else {
-            TokenCredential credential = new DefaultAzureCredentialBuilder().build();
+            // Optional tenantId — when set, pins both the credential and the ARM profile
+            // to the correct tenant, avoiding InvalidAuthenticationTokenTenant (401) errors.
+            String tenantId = config.connection().get("tenantId");
+            DefaultAzureCredentialBuilder credentialBuilder = new DefaultAzureCredentialBuilder();
+            if (tenantId != null && !tenantId.isBlank()) {
+                credentialBuilder.tenantId(tenantId);
+            }
+            TokenCredential credential = credentialBuilder.build();
             builder.credential(credential);
             LOG.info(
                     "Cosmos client using DefaultAzureCredential (supports Managed Identity, Azure CLI, environment variables)");
@@ -82,7 +92,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             this.accountName = extractAccountName(endpoint);
 
             if (subscriptionId != null && resourceGroupName != null && accountName != null) {
-                AzureProfile profile = new AzureProfile(null, subscriptionId, AzureEnvironment.AZURE);
+                AzureProfile profile = new AzureProfile(tenantId, subscriptionId, AzureEnvironment.AZURE);
                 this.cosmosManager = CosmosManager.authenticate(credential, profile);
                 LOG.info("Cosmos management client initialised (subscription={}, rg={}, account={})",
                         subscriptionId, resourceGroupName, accountName);
@@ -323,6 +333,19 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
     @Override
     public void ensureDatabase(String database) {
         if (cosmosManager != null) {
+            // Check existence first — ARM createUpdate is a long-running deployment (~30-60s).
+            // Skipping it when the resource already exists makes provisioning near-instant.
+            try {
+                cosmosManager.serviceClient()
+                        .getSqlResources()
+                        .getSqlDatabase(resourceGroupName, accountName, database);
+                LOG.info("Cosmos database already exists, skipping create: {}", database);
+                return;
+            } catch (com.azure.core.management.exception.ManagementException e) {
+                if (e.getResponse() != null && e.getResponse().getStatusCode() != 404) {
+                    throw e;
+                }
+            }
             cosmosManager.serviceClient()
                     .getSqlResources()
                     .createUpdateSqlDatabase(
@@ -345,14 +368,47 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
 
     @Override
     public void ensureContainer(ResourceAddress address) {
-        try {
-            CosmosDatabase db = cosmosClient.getDatabase(address.database());
-            CosmosContainerProperties props = new CosmosContainerProperties(
-                    address.collection(), PARTITION_KEY_PATH);
-            db.createContainerIfNotExists(props);
-            LOG.info("Ensured Cosmos container: {}/{}", address.database(), address.collection());
-        } catch (CosmosException e) {
-            throw CosmosErrorMapper.map(e, "ensureContainer");
+        if (cosmosManager != null) {
+            // Check existence first — ARM createUpdate is a long-running deployment (~30-60s).
+            // Skipping it when the resource already exists makes provisioning near-instant.
+            try {
+                cosmosManager.serviceClient()
+                        .getSqlResources()
+                        .getSqlContainer(resourceGroupName, accountName,
+                                address.database(), address.collection());
+                LOG.info("Cosmos container already exists, skipping create: {}/{}", address.database(), address.collection());
+                return;
+            } catch (com.azure.core.management.exception.ManagementException e) {
+                if (e.getResponse() != null && e.getResponse().getStatusCode() != 404) {
+                    throw e;
+                }
+            }
+            // Use ARM control-plane to create the container — avoids the data-plane AAD
+            // restriction (subStatus 5300) when native RBAC is enforced on the account.
+            cosmosManager.serviceClient()
+                    .getSqlResources()
+                    .createUpdateSqlContainer(
+                            resourceGroupName,
+                            accountName,
+                            address.database(),
+                            address.collection(),
+                            new SqlContainerCreateUpdateParameters()
+                                    .withResource(new SqlContainerResource()
+                                            .withId(address.collection())
+                                            .withPartitionKey(new ContainerPartitionKey()
+                                                    .withPaths(List.of(PARTITION_KEY_PATH)))),
+                            com.azure.core.util.Context.NONE);
+            LOG.info("Ensured Cosmos container via management SDK: {}/{}", address.database(), address.collection());
+        } else {
+            try {
+                CosmosDatabase db = cosmosClient.getDatabase(address.database());
+                CosmosContainerProperties props = new CosmosContainerProperties(
+                        address.collection(), PARTITION_KEY_PATH);
+                db.createContainerIfNotExists(props);
+                LOG.info("Ensured Cosmos container: {}/{}", address.database(), address.collection());
+            } catch (CosmosException e) {
+                throw CosmosErrorMapper.map(e, "ensureContainer");
+            }
         }
     }
 
