@@ -236,6 +236,11 @@ Portability is the default mode of the SDK.
 - **FR-049**: Each provider adapter MUST centralize all hard-coded string literals — including configuration keys, field names, query fragments, error messages, and default values — into a provider-specific constants class (e.g., `CosmosConstants`, `DynamoConstants`). Magic strings scattered across implementation classes are not permitted.
 - **FR-050**: Operation name strings used in diagnostics, error context, and log lines MUST be defined in a single shared `OperationNames` class in the `hyperscaledb-api` module. Provider adapters MUST reference `OperationNames` constants rather than re-declaring the same strings locally. Provider-specific operation variants (e.g., DynamoDB scan sub-types) that have no equivalent in other providers MAY be defined in the provider's own constants class.
 - **FR-051**: Each provider adapter MUST emit structured `DEBUG`-level diagnostic log lines on every successful data-plane operation, capturing provider-native telemetry without requiring a failure to trigger diagnostics. At minimum:
+- **FR-052**: Every Java source file in all modules (main and test) MUST include the standard Microsoft MIT copyright header as the first two lines of the file:
+  ```
+  // Copyright (c) Microsoft Corporation. All rights reserved.
+  // Licensed under the MIT License.
+  ```
   - **Item operations** (`create`, `read`, `update`, `upsert`, `delete`): log the provider's request correlation ID and cost metric (Cosmos: `activityId` + `requestCharge` RU; DynamoDB: `requestId` + `capacityUnits`).
   - **Query operations**: log cost metric, result count for the page, and whether more pages exist.
   - Log output MUST NOT include secrets, credentials, or user document contents.
@@ -305,6 +310,7 @@ The following operators and functions form the portable query subset, available 
 - **SC-014**: A query with both `partitionKey` and a filter expression correctly scopes to the partition first, then applies the filter, on all supported providers.
 - **SC-017**: All operation name strings used in diagnostics, error context, and log lines across all provider adapters are sourced from `OperationNames` in `hyperscaledb-api`. No provider adapter re-declares a shared operation name string locally; duplicates that would cause log-correlation ambiguity are caught by `OperationNamesTest` at compile/test time.
 - **SC-018**: On every successful data-plane operation, the SDK emits a `DEBUG`-level diagnostic log line capturing the provider's native correlation ID and cost metric. A developer can correlate SDK log output with Azure portal Activity IDs or AWS CloudTrail request IDs without requiring a failure to trigger the diagnostic.
+- **SC-019**: Every Java source file (main and test) across all modules carries the standard Microsoft copyright header (`// Copyright (c) Microsoft Corporation. All rights reserved.` / `// Licensed under the MIT License.`) as its first two lines. This is verifiable by inspection of any file in the repository.
 
 ## Assumptions
 
@@ -326,6 +332,11 @@ The following operators and functions form the portable query subset, available 
 - Properties files containing credentials or connection secrets (e.g., `*.properties` with endpoint/key values) MUST be gitignored and MUST NOT be committed to source control. Template files (`*.properties.template`) with placeholder values are provided so users can copy them, fill in their credentials, and keep the result local-only.
 - Cleanup scripts for removing provider resources (containers, tables, databases) created during sample runs are provided under `hyperscaledb-samples/scripts/` for each supported provider, in both Bash and PowerShell variants.
 - Sample application output banners use fixed-width ASCII box-drawing characters (printable ASCII only, no Unicode box-drawing code points) to ensure consistent rendering across all terminal environments and operating systems.
+- Every Java source file in all modules (main and test) carries the standard Microsoft MIT copyright header as its first two lines. This applies to all 117 Java files across `hyperscaledb-api`, `hyperscaledb-conformance`, `hyperscaledb-provider-cosmos`, `hyperscaledb-provider-dynamo`, `hyperscaledb-provider-spanner`, and `hyperscaledb-samples`. The header is:
+  ```
+  // Copyright (c) Microsoft Corporation. All rights reserved.
+  // Licensed under the MIT License.
+  ```
 
 ## Acceptance Checklist
 
@@ -404,4 +415,5 @@ This checklist is used to accept the feature as “done” at the spec level.
 - [ ] A `.mend/mend.yml` suppression config documents false-positive CVE findings from the IDE Mend.io scanner, with justification for each suppression.
 - [ ] Properties template files (`*.properties.template`) are provided for each sample scenario, enabling users to copy and fill in credentials locally. Actual properties files containing credentials are gitignored and never committed.
 - [ ] Cleanup scripts (`cleanup-cosmos.sh`, `cleanup-cosmos.ps1`, `cleanup-dynamo.sh`, `cleanup-dynamo.ps1`) exist under `hyperscaledb-samples/scripts/` and successfully remove all provider resources created by sample runs.
+- [ ] Every Java source file (main and test) in all modules carries the standard Microsoft copyright header as the first two lines: `// Copyright (c) Microsoft Corporation. All rights reserved.` followed by `// Licensed under the MIT License.`
 

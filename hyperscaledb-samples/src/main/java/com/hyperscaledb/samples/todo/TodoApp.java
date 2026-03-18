@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.samples.todo;
 
 import com.hyperscaledb.api.*;
@@ -156,7 +159,7 @@ public class TodoApp {
         try {
             switch (method) {
                 case "GET" -> {
-                    if (id != null && !id.isEmpty()) {
+                    if (id != null) {
                         JsonNode todo = getTodo(id);
                         if (todo == null) {
                             sendJson(exchange, 404,
@@ -180,7 +183,7 @@ public class TodoApp {
                     sendJson(exchange, 201, created);
                 }
                 case "PUT" -> {
-                    if (id == null || id.isEmpty()) {
+                    if (id == null) {
                         sendJson(exchange, 400,
                                 MAPPER.createObjectNode().put("error", "ID required"));
                         return;
@@ -195,7 +198,7 @@ public class TodoApp {
                     }
                 }
                 case "DELETE" -> {
-                    if (id == null || id.isEmpty()) {
+                    if (id == null) {
                         sendJson(exchange, 400,
                                 MAPPER.createObjectNode().put("error", "ID required"));
                         return;

@@ -1,7 +1,9 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.conformance.us2;
 
 import com.hyperscaledb.api.*;
-import com.hyperscaledb.conformance.ConformanceConfig;
 import com.hyperscaledb.conformance.ConformanceHarness;
 import org.junit.jupiter.api.Test;
 

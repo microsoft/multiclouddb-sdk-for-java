@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.provider.cosmos;
 
 import com.azure.cosmos.ConsistencyLevel;

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.samples.riskplatform.data;
 
 import com.hyperscaledb.api.Key;
