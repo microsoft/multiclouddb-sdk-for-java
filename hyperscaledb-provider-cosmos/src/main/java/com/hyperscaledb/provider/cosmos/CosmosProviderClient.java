@@ -43,7 +43,6 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final CosmosClient cosmosClient;
-    private final HyperscaleDbClientConfig config;
 
     // Management-plane client for provisioning (non-null only in cloud/RBAC mode)
     private final CosmosManager cosmosManager;
@@ -51,45 +50,37 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
     private final String accountName;
 
     public CosmosProviderClient(HyperscaleDbClientConfig config) {
-        this.config = config;
-        String endpoint = config.connection().get("endpoint");
-        String key = config.connection().get("key");
+        String endpoint = config.connection().get(CosmosConstants.CONFIG_ENDPOINT);
+        String key      = config.connection().get(CosmosConstants.CONFIG_KEY);
 
         if (endpoint == null || endpoint.isBlank()) {
-            throw new IllegalArgumentException("Cosmos connection.endpoint is required");
+            throw new IllegalArgumentException(CosmosConstants.ERR_ENDPOINT_REQUIRED);
         }
 
         CosmosClientBuilder builder = new CosmosClientBuilder()
                 .endpoint(endpoint)
-                .consistencyLevel(ConsistencyLevel.SESSION)
+                .consistencyLevel(CosmosConstants.CONSISTENCY_LEVEL_DEFAULT)
                 .contentResponseOnWriteEnabled(true);
 
-        // Authenticate: key-based if key is provided, otherwise DefaultAzureCredential
         if (key != null && !key.isBlank()) {
             builder.key(key);
             LOG.info("Cosmos client using key-based authentication");
-            this.cosmosManager = null;
+            this.cosmosManager    = null;
             this.resourceGroupName = null;
-            this.accountName = null;
+            this.accountName       = null;
         } else {
-            // Optional tenantId — when set, pins both the credential and the ARM profile
-            // to the correct tenant, avoiding InvalidAuthenticationTokenTenant (401) errors.
-            String tenantId = config.connection().get("tenantId");
+            String tenantId = config.connection().get(CosmosConstants.CONFIG_TENANT_ID);
             DefaultAzureCredentialBuilder credentialBuilder = new DefaultAzureCredentialBuilder();
             if (tenantId != null && !tenantId.isBlank()) {
                 credentialBuilder.tenantId(tenantId);
             }
             TokenCredential credential = credentialBuilder.build();
             builder.credential(credential);
-            LOG.info(
-                    "Cosmos client using DefaultAzureCredential (supports Managed Identity, Azure CLI, environment variables)");
+            LOG.info("Cosmos client using DefaultAzureCredential (supports Managed Identity, Azure CLI, environment variables)");
 
-            // Initialise the ARM management client for provisioning (create DB /
-            // containers)
-            // because Cosmos data-plane RBAC does not support control-plane operations.
-            String subscriptionId = config.connection().get("subscriptionId");
-            this.resourceGroupName = config.connection().get("resourceGroupName");
-            this.accountName = extractAccountName(endpoint);
+            String subscriptionId   = config.connection().get(CosmosConstants.CONFIG_SUBSCRIPTION_ID);
+            this.resourceGroupName  = config.connection().get(CosmosConstants.CONFIG_RESOURCE_GROUP);
+            this.accountName        = extractAccountName(endpoint);
 
             if (subscriptionId != null && resourceGroupName != null && accountName != null) {
                 AzureProfile profile = new AzureProfile(tenantId, subscriptionId, AzureEnvironment.AZURE);
@@ -103,9 +94,9 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             }
         }
 
-        // Use gateway mode for emulator compatibility; direct mode for production
-        String connectionMode = config.connection().getOrDefault("connectionMode", "gateway");
-        if ("direct".equalsIgnoreCase(connectionMode)) {
+        String connectionMode = config.connection().getOrDefault(
+                CosmosConstants.CONFIG_CONNECTION_MODE, CosmosConstants.CONNECTION_MODE_DEFAULT);
+        if (CosmosConstants.CONNECTION_MODE_DIRECT.equalsIgnoreCase(connectionMode)) {
             builder.directMode();
         } else {
             builder.gatewayMode();
@@ -119,12 +110,9 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
     public void create(ResourceAddress address, Key key, JsonNode document, OperationOptions options) {
         try {
             CosmosContainer container = getContainer(address);
-
-            // Merge key fields into document
             ObjectNode doc = document.isObject() ? (ObjectNode) document.deepCopy() : MAPPER.createObjectNode();
-            doc.put("id", key.sortKey() != null ? key.sortKey() : key.partitionKey());
-            doc.put("partitionKey", key.partitionKey());
-
+            doc.put(CosmosConstants.FIELD_ID, key.sortKey() != null ? key.sortKey() : key.partitionKey());
+            doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
             PartitionKey pk = resolvePartitionKey(key);
             container.createItem(doc, pk, new CosmosItemRequestOptions());
         } catch (CosmosException e) {
@@ -137,10 +125,8 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
         try {
             CosmosContainer container = getContainer(address);
             PartitionKey pk = resolvePartitionKey(key);
-
             String cosmosId = key.sortKey() != null ? key.sortKey() : key.partitionKey();
-            CosmosItemResponse<JsonNode> response = container.readItem(
-                    cosmosId, pk, JsonNode.class);
+            CosmosItemResponse<JsonNode> response = container.readItem(cosmosId, pk, JsonNode.class);
             return response.getItem();
         } catch (CosmosException e) {
             if (e.getStatusCode() == 404) {
@@ -154,13 +140,10 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
     public void update(ResourceAddress address, Key key, JsonNode document, OperationOptions options) {
         try {
             CosmosContainer container = getContainer(address);
-
-            // Merge key fields into document
             ObjectNode doc = document.isObject() ? (ObjectNode) document.deepCopy() : MAPPER.createObjectNode();
             String cosmosId = key.sortKey() != null ? key.sortKey() : key.partitionKey();
-            doc.put("id", cosmosId);
-            doc.put("partitionKey", key.partitionKey());
-
+            doc.put(CosmosConstants.FIELD_ID, cosmosId);
+            doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
             PartitionKey pk = resolvePartitionKey(key);
             container.replaceItem(doc, cosmosId, pk, new CosmosItemRequestOptions());
         } catch (CosmosException e) {
@@ -172,12 +155,9 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
     public void upsert(ResourceAddress address, Key key, JsonNode document, OperationOptions options) {
         try {
             CosmosContainer container = getContainer(address);
-
-            // Merge key fields into document
             ObjectNode doc = document.isObject() ? (ObjectNode) document.deepCopy() : MAPPER.createObjectNode();
-            doc.put("id", key.sortKey() != null ? key.sortKey() : key.partitionKey());
-            doc.put("partitionKey", key.partitionKey());
-
+            doc.put(CosmosConstants.FIELD_ID, key.sortKey() != null ? key.sortKey() : key.partitionKey());
+            doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
             PartitionKey pk = resolvePartitionKey(key);
             container.upsertItem(doc, pk, new CosmosItemRequestOptions());
         } catch (CosmosException e) {
@@ -194,7 +174,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             container.deleteItem(cosmosId, pk, new CosmosItemRequestOptions());
         } catch (CosmosException e) {
             if (e.getStatusCode() == 404) {
-                return; // Delete is idempotent
+                return;
             }
             throw CosmosErrorMapper.map(e, "delete");
         }
@@ -204,7 +184,6 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
     public QueryPage query(ResourceAddress address, QueryRequest query, OperationOptions options) {
         try {
             CosmosContainer container = getContainer(address);
-
             CosmosQueryRequestOptions queryOptions = new CosmosQueryRequestOptions();
             if (query.partitionKey() != null) {
                 queryOptions.setPartitionKey(new PartitionKey(query.partitionKey()));
@@ -213,25 +192,23 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
                 queryOptions.setMaxBufferedItemCount(query.pageSize());
             }
 
-            // Native expression passthrough
             String expression = query.nativeExpression() != null ? query.nativeExpression() : query.expression();
             if (expression == null || expression.isBlank()) {
-                expression = "SELECT * FROM c";
+                expression = CosmosConstants.QUERY_SELECT_ALL;
             }
 
-            // Build SqlQuerySpec with parameters
             List<SqlParameter> sqlParams = new ArrayList<>();
             if (query.parameters() != null) {
                 for (Map.Entry<String, Object> entry : query.parameters().entrySet()) {
-                    String paramName = entry.getKey().startsWith("@") ? entry.getKey() : "@" + entry.getKey();
+                    String paramName = entry.getKey().startsWith(CosmosConstants.QUERY_PARAM_PREFIX)
+                            ? entry.getKey()
+                            : CosmosConstants.QUERY_PARAM_PREFIX + entry.getKey();
                     sqlParams.add(new SqlParameter(paramName, entry.getValue()));
                 }
             }
 
             SqlQuerySpec sqlQuery = new SqlQuerySpec(expression, sqlParams);
-
-            // Execute query with paging
-            int pageSize = query.pageSize() != null ? query.pageSize() : 100;
+            int pageSize = query.pageSize() != null ? query.pageSize() : CosmosConstants.PAGE_SIZE_DEFAULT;
             List<JsonNode> items = new ArrayList<>();
             String continuationToken = null;
 
@@ -244,11 +221,10 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
                         .iterableByPage(pageSize);
             }
 
-            // Take only the first page
             for (FeedResponse<JsonNode> page : pages) {
                 items.addAll(page.getResults());
                 continuationToken = page.getContinuationToken();
-                break; // Only one page per call
+                break;
             }
 
             return new QueryPage(items, continuationToken);
@@ -262,7 +238,6 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             QueryRequest query, OperationOptions options) {
         try {
             CosmosContainer container = getContainer(address);
-
             CosmosQueryRequestOptions queryOptions = new CosmosQueryRequestOptions();
             if (query.partitionKey() != null) {
                 queryOptions.setPartitionKey(new PartitionKey(query.partitionKey()));
@@ -271,15 +246,13 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
                 queryOptions.setMaxBufferedItemCount(query.pageSize());
             }
 
-            // Build SqlQuerySpec from translated query
             List<SqlParameter> sqlParams = new ArrayList<>();
             for (Map.Entry<String, Object> entry : translated.namedParameters().entrySet()) {
                 sqlParams.add(new SqlParameter(entry.getKey(), entry.getValue()));
             }
 
             SqlQuerySpec sqlQuery = new SqlQuerySpec(translated.queryString(), sqlParams);
-
-            int pageSize = query.pageSize() != null ? query.pageSize() : 100;
+            int pageSize = query.pageSize() != null ? query.pageSize() : CosmosConstants.PAGE_SIZE_DEFAULT;
             List<JsonNode> items = new ArrayList<>();
             String continuationToken = null;
 
@@ -333,8 +306,6 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
     @Override
     public void ensureDatabase(String database) {
         if (cosmosManager != null) {
-            // Check existence first — ARM createUpdate is a long-running deployment (~30-60s).
-            // Skipping it when the resource already exists makes provisioning near-instant.
             try {
                 cosmosManager.serviceClient()
                         .getSqlResources()
@@ -349,9 +320,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             cosmosManager.serviceClient()
                     .getSqlResources()
                     .createUpdateSqlDatabase(
-                            resourceGroupName,
-                            accountName,
-                            database,
+                            resourceGroupName, accountName, database,
                             new SqlDatabaseCreateUpdateParameters()
                                     .withResource(new SqlDatabaseResource().withId(database)),
                             com.azure.core.util.Context.NONE);
@@ -369,41 +338,37 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
     @Override
     public void ensureContainer(ResourceAddress address) {
         if (cosmosManager != null) {
-            // Check existence first — ARM createUpdate is a long-running deployment (~30-60s).
-            // Skipping it when the resource already exists makes provisioning near-instant.
             try {
                 cosmosManager.serviceClient()
                         .getSqlResources()
                         .getSqlContainer(resourceGroupName, accountName,
                                 address.database(), address.collection());
-                LOG.info("Cosmos container already exists, skipping create: {}/{}", address.database(), address.collection());
+                LOG.info("Cosmos container already exists, skipping create: {}/{}",
+                        address.database(), address.collection());
                 return;
             } catch (com.azure.core.management.exception.ManagementException e) {
                 if (e.getResponse() != null && e.getResponse().getStatusCode() != 404) {
                     throw e;
                 }
             }
-            // Use ARM control-plane to create the container — avoids the data-plane AAD
-            // restriction (subStatus 5300) when native RBAC is enforced on the account.
             cosmosManager.serviceClient()
                     .getSqlResources()
                     .createUpdateSqlContainer(
-                            resourceGroupName,
-                            accountName,
-                            address.database(),
-                            address.collection(),
+                            resourceGroupName, accountName,
+                            address.database(), address.collection(),
                             new SqlContainerCreateUpdateParameters()
                                     .withResource(new SqlContainerResource()
                                             .withId(address.collection())
                                             .withPartitionKey(new ContainerPartitionKey()
-                                                    .withPaths(List.of(PARTITION_KEY_PATH)))),
+                                                    .withPaths(List.of(CosmosConstants.PARTITION_KEY_PATH)))),
                             com.azure.core.util.Context.NONE);
-            LOG.info("Ensured Cosmos container via management SDK: {}/{}", address.database(), address.collection());
+            LOG.info("Ensured Cosmos container via management SDK: {}/{}",
+                    address.database(), address.collection());
         } else {
             try {
                 CosmosDatabase db = cosmosClient.getDatabase(address.database());
                 CosmosContainerProperties props = new CosmosContainerProperties(
-                        address.collection(), PARTITION_KEY_PATH);
+                        address.collection(), CosmosConstants.PARTITION_KEY_PATH);
                 db.createContainerIfNotExists(props);
                 LOG.info("Ensured Cosmos container: {}/{}", address.database(), address.collection());
             } catch (CosmosException e) {
@@ -412,11 +377,6 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
-    /**
-     * Cosmos partition key path (matches key.partitionKey() → "partitionKey"
-     * field).
-     */
-    private static final String PARTITION_KEY_PATH = "/partitionKey";
 
     private CosmosContainer getContainer(ResourceAddress address) {
         CosmosDatabase database = cosmosClient.getDatabase(address.database());

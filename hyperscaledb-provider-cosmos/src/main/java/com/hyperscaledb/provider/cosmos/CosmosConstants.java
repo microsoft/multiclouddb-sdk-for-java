@@ -1,0 +1,87 @@
+package com.hyperscaledb.provider.cosmos;
+
+import com.azure.cosmos.ConsistencyLevel;
+
+/**
+ * All hardcoded string keys, values, and numeric constants used by the
+ * Cosmos DB provider in one place.
+ * <p>
+ * Using this class avoids magic strings scattered across the implementation
+ * and makes every tunable value easy to find and change.
+ */
+public final class CosmosConstants {
+
+    private CosmosConstants() {}
+
+    // ── Config property keys (match properties file / System property names) ─
+
+    /** Connection config key for the Cosmos DB endpoint URL. */
+    public static final String CONFIG_ENDPOINT = "endpoint";
+
+    /** Connection config key for the Cosmos DB master key (optional — omit for Entra ID). */
+    public static final String CONFIG_KEY = "key";
+
+    /** Connection config key for the Azure tenant ID. */
+    public static final String CONFIG_TENANT_ID = "tenantId";
+
+    /** Connection config key for the Azure subscription ID. */
+    public static final String CONFIG_SUBSCRIPTION_ID = "subscriptionId";
+
+    /** Connection config key for the Azure resource group name. */
+    public static final String CONFIG_RESOURCE_GROUP = "resourceGroupName";
+
+    /** Connection config key for the connection mode ({@code direct} or {@code gateway}). */
+    public static final String CONFIG_CONNECTION_MODE = "connectionMode";
+
+    // ── Connection mode values ────────────────────────────────────────────────
+
+    /** Gateway connection mode — recommended for emulator and restricted networks. */
+    public static final String CONNECTION_MODE_GATEWAY = "gateway";
+
+    /** Direct connection mode — lower latency, recommended for production. */
+    public static final String CONNECTION_MODE_DIRECT = "direct";
+
+    /** Default connection mode applied when {@code connectionMode} is not configured. */
+    public static final String CONNECTION_MODE_DEFAULT = CONNECTION_MODE_GATEWAY;
+
+    // ── Consistency ───────────────────────────────────────────────────────────
+
+    /**
+     * Default consistency level.
+     * SESSION guarantees read-your-own-writes within a session and is the
+     * recommended default for most application workloads.
+     */
+    public static final ConsistencyLevel CONSISTENCY_LEVEL_DEFAULT = ConsistencyLevel.SESSION;
+
+    // ── Document field names ──────────────────────────────────────────────────
+
+    /** The {@code id} field required by every Cosmos DB document. */
+    public static final String FIELD_ID = "id";
+
+    /** The partition key field name used in every document and container definition. */
+    public static final String FIELD_PARTITION_KEY = "partitionKey";
+
+    // ── Partition key ─────────────────────────────────────────────────────────
+
+    /** JSON path of the partition key field in every Cosmos container. */
+    public static final String PARTITION_KEY_PATH = "/" + FIELD_PARTITION_KEY;
+
+    // ── Paging ────────────────────────────────────────────────────────────────
+
+    /** Default page size used when the caller does not specify one. */
+    public static final int PAGE_SIZE_DEFAULT = 100;
+
+    // ── Query ─────────────────────────────────────────────────────────────────
+
+    /** Fallback SQL expression returned when no filter is specified. */
+    public static final String QUERY_SELECT_ALL = "SELECT * FROM c";
+
+    /** Prefix for named query parameters in Cosmos SQL. */
+    public static final String QUERY_PARAM_PREFIX = "@";
+
+    // ── Error / validation messages ───────────────────────────────────────────
+
+    /** Error message thrown when the endpoint config key is missing or blank. */
+    public static final String ERR_ENDPOINT_REQUIRED = "Cosmos connection.endpoint is required";
+}
+

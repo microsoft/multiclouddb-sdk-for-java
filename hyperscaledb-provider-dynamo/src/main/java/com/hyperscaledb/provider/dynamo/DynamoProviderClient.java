@@ -11,8 +11,6 @@ import com.hyperscaledb.api.ResourceAddress;
 import com.hyperscaledb.api.query.TranslatedQuery;
 import com.hyperscaledb.spi.HyperscaleDbProviderClient;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -22,7 +20,6 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClientBuilder;
 import software.amazon.awssdk.services.dynamodb.model.AttributeDefinition;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
-import software.amazon.awssdk.services.dynamodb.model.BillingMode;
 import software.amazon.awssdk.services.dynamodb.model.CreateTableRequest;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.DynamoDbException;
@@ -37,7 +34,6 @@ import software.amazon.awssdk.services.dynamodb.model.DescribeTableRequest;
 import software.amazon.awssdk.services.dynamodb.model.DescribeTableResponse;
 import software.amazon.awssdk.services.dynamodb.model.ResourceInUseException;
 import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
-import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
 import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
 import software.amazon.awssdk.services.dynamodb.model.ScanResponse;
 import software.amazon.awssdk.services.dynamodb.model.TableStatus;
@@ -64,24 +60,13 @@ import java.util.*;
 public class DynamoProviderClient implements HyperscaleDbProviderClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(DynamoProviderClient.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-
-    /** DynamoDB attribute name for the partition/hash key (data distribution). */
-    static final String ATTR_PARTITION_KEY = "partitionKey";
-    /**
-     * DynamoDB attribute name for the sort/range key (item identifier within
-     * partition).
-     */
-    static final String ATTR_SORT_KEY = "sortKey";
 
     private final DynamoDbClient dynamoClient;
-    private final HyperscaleDbClientConfig config;
 
     public DynamoProviderClient(HyperscaleDbClientConfig config) {
-        this.config = config;
 
-        String region = config.connection().getOrDefault("region", "us-east-1");
-        String endpoint = config.connection().get("endpoint");
+        String region   = config.connection().getOrDefault(DynamoConstants.CONFIG_REGION, DynamoConstants.REGION_DEFAULT);
+        String endpoint = config.connection().get(DynamoConstants.CONFIG_ENDPOINT);
 
         DynamoDbClientBuilder builder = DynamoDbClient.builder()
                 .region(Region.of(region));
@@ -92,8 +77,8 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
         }
 
         // Explicit credentials (required for DynamoDB Local)
-        String accessKey = config.auth().get("accessKeyId");
-        String secretKey = config.auth().get("secretAccessKey");
+        String accessKey = config.auth().get(DynamoConstants.CONFIG_ACCESS_KEY_ID);
+        String secretKey = config.auth().get(DynamoConstants.CONFIG_SECRET_ACCESS_KEY);
         if (accessKey != null && secretKey != null) {
             builder.credentialsProvider(
                     StaticCredentialsProvider.create(
@@ -109,14 +94,14 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
     public void create(ResourceAddress address, Key key, JsonNode document, OperationOptions options) {
         try {
             Map<String, AttributeValue> item = DynamoItemMapper.jsonNodeToAttributeMap(document);
-            item.put(ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
-            item.put(ATTR_SORT_KEY, AttributeValue.fromS(
+            item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
+            item.put(DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(
                     key.sortKey() != null ? key.sortKey() : key.partitionKey()));
 
             PutItemRequest request = PutItemRequest.builder()
                     .tableName(resolveTableName(address))
                     .item(item)
-                    .conditionExpression("attribute_not_exists(" + ATTR_PARTITION_KEY + ")")
+                    .conditionExpression("attribute_not_exists(" + DynamoConstants.ATTR_PARTITION_KEY + ")")
                     .build();
 
             dynamoClient.putItem(request);
@@ -129,8 +114,8 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
     public JsonNode read(ResourceAddress address, Key key, OperationOptions options) {
         try {
             Map<String, AttributeValue> keyMap = new LinkedHashMap<>();
-            keyMap.put(ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
-            keyMap.put(ATTR_SORT_KEY, AttributeValue.fromS(
+            keyMap.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
+            keyMap.put(DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(
                     key.sortKey() != null ? key.sortKey() : key.partitionKey()));
 
             GetItemRequest request = GetItemRequest.builder()
@@ -153,14 +138,14 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
     public void update(ResourceAddress address, Key key, JsonNode document, OperationOptions options) {
         try {
             Map<String, AttributeValue> item = DynamoItemMapper.jsonNodeToAttributeMap(document);
-            item.put(ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
-            item.put(ATTR_SORT_KEY, AttributeValue.fromS(
+            item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
+            item.put(DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(
                     key.sortKey() != null ? key.sortKey() : key.partitionKey()));
 
             PutItemRequest request = PutItemRequest.builder()
                     .tableName(resolveTableName(address))
                     .item(item)
-                    .conditionExpression("attribute_exists(" + ATTR_PARTITION_KEY + ")")
+                    .conditionExpression("attribute_exists(" + DynamoConstants.ATTR_PARTITION_KEY + ")")
                     .build();
 
             dynamoClient.putItem(request);
@@ -173,8 +158,8 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
     public void upsert(ResourceAddress address, Key key, JsonNode document, OperationOptions options) {
         try {
             Map<String, AttributeValue> item = DynamoItemMapper.jsonNodeToAttributeMap(document);
-            item.put(ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
-            item.put(ATTR_SORT_KEY, AttributeValue.fromS(
+            item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
+            item.put(DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(
                     key.sortKey() != null ? key.sortKey() : key.partitionKey()));
 
             PutItemRequest request = PutItemRequest.builder()
@@ -192,8 +177,8 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
     public void delete(ResourceAddress address, Key key, OperationOptions options) {
         try {
             Map<String, AttributeValue> keyMap = new LinkedHashMap<>();
-            keyMap.put(ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
-            keyMap.put(ATTR_SORT_KEY, AttributeValue.fromS(
+            keyMap.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
+            keyMap.put(DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(
                     key.sortKey() != null ? key.sortKey() : key.partitionKey()));
 
             DeleteItemRequest request = DeleteItemRequest.builder()
@@ -211,7 +196,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
     public QueryPage query(ResourceAddress address, QueryRequest query, OperationOptions options) {
         try {
             String tableName = resolveTableName(address);
-            int pageSize = query.pageSize() != null ? query.pageSize() : 100;
+            int pageSize = query.pageSize() != null ? query.pageSize() : DynamoConstants.PAGE_SIZE_DEFAULT;
 
             // Deserialize continuation token if present
             Map<String, AttributeValue> exclusiveStartKey = null;
@@ -226,23 +211,21 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
                 if (query.partitionKey() != null) {
                     stmt = appendPartitionKeyCondition(stmt);
                     LinkedHashMap<String, Object> combined = new LinkedHashMap<>();
-                    if (params != null) {
-                        combined.putAll(params);
-                    }
-                    combined.put("_pkval", query.partitionKey());
+                    if (params != null) combined.putAll(params);
+                    combined.put(DynamoConstants.QUERY_PARTITION_KEY_PARAM, query.partitionKey());
                     params = combined;
                 }
-                return executePartiQL(stmt, params, tableName, pageSize, query.continuationToken());
+                return executePartiQL(stmt, params, pageSize, query.continuationToken());
             }
 
             // If expression is null/blank or the generic "SELECT * FROM c", do full scan
             if (query.expression() == null || query.expression().isBlank()
-                    || query.expression().trim().equalsIgnoreCase("SELECT * FROM c")) {
+                    || query.expression().trim().equalsIgnoreCase(DynamoConstants.QUERY_SELECT_ALL_COSMOS)) {
                 if (query.partitionKey() != null) {
                     // Scope scan to items with matching partition key (hash key)
                     return executeScanWithFilter(tableName,
-                            ATTR_PARTITION_KEY + " = :_pkval",
-                            Map.of(":_pkval", query.partitionKey()),
+                            DynamoConstants.SCAN_PARTITION_KEY_CONDITION,
+                            Map.of(DynamoConstants.QUERY_PARTITION_KEY_PARAM, query.partitionKey()),
                             pageSize, exclusiveStartKey);
                 }
                 return executeScan(tableName, pageSize, exclusiveStartKey);
@@ -250,12 +233,11 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
 
             // Legacy: use expression as Scan filter (backward compat)
             if (query.partitionKey() != null) {
-                String filter = ATTR_PARTITION_KEY + " = :_pkval AND " + query.expression();
+                String filter = DynamoConstants.ATTR_PARTITION_KEY + " = " + DynamoConstants.SCAN_PARTITION_KEY_PARAM
+                        + " AND " + query.expression();
                 Map<String, Object> combined = new LinkedHashMap<>();
-                if (query.parameters() != null) {
-                    combined.putAll(query.parameters());
-                }
-                combined.put(":_pkval", query.partitionKey());
+                if (query.parameters() != null) combined.putAll(query.parameters());
+                combined.put(DynamoConstants.QUERY_PARTITION_KEY_PARAM, query.partitionKey());
                 return executeScanWithFilter(tableName, filter, combined, pageSize, exclusiveStartKey);
             }
             return executeScanWithFilter(tableName, query.expression(), query.parameters(),
@@ -272,7 +254,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
     public QueryPage queryWithTranslation(ResourceAddress address, TranslatedQuery translated,
             QueryRequest query, OperationOptions options) {
         try {
-            int pageSize = query.pageSize() != null ? query.pageSize() : 100;
+            int pageSize = query.pageSize() != null ? query.pageSize() : DynamoConstants.PAGE_SIZE_DEFAULT;
             List<AttributeValue> params = new ArrayList<>();
             for (Object val : translated.positionalParameters()) {
                 params.add(DynamoItemMapper.toAttributeValue(val));
@@ -297,9 +279,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
                     .statement(stmt)
                     .limit(pageSize);
 
-            if (!params.isEmpty()) {
-                stmtBuilder.parameters(params);
-            }
+            if (!params.isEmpty()) stmtBuilder.parameters(params);
             if (query.continuationToken() != null && !query.continuationToken().isBlank()) {
                 stmtBuilder.nextToken(query.continuationToken());
             }
@@ -311,15 +291,14 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
                 items.add(DynamoItemMapper.attributeMapToJsonNode(item));
             }
 
-            String continuationToken = response.nextToken();
-            return new QueryPage(items, continuationToken);
+            return new QueryPage(items, response.nextToken());
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, "query");
         }
     }
 
     private QueryPage executePartiQL(String statement, Map<String, Object> parameters,
-            String tableName, int pageSize, String nextToken) {
+            int pageSize, String nextToken) {
         List<AttributeValue> params = new ArrayList<>();
         if (parameters != null) {
             for (Object val : parameters.values()) {
@@ -331,12 +310,8 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
                 .statement(statement)
                 .limit(pageSize);
 
-        if (!params.isEmpty()) {
-            stmtBuilder.parameters(params);
-        }
-        if (nextToken != null && !nextToken.isBlank()) {
-            stmtBuilder.nextToken(nextToken);
-        }
+        if (!params.isEmpty()) stmtBuilder.parameters(params);
+        if (nextToken != null && !nextToken.isBlank()) stmtBuilder.nextToken(nextToken);
 
         ExecuteStatementResponse response = dynamoClient.executeStatement(stmtBuilder.build());
 
@@ -354,10 +329,10 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
      * PartiQL statement so the query is scoped to a single partition key value.
      */
     private String appendPartitionKeyCondition(String stmt) {
-        if (stmt.toUpperCase().contains("WHERE")) {
-            return stmt + " AND \"" + ATTR_PARTITION_KEY + "\" = ?";
+        if (stmt.toUpperCase().contains(DynamoConstants.SQL_WHERE)) {
+            return stmt + " AND " + DynamoConstants.PARTIQL_PARTITION_KEY_CONDITION;
         }
-        return stmt + " WHERE \"" + ATTR_PARTITION_KEY + "\" = ?";
+        return stmt + " WHERE " + DynamoConstants.PARTIQL_PARTITION_KEY_CONDITION;
     }
 
     private QueryPage executeScan(String tableName, int pageSize,
@@ -366,9 +341,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
                 .tableName(tableName)
                 .limit(pageSize);
 
-        if (exclusiveStartKey != null) {
-            scanBuilder.exclusiveStartKey(exclusiveStartKey);
-        }
+        if (exclusiveStartKey != null) scanBuilder.exclusiveStartKey(exclusiveStartKey);
 
         ScanResponse response = dynamoClient.scan(scanBuilder.build());
         List<JsonNode> items = new ArrayList<>();
@@ -389,7 +362,9 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
         Map<String, AttributeValue> expressionValues = new LinkedHashMap<>();
         if (parameters != null) {
             for (Map.Entry<String, Object> entry : parameters.entrySet()) {
-                String paramName = entry.getKey().startsWith(":") ? entry.getKey() : ":" + entry.getKey();
+                String paramName = entry.getKey().startsWith(DynamoConstants.FILTER_PARAM_PREFIX)
+                        ? entry.getKey()
+                        : DynamoConstants.FILTER_PARAM_PREFIX + entry.getKey();
                 expressionValues.put(paramName, DynamoItemMapper.toAttributeValue(entry.getValue()));
             }
         }
@@ -399,12 +374,8 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
                 .filterExpression(filterExpression)
                 .limit(pageSize);
 
-        if (!expressionValues.isEmpty()) {
-            scanBuilder.expressionAttributeValues(expressionValues);
-        }
-        if (exclusiveStartKey != null) {
-            scanBuilder.exclusiveStartKey(exclusiveStartKey);
-        }
+        if (!expressionValues.isEmpty()) scanBuilder.expressionAttributeValues(expressionValues);
+        if (exclusiveStartKey != null) scanBuilder.exclusiveStartKey(exclusiveStartKey);
 
         ScanResponse response = dynamoClient.scan(scanBuilder.build());
         List<JsonNode> items = new ArrayList<>();
@@ -499,23 +470,23 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
                 .tableName(tableName)
                 .keySchema(
                         KeySchemaElement.builder()
-                                .attributeName(ATTR_PARTITION_KEY)
+                                .attributeName(DynamoConstants.ATTR_PARTITION_KEY)
                                 .keyType(KeyType.HASH)
                                 .build(),
                         KeySchemaElement.builder()
-                                .attributeName(ATTR_SORT_KEY)
+                                .attributeName(DynamoConstants.ATTR_SORT_KEY)
                                 .keyType(KeyType.RANGE)
                                 .build())
                 .attributeDefinitions(
                         AttributeDefinition.builder()
-                                .attributeName(ATTR_PARTITION_KEY)
-                                .attributeType(ScalarAttributeType.S)
+                                .attributeName(DynamoConstants.ATTR_PARTITION_KEY)
+                                .attributeType(DynamoConstants.KEY_ATTRIBUTE_TYPE)
                                 .build(),
                         AttributeDefinition.builder()
-                                .attributeName(ATTR_SORT_KEY)
-                                .attributeType(ScalarAttributeType.S)
+                                .attributeName(DynamoConstants.ATTR_SORT_KEY)
+                                .attributeType(DynamoConstants.KEY_ATTRIBUTE_TYPE)
                                 .build())
-                .billingMode(BillingMode.PAY_PER_REQUEST)
+                .billingMode(DynamoConstants.TABLE_BILLING_MODE)
                 .build();
 
         dynamoClient.createTable(request);
@@ -541,6 +512,6 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
      * uniformly, and each provider maps it to its physical storage model.
      */
     private String resolveTableName(ResourceAddress address) {
-        return address.database() + "__" + address.collection();
+        return address.database() + DynamoConstants.TABLE_NAME_SEPARATOR + address.collection();
     }
 }
