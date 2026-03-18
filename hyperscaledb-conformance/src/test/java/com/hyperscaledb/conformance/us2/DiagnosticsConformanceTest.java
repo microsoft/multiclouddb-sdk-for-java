@@ -2,8 +2,9 @@ package com.hyperscaledb.conformance.us2;
 
 import com.hyperscaledb.api.*;
 import com.hyperscaledb.conformance.ConformanceConfig;
-import com.hyperscaledb.conformance.ConformanceHarness;
 import org.junit.jupiter.api.*;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -21,13 +22,11 @@ public abstract class DiagnosticsConformanceTest {
     protected abstract ProviderId providerId();
 
     private HyperscaleDbClient client;
-    private ResourceAddress address;
 
     @BeforeEach
     void setUp() {
         HyperscaleDbClientConfig config = ConformanceConfig.forProvider(providerId());
         client = HyperscaleDbClientFactory.create(config);
-        address = ConformanceHarness.defaultAddress(providerId());
     }
 
     @AfterEach
@@ -88,10 +87,41 @@ public abstract class DiagnosticsConformanceTest {
                     OperationOptions.defaults());
         } catch (HyperscaleDbException e) {
             if (e.diagnostics() != null) {
-                assertEquals("upsert", e.diagnostics().operation());
+                assertEquals(OperationNames.UPSERT, e.diagnostics().operation(),
+                        "Diagnostics operation name must match OperationNames.UPSERT");
             }
-            // Also verify error-level operation
             assertNotNull(e.error().operation());
+        }
+    }
+
+    @Test
+    @Order(4)
+    @DisplayName("Error operation name for delete matches OperationNames.DELETE")
+    void deleteErrorOperationName() {
+        ResourceAddress badAddress = new ResourceAddress("nonexistent-db-12345", "nonexistent-collection-12345");
+        try {
+            client.delete(badAddress, Key.of("no-key", "no-key"), OperationOptions.defaults());
+        } catch (HyperscaleDbException e) {
+            if (e.diagnostics() != null) {
+                assertEquals(OperationNames.DELETE, e.diagnostics().operation(),
+                        "Diagnostics operation name must match OperationNames.DELETE");
+            }
+        }
+    }
+
+    @Test
+    @Order(5)
+    @DisplayName("All shared operation name constants are non-null and non-blank")
+    void sharedOperationNamesNonBlank() {
+        List<String> all = List.of(
+                OperationNames.CREATE, OperationNames.READ, OperationNames.UPDATE,
+                OperationNames.UPSERT, OperationNames.DELETE, OperationNames.QUERY,
+                OperationNames.QUERY_WITH_TRANSLATION,
+                OperationNames.ENSURE_DATABASE, OperationNames.ENSURE_CONTAINER
+        );
+        for (String name : all) {
+            assertNotNull(name);
+            assertFalse(name.isBlank(), "Operation name '" + name + "' must not be blank");
         }
     }
 }

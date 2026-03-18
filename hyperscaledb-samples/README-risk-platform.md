@@ -41,8 +41,17 @@ dark-themed executive dashboard for portfolio risk analytics.
     - [Install Maven](#install-maven)
     - [Install Azure CLI](#install-azure-cli)
       - [Azure Setup for Option C](#azure-setup-for-option-c)
+        - [Create the Cosmos DB Properties File](#create-the-cosmos-db-properties-file)
+        - [Sign In and Collect Credential Values](#sign-in-and-collect-credential-values)
+        - [Grant the Cosmos DB Data-Plane RBAC Role](#grant-the-cosmos-db-data-plane-rbac-role)
+        - [Verify Azure Prerequisites](#verify-azure-prerequisites)
     - [Install AWS CLI](#install-aws-cli)
       - [AWS Setup for Option D](#aws-setup-for-option-d)
+        - [Create the DynamoDB Properties File](#create-the-dynamodb-properties-file)
+        - [AWS Regions](#aws-regions)
+        - [Configure AWS Credentials](#configure-aws-credentials)
+        - [Create an IAM User and Access Key](#create-an-iam-user-and-access-key)
+        - [AWS SSO Alternative](#aws-sso-alternative-no-long-lived-keys)
     - [Install OpenSSL (Windows)](#install-openssl-windows-only--needed-for-option-a)
     - [Install Node.js (optional)](#install-nodejs-optional--for-dynamodb-admin-gui)
 
@@ -273,38 +282,15 @@ Expected output ends with:
 
 #### A0 — Prerequisites
 
-| Requirement | Needed? | Notes |
-|-------------|---------|-------|
-| JDK 17      | Yes     | Already installed if you completed Step 0 (do **not** use JDK 18+) |
-| Maven 3.9+  | Yes     | Already installed if you completed Step 1 |
-| `openssl`   | Yes     | For exporting the emulator's TLS certificate (pre-installed on macOS/Linux; on Windows, bundled with Git for Windows or install via `winget install ShiningLight.OpenSSL`) |
-| `keytool`   | Yes     | Bundled with JDK — available on PATH if JAVA_HOME is set |
-| Azure CLI   | **No**  | Not needed for local emulator |
-| Azure subscription | **No** | Not needed for local emulator |
+Before starting, make sure the following are in place:
 
-Verify `openssl` and `keytool` are available before proceeding:
+| Requirement | Status | Setup guide |
+|-------------|--------|-------------|
+| JDK 17 | Required | [Install JDK](#install-jdk) · [Set JAVA_HOME](#set-java_home) |
+| Maven 3.9+ | Required | [Install Maven](#install-maven) |
+| `openssl` + `keytool` | Required | Pre-installed on macOS/Linux. Windows: [Install OpenSSL](#install-openssl-windows-only--needed-for-option-a) (keytool is bundled with JDK) |
 
-**Windows (PowerShell):**
-
-```powershell
-openssl version
-keytool -help 2>&1 | Select-Object -First 1
-```
-
-**macOS / Linux (Bash):**
-
-```bash
-openssl version
-keytool -help 2>&1 | head -1
-```
-
-Both commands should print version/help text. If `openssl` is not found on
-Windows, install it:
-
-```powershell
-winget install ShiningLight.OpenSSL.Light
-# Then restart your terminal so it's on PATH
-```
+Already verified in Step 0 and Step 1? Skip straight to [A1](#a1--install-and-start-the-emulator).
 
 #### A1 — Install and start the emulator
 
@@ -649,13 +635,15 @@ docker stop cosmos-emulator && docker rm cosmos-emulator
 
 #### B0 — Prerequisites
 
-| Requirement | Needed? | Notes |
-|-------------|---------|-------|
-| JDK 17      | Yes     | Already installed if you completed Step 0 (do **not** use JDK 18+) |
-| Maven 3.9+  | Yes     | Already installed if you completed Step 1 |
-| AWS CLI      | **No**  | Not needed for local emulator |
-| AWS account | **No**  | Not needed for local emulator |
-| Node.js 18+ | Optional | Only for `dynamodb-admin` GUI (Step B4) |
+Before starting, make sure the following are in place:
+
+| Requirement | Status | Setup guide |
+|-------------|--------|-------------|
+| JDK 17 | Required | [Install JDK](#install-jdk) · [Set JAVA_HOME](#set-java_home) |
+| Maven 3.9+ | Required | [Install Maven](#install-maven) |
+| Node.js 18+ | Optional | Only for the DynamoDB Admin GUI in Step B4 — [Install Node.js](#install-nodejs-optional--for-dynamodb-admin-gui) |
+
+Already verified in Step 0 and Step 1? Skip straight to [B1](#b1--download-and-extract-dynamodb-local).
 
 #### B1 — Download and extract DynamoDB Local
 
@@ -893,45 +881,23 @@ This option connects to a **real Azure Cosmos DB account** using
 #### C0 — Create the properties file (one-time setup)
 
 The cloud properties file contains your subscription ID, tenant ID, and endpoint.
-**It is git-ignored and must never be committed.**
+It is **git-ignored** and must never be committed.
 
-**macOS / Linux:**
-```bash
-cp hyperscaledb-samples/src/main/resources/risk-platform-cosmos-cloud.properties.template \
-   hyperscaledb-samples/src/main/resources/risk-platform-cosmos-cloud.properties
-```
-
-**Windows (PowerShell):**
-```powershell
-Copy-Item hyperscaledb-samples\src\main\resources\risk-platform-cosmos-cloud.properties.template `
-          hyperscaledb-samples\src\main\resources\risk-platform-cosmos-cloud.properties
-```
-
-Open the file and fill in your values:
-
-```ini
-hyperscaledb.provider=cosmos
-hyperscaledb.connection.endpoint=https://<YOUR-COSMOS-ACCOUNT-NAME>.documents.azure.com:443/
-hyperscaledb.connection.connectionMode=direct
-hyperscaledb.connection.subscriptionId=<YOUR-SUBSCRIPTION-ID>
-hyperscaledb.connection.resourceGroupName=<YOUR-RESOURCE-GROUP>
-hyperscaledb.connection.tenantId=<YOUR-TENANT-ID>
-```
-
-> Not sure where to find these values? → [Sign In and Collect Credential Values](#sign-in-and-collect-credential-values)
+> **First time?** → [Create the Cosmos DB Properties File](#create-the-cosmos-db-properties-file)
+> for step-by-step instructions on setting variables and writing the file automatically.
+>
+> Already have the file? Skip to [C1](#c1--configure-azure-credentials-one-time-setup).
 
 ---
 
 #### C1 — Configure Azure credentials (one-time setup)
 
-**macOS / Linux / Windows:**
-```bash
-az login
-```
+Sign in to Azure CLI so the SDK can authenticate using `DefaultAzureCredential`.
 
-> - First time with Azure CLI? → [Sign In and Collect Credential Values](#sign-in-and-collect-credential-values)
-> - RBAC role not yet assigned? → [Grant the Cosmos DB RBAC Role](#grant-the-cosmos-db-data-plane-rbac-role)
-> - Credentials already configured? Skip to C2.
+> **First time?** → [Sign In and Collect Credential Values](#sign-in-and-collect-credential-values)
+> for sign-in commands, RBAC role assignment, and verification steps.
+>
+> Already signed in? Skip to [C2](#c2--build-the-project).
 
 ---
 
@@ -1112,48 +1078,23 @@ picked up automatically from your AWS CLI configuration or IAM role.
 #### D0 — Create the properties file (one-time setup)
 
 The cloud properties file contains your AWS region.
-**It is git-ignored and must never be committed.**
+It is **git-ignored** and must never be committed.
 
-**macOS / Linux:**
-```bash
-cp hyperscaledb-samples/src/main/resources/risk-platform-dynamo-cloud.properties.template \
-   hyperscaledb-samples/src/main/resources/risk-platform-dynamo-cloud.properties
-```
-
-**Windows (PowerShell):**
-```powershell
-Copy-Item hyperscaledb-samples\src\main\resources\risk-platform-dynamo-cloud.properties.template `
-          hyperscaledb-samples\src\main\resources\risk-platform-dynamo-cloud.properties
-```
-
-Open the file and set your AWS region:
-
-```ini
-hyperscaledb.provider=dynamo
-hyperscaledb.connection.region=us-east-1
-```
-
-> Not sure which region to use? → [AWS Regions](#aws-regions)
+> **First time?** → [Create the DynamoDB Properties File](#create-the-dynamodb-properties-file)
+> for step-by-step instructions on setting your region and writing the file automatically.
+>
+> Already have the file? Skip to [D1](#d1--configure-aws-credentials-one-time-setup).
 
 ---
 
 #### D1 — Configure AWS credentials (one-time setup)
 
-**macOS / Linux / Windows:**
-```bash
-aws configure
-```
+Configure the AWS CLI so the SDK can authenticate using the default credential chain.
 
-| Prompt | Value |
-|--------|-------|
-| AWS Access Key ID | Your IAM access key ID |
-| AWS Secret Access Key | Your IAM secret access key |
-| Default region name | e.g. `us-east-1` — see [AWS Regions](#aws-regions) |
-| Default output format | `json` |
-
-> - No access key yet? → [Create an IAM User and Access Key](#create-an-iam-user-and-access-key)
-> - Using corporate SSO? → [AWS SSO Alternative](#aws-sso-alternative-no-long-lived-keys)
-> - Credentials already configured? Skip to D2.
+> **First time?** → [Configure AWS Credentials](#configure-aws-credentials)
+> for `aws configure` instructions, IAM user setup, and SSO alternatives.
+>
+> Already configured? Skip to [D2](#d2--build-the-project).
 
 ---
 
@@ -1916,10 +1857,97 @@ sign-in, collecting credential values, and RBAC role assignment.
 
 ### Azure Setup for Option C
 
-This section covers everything you need to set up Azure credentials for the
-first time. Once complete, you won't need to repeat these steps — only the run
-commands in [Option C](#option-c-run-against-cosmos-db-azure-cloud) are needed
-on subsequent runs.
+This section covers everything you need to set up Azure for the first time.
+Once complete, you won't need to repeat these steps — only the run commands
+in [Option C](#option-c-run-against-cosmos-db-azure-cloud) are needed on
+subsequent runs.
+
+---
+
+#### Create the Cosmos DB Properties File
+
+The cloud properties file is **git-ignored** and must never be committed. Only
+`COSMOS_ACCOUNT` needs to be typed — all other values are fetched automatically.
+
+> Not sure of your account name? Run:
+> ```bash
+> az resource list --resource-type Microsoft.DocumentDB/databaseAccounts --query "[].{Name:name, ResourceGroup:resourceGroup}" -o table
+> ```
+
+**Step 1 of 2 — Set your variables**
+
+**macOS / Linux:**
+```bash
+export COSMOS_ACCOUNT="<YOUR-COSMOS-ACCOUNT-NAME>"
+```
+
+```bash
+export COSMOS_SUBSCRIPTION="$(az account show --query id -o tsv)"
+export COSMOS_TENANT="$(az account show --query tenantId -o tsv)"
+export COSMOS_RG="$(az resource list --resource-type Microsoft.DocumentDB/databaseAccounts --query "[?name=='$COSMOS_ACCOUNT'].resourceGroup" -o tsv)"
+export COSMOS_ENDPOINT="$(az cosmosdb show --name "$COSMOS_ACCOUNT" --resource-group "$COSMOS_RG" --query documentEndpoint -o tsv)"
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:COSMOS_ACCOUNT = "<YOUR-COSMOS-ACCOUNT-NAME>"
+```
+
+```powershell
+$env:COSMOS_SUBSCRIPTION = (az account show --query id -o tsv)
+$env:COSMOS_TENANT       = (az account show --query tenantId -o tsv)
+$env:COSMOS_RG           = (az resource list --resource-type Microsoft.DocumentDB/databaseAccounts --query "[?name=='$($env:COSMOS_ACCOUNT)'].resourceGroup" -o tsv)
+$env:COSMOS_ENDPOINT     = (az cosmosdb show --name $env:COSMOS_ACCOUNT --resource-group $env:COSMOS_RG --query documentEndpoint -o tsv)
+```
+
+**Step 2 of 2 — Write the properties file**
+
+**macOS / Linux:**
+```bash
+cat > hyperscaledb-samples/src/main/resources/risk-platform-cosmos-cloud.properties << EOF
+hyperscaledb.provider=cosmos
+hyperscaledb.connection.endpoint=$COSMOS_ENDPOINT
+hyperscaledb.connection.connectionMode=direct
+hyperscaledb.connection.subscriptionId=$COSMOS_SUBSCRIPTION
+hyperscaledb.connection.resourceGroupName=$COSMOS_RG
+hyperscaledb.connection.tenantId=$COSMOS_TENANT
+EOF
+```
+
+Verify:
+```bash
+cat hyperscaledb-samples/src/main/resources/risk-platform-cosmos-cloud.properties
+```
+
+**Windows (PowerShell):**
+```powershell
+@"
+hyperscaledb.provider=cosmos
+hyperscaledb.connection.endpoint=$($env:COSMOS_ENDPOINT)
+hyperscaledb.connection.connectionMode=direct
+hyperscaledb.connection.subscriptionId=$($env:COSMOS_SUBSCRIPTION)
+hyperscaledb.connection.resourceGroupName=$($env:COSMOS_RG)
+hyperscaledb.connection.tenantId=$($env:COSMOS_TENANT)
+"@ | Set-Content hyperscaledb-samples\src\main\resources\risk-platform-cosmos-cloud.properties
+```
+
+Verify:
+```powershell
+Get-Content hyperscaledb-samples\src\main\resources\risk-platform-cosmos-cloud.properties
+```
+
+> Prefer to fill in the file manually? Copy the template instead:
+>
+> **macOS / Linux:**
+> ```bash
+> cp hyperscaledb-samples/src/main/resources/risk-platform-cosmos-cloud.properties.template \
+>    hyperscaledb-samples/src/main/resources/risk-platform-cosmos-cloud.properties
+> ```
+> **Windows (PowerShell):**
+> ```powershell
+> Copy-Item hyperscaledb-samples\src\main\resources\risk-platform-cosmos-cloud.properties.template `
+>           hyperscaledb-samples\src\main\resources\risk-platform-cosmos-cloud.properties
+> ```
 
 ---
 
@@ -1945,11 +1973,20 @@ az account list --query "[].{Name:name, ID:id, TenantID:tenantId}" -o table
 # Set the correct subscription
 az account set --subscription "<YOUR-SUBSCRIPTION-ID>"
 
+# List all Cosmos DB accounts in the subscription — find your account name and resource group
+az resource list --resource-type Microsoft.DocumentDB/databaseAccounts \
+  --query "[].{Name:name, ResourceGroup:resourceGroup}" -o table
+
+# Once you know your account name, print just the resource group and endpoint:
 # Print the resource group  -> paste into hyperscaledb.connection.resourceGroupName
-az cosmosdb show --name "<YOUR-COSMOS-ACCOUNT-NAME>" --query resourceGroup -o tsv
+az resource list --resource-type Microsoft.DocumentDB/databaseAccounts \
+  --query "[?name=='<YOUR-COSMOS-ACCOUNT-NAME>'].resourceGroup" -o tsv
 
 # Print the endpoint URL  -> paste into hyperscaledb.connection.endpoint
-az cosmosdb show --name "<YOUR-COSMOS-ACCOUNT-NAME>" --query documentEndpoint -o tsv
+# (requires resource group — use the value returned by the command above)
+az cosmosdb show --name "<YOUR-COSMOS-ACCOUNT-NAME>" \
+  --resource-group "<YOUR-RESOURCE-GROUP>" \
+  --query documentEndpoint -o tsv
 ```
 
 > **Multiple tenants / subscriptions?**
@@ -2085,10 +2122,83 @@ credential configuration, IAM user creation, region selection, and permission se
 
 ### AWS Setup for Option D
 
-This section covers everything you need to set up AWS credentials for the first
-time. Once complete, you won't need to repeat these steps — only the run
-commands in [Option D](#option-d-run-against-dynamodb-aws-cloud) are needed on
+This section covers everything you need to set up AWS for the first time.
+Once complete, you won't need to repeat these steps — only the run commands
+in [Option D](#option-d-run-against-dynamodb-aws-cloud) are needed on
 subsequent runs.
+
+---
+
+#### Create the DynamoDB Properties File
+
+The cloud properties file is **git-ignored** and must never be committed. The
+region is read from `aws configure` automatically — only override if you want
+a different region.
+
+**Step 1 of 2 — Set your region**
+
+**macOS / Linux:**
+```bash
+export AWS_REGION="$(aws configure get region)"
+```
+
+Override if needed:
+```bash
+export AWS_REGION="us-east-1"
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:AWS_REGION = (aws configure get region)
+```
+
+Override if needed:
+```powershell
+$env:AWS_REGION = "us-east-1"
+```
+
+> Not sure which region to use? → [AWS Regions](#aws-regions)
+
+**Step 2 of 2 — Write the properties file**
+
+**macOS / Linux:**
+```bash
+cat > hyperscaledb-samples/src/main/resources/risk-platform-dynamo-cloud.properties << EOF
+hyperscaledb.provider=dynamo
+hyperscaledb.connection.region=$AWS_REGION
+EOF
+```
+
+Verify:
+```bash
+cat hyperscaledb-samples/src/main/resources/risk-platform-dynamo-cloud.properties
+```
+
+**Windows (PowerShell):**
+```powershell
+@"
+hyperscaledb.provider=dynamo
+hyperscaledb.connection.region=$($env:AWS_REGION)
+"@ | Set-Content hyperscaledb-samples\src\main\resources\risk-platform-dynamo-cloud.properties
+```
+
+Verify:
+```powershell
+Get-Content hyperscaledb-samples\src\main\resources\risk-platform-dynamo-cloud.properties
+```
+
+> Prefer to fill in the file manually? Copy the template instead:
+>
+> **macOS / Linux:**
+> ```bash
+> cp hyperscaledb-samples/src/main/resources/risk-platform-dynamo-cloud.properties.template \
+>    hyperscaledb-samples/src/main/resources/risk-platform-dynamo-cloud.properties
+> ```
+> **Windows (PowerShell):**
+> ```powershell
+> Copy-Item hyperscaledb-samples\src\main\resources\risk-platform-dynamo-cloud.properties.template `
+>           hyperscaledb-samples\src\main\resources\risk-platform-dynamo-cloud.properties
+> ```
 
 ---
 

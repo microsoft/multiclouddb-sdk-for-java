@@ -3,6 +3,7 @@ package com.hyperscaledb.provider.cosmos;
 import com.azure.cosmos.CosmosException;
 import com.hyperscaledb.api.HyperscaleDbErrorCategory;
 import com.hyperscaledb.api.HyperscaleDbException;
+import com.hyperscaledb.api.OperationNames;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -35,11 +36,11 @@ class CosmosErrorMappingTest {
     @DisplayName("Status code maps to correct category")
     void statusCodeMapsCorrectly(int statusCode, String expectedCategory) {
         CosmosException cosmosEx = mockCosmosException(statusCode, 0);
-        HyperscaleDbException result = CosmosErrorMapper.map(cosmosEx, "test-op");
+        HyperscaleDbException result = CosmosErrorMapper.map(cosmosEx, OperationNames.READ);
 
         assertEquals(HyperscaleDbErrorCategory.valueOf(expectedCategory), result.error().category());
         assertEquals("cosmos", result.error().provider().id());
-        assertEquals("test-op", result.error().operation());
+        assertEquals(OperationNames.READ, result.error().operation());
         assertNotNull(result.error().providerDetails());
         assertEquals(String.valueOf(statusCode), result.error().providerDetails().get("statusCode"));
     }
@@ -59,9 +60,37 @@ class CosmosErrorMappingTest {
     @DisplayName("Retryable flag set correctly")
     void retryableFlagCorrect(int statusCode, boolean expectedRetryable) {
         CosmosException cosmosEx = mockCosmosException(statusCode, 0);
-        HyperscaleDbException result = CosmosErrorMapper.map(cosmosEx, "get");
+        HyperscaleDbException result = CosmosErrorMapper.map(cosmosEx, OperationNames.READ);
 
         assertEquals(expectedRetryable, result.error().retryable());
+    }
+
+    @ParameterizedTest(name = "HTTP {0} subStatus {1} -> subStatusCode in providerDetails")
+    @CsvSource({
+            // Sub-status 0 = no sub-status (default)
+            "404, 0",
+            // 1002 = write forbidden on read region
+            "403, 1002",
+            // 1008 = insufficient throughput / RU limit
+            "429, 1008",
+            // 1022 = partition migration / split in progress
+            "503, 1022",
+            // 5300 = AAD token not allowed on data plane (RBAC enforcement)
+            "403, 5300",
+    })
+    @DisplayName("Sub-status code is captured in providerDetails")
+    void subStatusCodeCapturedInProviderDetails(int statusCode, int subStatusCode) {
+        CosmosException cosmosEx = mockCosmosException(statusCode, subStatusCode);
+
+        HyperscaleDbException result = CosmosErrorMapper.map(cosmosEx, OperationNames.READ);
+
+        assertNotNull(result.error().providerDetails());
+        assertEquals(String.valueOf(subStatusCode),
+                result.error().providerDetails().get("subStatusCode"),
+                "subStatusCode must be captured in providerDetails");
+        assertEquals(String.valueOf(statusCode),
+                result.error().providerDetails().get("statusCode"),
+                "statusCode must also be present alongside subStatusCode");
     }
 
     @Test
@@ -71,7 +100,7 @@ class CosmosErrorMappingTest {
         when(cosmosEx.getActivityId()).thenReturn("activity-123");
         when(cosmosEx.getRequestCharge()).thenReturn(3.5);
 
-        HyperscaleDbException result = CosmosErrorMapper.map(cosmosEx, "get");
+        HyperscaleDbException result = CosmosErrorMapper.map(cosmosEx, OperationNames.READ);
 
         assertEquals("activity-123", result.error().providerDetails().get("requestId"));
         assertEquals("3.5", result.error().providerDetails().get("requestCharge"));
@@ -81,7 +110,7 @@ class CosmosErrorMappingTest {
     @DisplayName("Original exception is preserved as cause")
     void originalExceptionPreserved() {
         CosmosException cosmosEx = mockCosmosException(500, 0);
-        HyperscaleDbException result = CosmosErrorMapper.map(cosmosEx, "put");
+        HyperscaleDbException result = CosmosErrorMapper.map(cosmosEx, OperationNames.CREATE);
 
         assertSame(cosmosEx, result.getCause());
     }
@@ -90,7 +119,7 @@ class CosmosErrorMappingTest {
         CosmosException ex = mock(CosmosException.class);
         when(ex.getStatusCode()).thenReturn(statusCode);
         when(ex.getSubStatusCode()).thenReturn(subStatusCode);
-        when(ex.getMessage()).thenReturn("Mock Cosmos error " + statusCode);
+        when(ex.getMessage()).thenReturn("Mock Cosmos error " + statusCode + "/" + subStatusCode);
         when(ex.getActivityId()).thenReturn(null);
         when(ex.getRequestCharge()).thenReturn(0.0);
         return ex;

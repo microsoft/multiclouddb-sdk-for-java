@@ -1,7 +1,17 @@
 # ---------------------------------------------------------------------------
 #  Risk Platform: Amazon DynamoDB (AWS Cloud)
 #  -- HOW TO USE -------------------------------------------------------------
-#  1. Copy this file to the same directory and remove the .template extension:
+#  Option 1 (recommended) -- let AWS CLI fill in the values automatically:
+#
+#    export AWS_REGION="$(aws configure get region)"
+#    # Override if needed:  export AWS_REGION="us-east-1"
+#    cat > hyperscaledb-samples/src/main/resources/risk-platform-dynamo-cloud.properties << EOF
+#    hyperscaledb.provider=dynamo
+#    hyperscaledb.connection.region=$AWS_REGION
+#    EOF
+#
+#  Option 2 -- fill in manually:
+#  1. Copy this file and remove the .template extension:
 #       cp risk-platform-dynamo-cloud.properties.template \
 #          risk-platform-dynamo-cloud.properties
 #  2. Fill in YOUR values below (marked with <...>)
@@ -11,7 +21,8 @@
 hyperscaledb.provider=dynamo
 
 # AWS region where your DynamoDB tables live
-# Run: aws configure get region   (or: aws account show)
+# Run: aws configure get region
+# Not sure? See: https://docs.aws.amazon.com/general/latest/gr/rande.html
 hyperscaledb.connection.region=<YOUR-AWS-REGION>
 
 # -- No endpoint configured -------------------------------------------------

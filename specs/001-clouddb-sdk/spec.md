@@ -231,6 +231,15 @@ Portability is the default mode of the SDK.
 - **FR-031**: The SDK MUST support literal values in expressions: strings (single-quoted), numbers (integer and decimal), booleans (`true`/`false`), and `NULL`.
 - **FR-032**: The SDK MUST preserve operator precedence: `NOT` binds tightest, then `AND`, then `OR`. Parentheses MUST be supported for explicit grouping.
 
+#### Provider Constants Centralization Requirements
+
+- **FR-049**: Each provider adapter MUST centralize all hard-coded string literals — including configuration keys, field names, query fragments, error messages, and default values — into a provider-specific constants class (e.g., `CosmosConstants`, `DynamoConstants`). Magic strings scattered across implementation classes are not permitted.
+- **FR-050**: Operation name strings used in diagnostics, error context, and log lines MUST be defined in a single shared `OperationNames` class in the `hyperscaledb-api` module. Provider adapters MUST reference `OperationNames` constants rather than re-declaring the same strings locally. Provider-specific operation variants (e.g., DynamoDB scan sub-types) that have no equivalent in other providers MAY be defined in the provider's own constants class.
+- **FR-051**: Each provider adapter MUST emit structured `DEBUG`-level diagnostic log lines on every successful data-plane operation, capturing provider-native telemetry without requiring a failure to trigger diagnostics. At minimum:
+  - **Item operations** (`create`, `read`, `update`, `upsert`, `delete`): log the provider's request correlation ID and cost metric (Cosmos: `activityId` + `requestCharge` RU; DynamoDB: `requestId` + `capacityUnits`).
+  - **Query operations**: log cost metric, result count for the page, and whether more pages exist.
+  - Log output MUST NOT include secrets, credentials, or user document contents.
+
 ### Portable Operator and Function Reference
 
 The following operators and functions form the portable query subset, available on all supported providers:
@@ -294,6 +303,8 @@ The following operators and functions form the portable query subset, available 
 - **SC-016**: The Cosmos DB provider authenticates via `DefaultAzureCredential` when no account key is provided, and uses the Azure Resource Manager SDK for database creation in RBAC mode.
 - **SC-013**: A query with `partitionKey` set returns only items within that partition on all supported providers.
 - **SC-014**: A query with both `partitionKey` and a filter expression correctly scopes to the partition first, then applies the filter, on all supported providers.
+- **SC-017**: All operation name strings used in diagnostics, error context, and log lines across all provider adapters are sourced from `OperationNames` in `hyperscaledb-api`. No provider adapter re-declares a shared operation name string locally; duplicates that would cause log-correlation ambiguity are caught by `OperationNamesTest` at compile/test time.
+- **SC-018**: On every successful data-plane operation, the SDK emits a `DEBUG`-level diagnostic log line capturing the provider's native correlation ID and cost metric. A developer can correlate SDK log output with Azure portal Activity IDs or AWS CloudTrail request IDs without requiring a failure to trigger the diagnostic.
 
 ## Assumptions
 
@@ -307,6 +318,14 @@ The following operators and functions form the portable query subset, available 
 - Queries MUST support partition-key-scoped execution. When a partition key value is specified on a query request, the SDK MUST use each provider's native efficient mechanism to scope the query to that partition only (e.g., Cosmos DB `setPartitionKey()` on query options, DynamoDB PartiQL WHERE condition on the partition key column). Queries without a partition key scope may still result in cross-partition scans. Applications SHOULD use `Key.of(partitionKey, sortKey)` to co-locate related documents and then scope queries by partition key for efficient retrieval.
 - `ensureDatabase`, `ensureContainer`, and `provisionSchema` are convenience methods for development and startup scenarios. They create resources with the SDK's standard schema defaults and are not intended for advanced provisioning (e.g., custom throughput, indexing policies, TTL settings). For production provisioning with fine-grained control, developers should use provider SDKs directly or infrastructure-as-code tools.
 - The Cosmos DB provider uses the Azure Resource Manager management SDK (`azure-resourcemanager-cosmos`) for database creation when operating in RBAC/`DefaultAzureCredential` mode, because Cosmos data-plane RBAC does not have permissions for control-plane operations like creating databases. Key-based authentication continues to use data-plane calls.
+- **SDK versions (current)**: Azure Cosmos DB SDK 4.78.0, AWS SDK v2 2.34.0, Azure Resource Manager Cosmos 2.54.1, Azure Identity 1.18.2, Azure Core Management 1.19.3. Minimum Java version is 17. These versions represent the latest stable releases validated against this SDK; newer versions may be adopted as long as the portable contract is preserved.
+- **Dependency security**: Transitive dependency versions are managed in the root `pom.xml` `dependencyManagement` section and explicit overrides in child poms to resolve known CVEs: `jackson-core` ≥ 2.18.6 (GHSA-72hv-8253-57qq), `logback-classic`/`logback-core` ≥ 1.5.25 (CVE-2024-12798, CVE-2024-12801, CVE-2025-11226, CVE-2026-1225), `netty-codec-http` ≥ 4.2.8.Final (CVE-2025-67735). IDE CVE scanner (Mend.io) warnings that persist after overrides are documented as false positives in `.mend/mend.yml`; the actual resolved versions are confirmed safe via `mvn dependency:tree`.
+- **Test infrastructure**: Mockito's Byte Buddy instrumentation engine does not officially support Java versions beyond 22. Provider test modules that mock SDK exception classes (e.g., `CosmosException`, `DynamoDbException`) MUST configure `maven-surefire-plugin` with `-Dnet.bytebuddy.experimental=true` in `argLine` to enable mocking on Java 23+. This is set in the `hyperscaledb-provider-cosmos` and `hyperscaledb-provider-dynamo` poms.
+- **Operation name constants**: The `OperationNames` class in `hyperscaledb-api` is the canonical source for all shared operation name strings. It is on the classpath of every provider via the `providers → hyperscaledb-spi → hyperscaledb-api` dependency chain. IDE "unused field" warnings on constants classes are suppressed via `@SuppressWarnings("unused")` because single-file IDE analysis cannot see cross-file usages.
+- **Diagnostics log format**: Success-path diagnostic log lines use the prefix `cosmos.diagnostics` or `dynamo.diagnostics` followed by key=value pairs: `op`, `db`, `col`, and provider-specific fields (`activityId`/`requestId`, `requestCharge`/`capacityUnits`, `statusCode`/`itemCount`/`hasMore`). Log lines are emitted at `DEBUG` level only and contain no secrets or document contents.
+- Properties files containing credentials or connection secrets (e.g., `*.properties` with endpoint/key values) MUST be gitignored and MUST NOT be committed to source control. Template files (`*.properties.template`) with placeholder values are provided so users can copy them, fill in their credentials, and keep the result local-only.
+- Cleanup scripts for removing provider resources (containers, tables, databases) created during sample runs are provided under `hyperscaledb-samples/scripts/` for each supported provider, in both Bash and PowerShell variants.
+- Sample application output banners use fixed-width ASCII box-drawing characters (printable ASCII only, no Unicode box-drawing code points) to ensure consistent rendering across all terminal environments and operating systems.
 
 ## Acceptance Checklist
 
@@ -368,3 +387,21 @@ This checklist is used to accept the feature as “done” at the spec level.
 - [ ] The Cosmos DB provider authenticates via `DefaultAzureCredential` when no account key is configured, supporting Managed Identity, Azure CLI, and environment variable credentials.
 - [ ] In RBAC mode, the Cosmos DB provider uses the Azure Resource Manager SDK for database creation (data-plane RBAC cannot create databases).
 - [ ] Management SDK config (`subscriptionId`, `resourceGroupName`) is optional; when absent, provisioning falls back to data-plane calls with a warning.
+
+### Code Quality & Developer Experience
+
+- [ ] Each provider adapter has a dedicated constants class (e.g., `CosmosConstants`, `DynamoConstants`) that centralizes all magic strings — config keys, field names, query fragments, error messages, and default values. No hard-coded string literals are scattered across implementation classes.
+- [ ] All operation name strings used in diagnostics, error context, and log lines are sourced from `OperationNames` in `hyperscaledb-api`. Provider adapters do not re-declare shared operation name strings locally.
+- [ ] Each provider adapter emits structured `DEBUG`-level diagnostic log lines on every successful data-plane operation (item ops and query ops), capturing provider-native correlation IDs and cost metrics without requiring a failure to trigger diagnostics.
+- [ ] `OperationNames` is covered by a unit test (`OperationNamesTest`) that verifies every constant has the expected value, none are null or blank, and all 9 are unique (preventing silent log-correlation ambiguity).
+- [ ] `CosmosConstants` is covered by `CosmosConstantsTest` verifying every field value, including connection mode defaults, consistency level, document field names, partition key path, page size, query defaults, and error messages.
+- [ ] `DynamoConstants` is covered by `DynamoConstantsTest` verifying every field value, plus cross-cutting assertions that DynamoDB-specific operation variant names are unique and do not collide with any shared `OperationNames` constant.
+- [ ] `CosmosErrorMappingTest` covers all HTTP status code → category mappings, retryability flags, provider details (including `activityId` and `requestCharge`), and a parameterized sub-status code test covering real-world Cosmos sub-status values (0, 1002, 1008, 1022, 5300).
+- [ ] `DynamoErrorMappingTest` uses `OperationNames.*` constants for all operation name assertions, covering error code mappings, status code fallbacks, retryability, provider details, and cause preservation.
+- [ ] `DiagnosticsConformanceTest` uses `OperationNames.*` for operation name assertions in all three providers' test subclasses.
+- [ ] Provider poms configure `maven-surefire-plugin` with `-Dnet.bytebuddy.experimental=true` to enable Mockito mocking of SDK exception classes on Java 23+.
+- [ ] Transitive CVE dependencies (`jackson-core`, `logback-core`, `netty-codec-http`) are pinned to patched versions in both `<dependencies>` and `<dependencyManagement>` of each provider pom. Confirmed safe via `mvn dependency:tree`.
+- [ ] A `.mend/mend.yml` suppression config documents false-positive CVE findings from the IDE Mend.io scanner, with justification for each suppression.
+- [ ] Properties template files (`*.properties.template`) are provided for each sample scenario, enabling users to copy and fill in credentials locally. Actual properties files containing credentials are gitignored and never committed.
+- [ ] Cleanup scripts (`cleanup-cosmos.sh`, `cleanup-cosmos.ps1`, `cleanup-dynamo.sh`, `cleanup-dynamo.ps1`) exist under `hyperscaledb-samples/scripts/` and successfully remove all provider resources created by sample runs.
+

@@ -80,19 +80,32 @@ public class RiskPlatformApp {
         server.setExecutor(null);
         server.start();
 
+        String providerName  = tenantManager.getClient().providerId().displayName();
+        String dashboardUrl  = "http://localhost:" + port;
+        String apiUrl        = "http://localhost:" + port + "/api";
+
+        // Inner width = number of chars between the two ║ border chars
+        final int W = 59;
+
         System.out.println();
-        System.out.println("╔═══════════════════════════════════════════════════════════╗");
-        System.out.println("║   RISK ANALYSIS PLATFORM — Multi-Tenant Demo             ║");
-        System.out.println("╠═══════════════════════════════════════════════════════════╣");
-        System.out.println("║   Provider:  " + pad(tenantManager.getClient().providerId().displayName(), 43) + "║");
-        System.out.println("║   Dashboard: http://localhost:" + port + pad("", 27) + "║");
-        System.out.println("║   API:       http://localhost:" + port + "/api" + pad("", 23) + "║");
-        System.out.println("╠═══════════════════════════════════════════════════════════╣");
-        System.out.println("║   Tenants: acme-capital, vanguard-partners, summit-wealth ║");
-        System.out.println("╚═══════════════════════════════════════════════════════════╝");
+        System.out.println("╔" + "═".repeat(W) + "╗");
+        System.out.println("║" + row("   RISK ANALYSIS PLATFORM -- Multi-Tenant Demo", W) + "║");
+        System.out.println("╠" + "═".repeat(W) + "╣");
+        System.out.println("║" + row("   Provider:  " + providerName, W) + "║");
+        System.out.println("║" + row("   Dashboard: " + dashboardUrl, W) + "║");
+        System.out.println("║" + row("   API:       " + apiUrl,       W) + "║");
+        System.out.println("╠" + "═".repeat(W) + "╣");
+        System.out.println("║" + row("   Tenants:   acme-capital, vanguard-partners, summit-wealth", W) + "║");
+        System.out.println("╚" + "═".repeat(W) + "╝");
         System.out.println();
         System.out.println("  Press Ctrl+C to stop.");
         System.out.println();
+    }
+
+    /** Left-aligns {@code s} in a field of exactly {@code width} chars, truncating if too long. */
+    private String row(String s, int width) {
+        if (s.length() >= width) return s.substring(0, width);
+        return s + " ".repeat(width - s.length());
     }
 
     private String pad(String s, int width) {

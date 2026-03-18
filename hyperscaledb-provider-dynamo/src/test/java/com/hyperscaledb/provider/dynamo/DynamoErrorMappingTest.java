@@ -2,6 +2,7 @@ package com.hyperscaledb.provider.dynamo;
 
 import com.hyperscaledb.api.HyperscaleDbErrorCategory;
 import com.hyperscaledb.api.HyperscaleDbException;
+import com.hyperscaledb.api.OperationNames;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -33,11 +34,11 @@ class DynamoErrorMappingTest {
     @DisplayName("Error code maps to correct category")
     void errorCodeMapsCorrectly(String errorCode, String expectedCategory) {
         DynamoDbException ex = mockDynamoException(400, errorCode);
-        HyperscaleDbException result = DynamoErrorMapper.map(ex, "test-op");
+        HyperscaleDbException result = DynamoErrorMapper.map(ex, OperationNames.READ);
 
         assertEquals(HyperscaleDbErrorCategory.valueOf(expectedCategory), result.error().category());
         assertEquals("dynamo", result.error().provider().id());
-        assertEquals("test-op", result.error().operation());
+        assertEquals(OperationNames.READ, result.error().operation());
     }
 
     @ParameterizedTest(name = "HTTP {0} (no error code) -> {1}")
@@ -54,7 +55,7 @@ class DynamoErrorMappingTest {
     @DisplayName("Fallback to status code when no error code match")
     void statusCodeFallbackMapsCorrectly(int statusCode, String expectedCategory) {
         DynamoDbException ex = mockDynamoException(statusCode, "UnknownError");
-        HyperscaleDbException result = DynamoErrorMapper.map(ex, "query");
+        HyperscaleDbException result = DynamoErrorMapper.map(ex, OperationNames.QUERY);
 
         assertEquals(HyperscaleDbErrorCategory.valueOf(expectedCategory), result.error().category());
     }
@@ -65,7 +66,7 @@ class DynamoErrorMappingTest {
         DynamoDbException ex = mockDynamoException(400, "ValidationException");
         when(ex.requestId()).thenReturn("req-abc-123");
 
-        HyperscaleDbException result = DynamoErrorMapper.map(ex, "put");
+        HyperscaleDbException result = DynamoErrorMapper.map(ex, OperationNames.UPSERT);
 
         assertEquals("ValidationException", result.error().providerDetails().get("errorCode"));
         assertEquals("req-abc-123", result.error().providerDetails().get("requestId"));
@@ -78,7 +79,7 @@ class DynamoErrorMappingTest {
         DynamoDbException ex = mockDynamoException(400, "ThrottlingException");
         when(ex.isThrottlingException()).thenReturn(true);
 
-        HyperscaleDbException result = DynamoErrorMapper.map(ex, "get");
+        HyperscaleDbException result = DynamoErrorMapper.map(ex, OperationNames.READ);
         assertTrue(result.error().retryable());
     }
 
@@ -86,7 +87,7 @@ class DynamoErrorMappingTest {
     @DisplayName("Server errors are retryable")
     void serverErrorsRetryable() {
         DynamoDbException ex = mockDynamoException(500, "InternalServerError");
-        HyperscaleDbException result = DynamoErrorMapper.map(ex, "get");
+        HyperscaleDbException result = DynamoErrorMapper.map(ex, OperationNames.READ);
         assertTrue(result.error().retryable());
     }
 
@@ -94,7 +95,7 @@ class DynamoErrorMappingTest {
     @DisplayName("Client errors are not retryable")
     void clientErrorsNotRetryable() {
         DynamoDbException ex = mockDynamoException(400, "ValidationException");
-        HyperscaleDbException result = DynamoErrorMapper.map(ex, "put");
+        HyperscaleDbException result = DynamoErrorMapper.map(ex, OperationNames.UPSERT);
         assertFalse(result.error().retryable());
     }
 
@@ -102,7 +103,7 @@ class DynamoErrorMappingTest {
     @DisplayName("Original exception is preserved as cause")
     void originalExceptionPreserved() {
         DynamoDbException ex = mockDynamoException(500, "InternalServerError");
-        HyperscaleDbException result = DynamoErrorMapper.map(ex, "delete");
+        HyperscaleDbException result = DynamoErrorMapper.map(ex, OperationNames.DELETE);
         assertSame(ex, result.getCause());
     }
 
