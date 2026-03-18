@@ -129,10 +129,10 @@ class DynamoConstantsTest {
     }
 
     @Test
-    @DisplayName("SCAN_PARTITION_KEY_PARAM starts with colon")
+    @DisplayName("SCAN_PARTITION_KEY_PARAM has correct expression attribute value name")
     void scanPartitionKeyParam() {
-        assertTrue(DynamoConstants.SCAN_PARTITION_KEY_PARAM.startsWith(":"),
-                "Scan filter param names must start with ':'");
+        assertEquals(DynamoConstants.FILTER_PARAM_PREFIX + "_pkval", DynamoConstants.SCAN_PARTITION_KEY_PARAM,
+                "Scan partition key param must be FILTER_PARAM_PREFIX + '_pkval'");
     }
 
     // ── HTTP header ───────────────────────────────────────────────────────────

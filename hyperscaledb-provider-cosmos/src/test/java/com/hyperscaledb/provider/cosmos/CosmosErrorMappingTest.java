@@ -65,6 +65,34 @@ class CosmosErrorMappingTest {
         assertEquals(expectedRetryable, result.error().retryable());
     }
 
+    @ParameterizedTest(name = "HTTP {0} subStatus {1} -> subStatusCode in providerDetails")
+    @CsvSource({
+            // Sub-status 0 = no sub-status (default)
+            "404, 0",
+            // 1002 = write forbidden on read region
+            "403, 1002",
+            // 1008 = insufficient throughput / RU limit
+            "429, 1008",
+            // 1022 = partition migration / split in progress
+            "503, 1022",
+            // 5300 = AAD token not allowed on data plane (RBAC enforcement)
+            "403, 5300",
+    })
+    @DisplayName("Sub-status code is captured in providerDetails")
+    void subStatusCodeCapturedInProviderDetails(int statusCode, int subStatusCode) {
+        CosmosException cosmosEx = mockCosmosException(statusCode, subStatusCode);
+
+        HyperscaleDbException result = CosmosErrorMapper.map(cosmosEx, OperationNames.READ);
+
+        assertNotNull(result.error().providerDetails());
+        assertEquals(String.valueOf(subStatusCode),
+                result.error().providerDetails().get("subStatusCode"),
+                "subStatusCode must be captured in providerDetails");
+        assertEquals(String.valueOf(statusCode),
+                result.error().providerDetails().get("statusCode"),
+                "statusCode must also be present alongside subStatusCode");
+    }
+
     @Test
     @DisplayName("Provider details include activity id and request charge")
     void providerDetailsIncluded() {
@@ -91,7 +119,7 @@ class CosmosErrorMappingTest {
         CosmosException ex = mock(CosmosException.class);
         when(ex.getStatusCode()).thenReturn(statusCode);
         when(ex.getSubStatusCode()).thenReturn(subStatusCode);
-        when(ex.getMessage()).thenReturn("Mock Cosmos error " + statusCode);
+        when(ex.getMessage()).thenReturn("Mock Cosmos error " + statusCode + "/" + subStatusCode);
         when(ex.getActivityId()).thenReturn(null);
         when(ex.getRequestCharge()).thenReturn(0.0);
         return ex;

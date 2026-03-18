@@ -126,10 +126,11 @@ class CosmosConstantsTest {
     // ── Error messages ────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("ERR_ENDPOINT_REQUIRED is non-blank")
+    @DisplayName("ERR_ENDPOINT_REQUIRED is non-blank and mentions endpoint")
     void errEndpointRequiredNonBlank() {
         assertNotNull(CosmosConstants.ERR_ENDPOINT_REQUIRED);
-        assertFalse(CosmosConstants.ERR_ENDPOINT_REQUIRED.isBlank());
+        assertTrue(CosmosConstants.ERR_ENDPOINT_REQUIRED.toLowerCase().contains("endpoint"),
+                "Error message should mention 'endpoint' so callers understand what is missing");
     }
 }
 
