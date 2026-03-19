@@ -75,53 +75,39 @@ public interface HyperscaleDbProviderClient extends AutoCloseable {
 
     /**
      * Ensure a logical database exists.
-     * <p>
-     * Provider semantics:
-     * <ul>
-     * <li><b>Cosmos DB</b>: creates the Cosmos database if it does not exist</li>
-     * <li><b>DynamoDB</b>: no-op (DynamoDB has no native database concept; the
-     * database dimension is encoded in table names)</li>
-     * <li><b>Spanner</b>: no-op (the database is set at client construction
-     * time)</li>
-     * </ul>
      *
      * @param database the logical database name
+     * @deprecated See {@code HyperscaleDbClient#ensureDatabase} — provisioning
+     *             will be removed from this SDK. Implementations should use
+     *             their provider's own infrastructure SDK or IaC tooling.
      */
+    @Deprecated(since = "0.1.0", forRemoval = true)
     default void ensureDatabase(String database) {
         // Default is no-op — providers that have a native database concept override
     }
 
     /**
      * Ensure a container (or table) exists within the given database.
-     * <p>
-     * Provider semantics:
-     * <ul>
-     * <li><b>Cosmos DB</b>: creates a container with partition key path
-     * {@code /partitionKey}</li>
-     * <li><b>DynamoDB</b>: creates a table named
-     * {@code database__collection} with hash key {@code partitionKey} and sort key
-     * {@code sortKey}</li>
-     * <li><b>Spanner</b>: creates a table with columns
-     * {@code partitionKey STRING(MAX)}
-     * and {@code sortKey STRING(MAX)} as the primary key, plus a {@code data}
-     * column for the JSON document</li>
-     * </ul>
      *
      * @param address the database + collection identifying the container
+     * @deprecated See {@code HyperscaleDbClient#ensureContainer} — provisioning
+     *             will be removed from this SDK. Implementations should use
+     *             their provider's own infrastructure SDK or IaC tooling.
      */
+    @Deprecated(since = "0.1.0", forRemoval = true)
     default void ensureContainer(ResourceAddress address) {
         // Default is no-op — providers override with their creation logic
     }
 
     /**
      * Provision a full schema of databases and containers/tables in parallel.
-     * <p>
-     * Default implementation creates all databases concurrently, waits for
-     * completion, then creates all containers concurrently. Providers may
-     * override for provider-specific optimisations.
      *
      * @param schema map of database name → list of collection/table names
+     * @deprecated See {@code HyperscaleDbClient#provisionSchema} — provisioning
+     *             will be removed from this SDK. Implementations should use
+     *             their provider's own infrastructure SDK or IaC tooling.
      */
+    @Deprecated(since = "0.1.0", forRemoval = true)
     default void provisionSchema(Map<String, List<String>> schema) {
         List<String> databases = new ArrayList<>(schema.keySet());
         List<ResourceAddress> containers = new ArrayList<>();

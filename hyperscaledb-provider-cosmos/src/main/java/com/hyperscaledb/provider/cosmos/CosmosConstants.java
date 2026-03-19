@@ -24,14 +24,9 @@ public final class CosmosConstants {
     /** Connection config key for the Cosmos DB master key (optional — omit for Entra ID). */
     public static final String CONFIG_KEY = "key";
 
-    /** Connection config key for the Azure tenant ID. */
+    /** Connection config key for the Azure tenant ID (optional — used with DefaultAzureCredential). */
     public static final String CONFIG_TENANT_ID = "tenantId";
 
-    /** Connection config key for the Azure subscription ID. */
-    public static final String CONFIG_SUBSCRIPTION_ID = "subscriptionId";
-
-    /** Connection config key for the Azure resource group name. */
-    public static final String CONFIG_RESOURCE_GROUP = "resourceGroupName";
 
     /** Connection config key for the connection mode ({@code direct} or {@code gateway}). */
     public static final String CONFIG_CONNECTION_MODE = "connectionMode";

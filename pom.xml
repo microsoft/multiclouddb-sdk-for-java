@@ -34,9 +34,7 @@
         <azure-cosmos.version>4.78.0</azure-cosmos.version>
         <azure-core.version>1.57.1</azure-core.version>
         <azure-json.version>1.5.0</azure-json.version>
-        <azure-core-management.version>1.19.3</azure-core-management.version>
         <azure-identity.version>1.18.2</azure-identity.version>
-        <azure-resourcemanager-cosmos.version>2.54.1</azure-resourcemanager-cosmos.version>
         <aws-sdk.version>2.34.0</aws-sdk.version>
         <google-cloud-spanner.version>6.62.0</google-cloud-spanner.version>
 
@@ -105,11 +103,6 @@
             </dependency>
             <dependency>
                 <groupId>com.azure</groupId>
-                <artifactId>azure-core-management</artifactId>
-                <version>${azure-core-management.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.azure</groupId>
                 <artifactId>azure-cosmos</artifactId>
                 <version>${azure-cosmos.version}</version>
             </dependency>
@@ -117,11 +110,6 @@
                 <groupId>com.azure</groupId>
                 <artifactId>azure-identity</artifactId>
                 <version>${azure-identity.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.azure.resourcemanager</groupId>
-                <artifactId>azure-resourcemanager-cosmos</artifactId>
-                <version>${azure-resourcemanager-cosmos.version}</version>
             </dependency>
 
             <!-- AWS DynamoDB -->

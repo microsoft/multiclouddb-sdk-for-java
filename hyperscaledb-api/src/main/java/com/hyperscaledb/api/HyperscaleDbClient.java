@@ -136,7 +136,13 @@ public interface HyperscaleDbClient extends AutoCloseable {
      * no-op.
      *
      * @param database the logical database name
+     * @deprecated Provisioning belongs outside a data-access SDK. Use your
+     *             provider's own SDK, Terraform, Pulumi, or another
+     *             infrastructure-as-code tool to create databases and containers
+     *             before the application starts.
+     *             This method will be removed in the next minor release.
      */
+    @Deprecated(since = "0.1.0", forRemoval = true)
     void ensureDatabase(String database);
 
     /**
@@ -147,19 +153,28 @@ public interface HyperscaleDbClient extends AutoCloseable {
      * etc.).
      *
      * @param address the database + collection identifying the container
+     * @deprecated Provisioning belongs outside a data-access SDK. Use your
+     *             provider's own SDK, Terraform, Pulumi, or another
+     *             infrastructure-as-code tool to create databases and containers
+     *             before the application starts.
+     *             This method will be removed in the next minor release.
      */
+    @Deprecated(since = "0.1.0", forRemoval = true)
     void ensureContainer(ResourceAddress address);
 
     /**
      * Provision a full schema of databases and containers/tables.
      * <p>
      * Creates all databases concurrently, then all containers concurrently.
-     * This is the recommended way to provision multiple resources — the SDK
-     * handles parallelism internally so application code does not need to
-     * manage threading.
      *
      * @param schema map of database name → list of collection/table names
+     * @deprecated Provisioning belongs outside a data-access SDK. Use your
+     *             provider's own SDK, Terraform, Pulumi, or another
+     *             infrastructure-as-code tool to create databases and containers
+     *             before the application starts.
+     *             This method will be removed in the next minor release.
      */
+    @Deprecated(since = "0.1.0", forRemoval = true)
     void provisionSchema(java.util.Map<String, java.util.List<String>> schema);
 
     /**

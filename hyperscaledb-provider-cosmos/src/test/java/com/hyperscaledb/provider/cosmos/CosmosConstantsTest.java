@@ -38,17 +38,6 @@ class CosmosConstantsTest {
         assertEquals("tenantId", CosmosConstants.CONFIG_TENANT_ID);
     }
 
-    @Test
-    @DisplayName("CONFIG_SUBSCRIPTION_ID key value")
-    void configSubscriptionIdKey() {
-        assertEquals("subscriptionId", CosmosConstants.CONFIG_SUBSCRIPTION_ID);
-    }
-
-    @Test
-    @DisplayName("CONFIG_RESOURCE_GROUP key value")
-    void configResourceGroupKey() {
-        assertEquals("resourceGroupName", CosmosConstants.CONFIG_RESOURCE_GROUP);
-    }
 
     @Test
     @DisplayName("CONFIG_CONNECTION_MODE key value")

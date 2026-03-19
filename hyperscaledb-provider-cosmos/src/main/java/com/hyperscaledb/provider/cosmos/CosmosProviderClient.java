@@ -4,17 +4,9 @@
 package com.hyperscaledb.provider.cosmos;
 
 import com.azure.core.credential.TokenCredential;
-import com.azure.core.management.AzureEnvironment;
-import com.azure.core.management.profile.AzureProfile;
 import com.azure.cosmos.*;
 import com.azure.cosmos.models.*;
 import com.azure.identity.DefaultAzureCredentialBuilder;
-import com.azure.resourcemanager.cosmos.CosmosManager;
-import com.azure.resourcemanager.cosmos.models.SqlDatabaseCreateUpdateParameters;
-import com.azure.resourcemanager.cosmos.models.SqlDatabaseResource;
-import com.azure.resourcemanager.cosmos.models.SqlContainerCreateUpdateParameters;
-import com.azure.resourcemanager.cosmos.models.SqlContainerResource;
-import com.azure.resourcemanager.cosmos.models.ContainerPartitionKey;
 import com.hyperscaledb.api.*;
 import com.hyperscaledb.api.OperationNames;
 import com.hyperscaledb.api.query.TranslatedQuery;
@@ -25,7 +17,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.URI;
 import java.util.*;
 
 /**
@@ -48,10 +39,6 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
 
     private final CosmosClient cosmosClient;
 
-    // Management-plane client for provisioning (non-null only in cloud/RBAC mode)
-    private final CosmosManager cosmosManager;
-    private final String resourceGroupName;
-    private final String accountName;
 
     /**
      * Constructs a Cosmos DB provider client from the supplied configuration.
@@ -63,11 +50,6 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
      *       Managed Identity, Azure CLI, environment variables, and the full
      *       DefaultAzureCredential chain.</li>
      * </ul>
-     * When RBAC (key-less) authentication is used and all three management config
-     * keys ({@code subscriptionId}, {@code resourceGroupName}, and a valid endpoint)
-     * are present, a {@link CosmosManager} is also initialised for data-plane
-     * provisioning operations ({@link #ensureDatabase}/{@link #ensureContainer}).
-     * If management config is incomplete, provisioning falls back to data-plane calls.
      *
      * @param config client configuration carrying connection, auth, options, and
      *               feature flags
@@ -89,9 +71,6 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
         if (key != null && !key.isBlank()) {
             builder.key(key);
             LOG.info("Cosmos client using key-based authentication");
-            this.cosmosManager    = null;
-            this.resourceGroupName = null;
-            this.accountName       = null;
         } else {
             String tenantId = config.connection().get(CosmosConstants.CONFIG_TENANT_ID);
             DefaultAzureCredentialBuilder credentialBuilder = new DefaultAzureCredentialBuilder();
@@ -101,21 +80,6 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             TokenCredential credential = credentialBuilder.build();
             builder.credential(credential);
             LOG.info("Cosmos client using DefaultAzureCredential (supports Managed Identity, Azure CLI, environment variables)");
-
-            String subscriptionId   = config.connection().get(CosmosConstants.CONFIG_SUBSCRIPTION_ID);
-            this.resourceGroupName  = config.connection().get(CosmosConstants.CONFIG_RESOURCE_GROUP);
-            this.accountName        = extractAccountName(endpoint);
-
-            if (subscriptionId != null && resourceGroupName != null && accountName != null) {
-                AzureProfile profile = new AzureProfile(tenantId, subscriptionId, AzureEnvironment.AZURE);
-                this.cosmosManager = CosmosManager.authenticate(credential, profile);
-                LOG.info("Cosmos management client initialised (subscription={}, rg={}, account={})",
-                        subscriptionId, resourceGroupName, accountName);
-            } else {
-                this.cosmosManager = null;
-                LOG.warn("Management SDK config incomplete (subscriptionId/resourceGroupName) — "
-                        + "provisioning will fall back to data-plane calls");
-            }
         }
 
         String connectionMode = config.connection().getOrDefault(
@@ -468,115 +432,45 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
         cosmosClient.close();
     }
 
-    // ── Provisioning ────────────────────────────────────────────────────────
+    // ── Provisioning (deprecated) ────────────────────────────────────────────
 
     /**
-     * Ensures the specified logical database (Cosmos DB database) exists.
-     * <p>
-     * Behaviour depends on whether the management-plane client was initialised:
-     * <ul>
-     *   <li><b>Management SDK available</b> — checks for the database via the ARM API and
-     *       creates it if absent. This path is used in RBAC / key-less mode when
-     *       {@code subscriptionId} and {@code resourceGroupName} are configured.</li>
-     *   <li><b>Management SDK unavailable</b> — falls back to the Cosmos data-plane
-     *       {@code createDatabaseIfNotExists} call (works with key auth or when the
-     *       identity has data-plane RBAC write permissions).</li>
-     * </ul>
-     * The operation is idempotent — if the database already exists it returns without
-     * error in both paths.
-     *
-     * @param database the logical database name to create if absent
-     * @throws com.hyperscaledb.api.HyperscaleDbException if creation fails
+     * @deprecated Provisioning is outside the scope of this data-access SDK.
+     *             Use the Azure Cosmos DB SDK, ARM templates, Terraform, or the
+     *             Azure Portal to create databases before the application starts.
+     *             This method will be removed in a future release.
      */
+    @Deprecated(since = "0.1.0", forRemoval = true)
     @Override
+    @SuppressWarnings("deprecation")
     public void ensureDatabase(String database) {
-        if (cosmosManager != null) {
-            try {
-                cosmosManager.serviceClient()
-                        .getSqlResources()
-                        .getSqlDatabase(resourceGroupName, accountName, database);
-                LOG.info("Cosmos database already exists, skipping create: {}", database);
-                return;
-            } catch (com.azure.core.management.exception.ManagementException e) {
-                if (e.getResponse() != null && e.getResponse().getStatusCode() != 404) {
-                    throw e;
-                }
-            }
-            cosmosManager.serviceClient()
-                    .getSqlResources()
-                    .createUpdateSqlDatabase(
-                            resourceGroupName, accountName, database,
-                            new SqlDatabaseCreateUpdateParameters()
-                                    .withResource(new SqlDatabaseResource().withId(database)),
-                            com.azure.core.util.Context.NONE);
-            LOG.info("Ensured Cosmos database via management SDK: {}", database);
-        } else {
-            try {
-                cosmosClient.createDatabaseIfNotExists(database);
-                LOG.info("Ensured Cosmos database: {}", database);
-            } catch (CosmosException e) {
-                throw CosmosErrorMapper.map(e, OperationNames.ENSURE_DATABASE);
-            }
+        try {
+            cosmosClient.createDatabaseIfNotExists(database);
+            LOG.info("ensureDatabase (deprecated): created or verified Cosmos database '{}'", database);
+        } catch (CosmosException e) {
+            throw CosmosErrorMapper.map(e, OperationNames.ENSURE_DATABASE);
         }
     }
 
     /**
-     * Ensures the specified container exists within its logical database.
-     * <p>
-     * Behaviour depends on whether the management-plane client was initialised:
-     * <ul>
-     *   <li><b>Management SDK available</b> — checks for the container via the ARM API
-     *       and creates it with partition key path {@code /partitionKey} if absent.</li>
-     *   <li><b>Management SDK unavailable</b> — falls back to
-     *       {@code createContainerIfNotExists} using the Cosmos data-plane SDK.</li>
-     * </ul>
-     * The container is always created with {@code /partitionKey} as the partition key
-     * path, matching the system fields injected by the CRUD methods.
-     * The operation is idempotent.
-     *
-     * @param address the logical database + container address; {@code address.database()}
-     *                must already exist (call {@link #ensureDatabase} first)
-     * @throws com.hyperscaledb.api.HyperscaleDbException if creation fails
+     * @deprecated Provisioning is outside the scope of this data-access SDK.
+     *             Use the Azure Cosmos DB SDK, ARM templates, Terraform, or the
+     *             Azure Portal to create containers before the application starts.
+     *             This method will be removed in a future release.
      */
+    @Deprecated(since = "0.1.0", forRemoval = true)
     @Override
+    @SuppressWarnings("deprecation")
     public void ensureContainer(ResourceAddress address) {
-        if (cosmosManager != null) {
-            try {
-                cosmosManager.serviceClient()
-                        .getSqlResources()
-                        .getSqlContainer(resourceGroupName, accountName,
-                                address.database(), address.collection());
-                LOG.info("Cosmos container already exists, skipping create: {}/{}",
-                        address.database(), address.collection());
-                return;
-            } catch (com.azure.core.management.exception.ManagementException e) {
-                if (e.getResponse() != null && e.getResponse().getStatusCode() != 404) {
-                    throw e;
-                }
-            }
-            cosmosManager.serviceClient()
-                    .getSqlResources()
-                    .createUpdateSqlContainer(
-                            resourceGroupName, accountName,
-                            address.database(), address.collection(),
-                            new SqlContainerCreateUpdateParameters()
-                                    .withResource(new SqlContainerResource()
-                                            .withId(address.collection())
-                                            .withPartitionKey(new ContainerPartitionKey()
-                                                    .withPaths(List.of(CosmosConstants.PARTITION_KEY_PATH)))),
-                            com.azure.core.util.Context.NONE);
-            LOG.info("Ensured Cosmos container via management SDK: {}/{}",
+        try {
+            CosmosDatabase db = cosmosClient.getDatabase(address.database());
+            CosmosContainerProperties props = new CosmosContainerProperties(
+                    address.collection(), CosmosConstants.PARTITION_KEY_PATH);
+            db.createContainerIfNotExists(props);
+            LOG.info("ensureContainer (deprecated): created or verified Cosmos container '{}/{}'",
                     address.database(), address.collection());
-        } else {
-            try {
-                CosmosDatabase db = cosmosClient.getDatabase(address.database());
-                CosmosContainerProperties props = new CosmosContainerProperties(
-                        address.collection(), CosmosConstants.PARTITION_KEY_PATH);
-                db.createContainerIfNotExists(props);
-                LOG.info("Ensured Cosmos container: {}/{}", address.database(), address.collection());
-            } catch (CosmosException e) {
-                throw CosmosErrorMapper.map(e, OperationNames.ENSURE_CONTAINER);
-            }
+        } catch (CosmosException e) {
+            throw CosmosErrorMapper.map(e, OperationNames.ENSURE_CONTAINER);
         }
     }
 
@@ -618,26 +512,6 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
         CosmosDiagnosticsLogger.logException(operation, address, e);
     }
 
-    /**
-     * Extracts the Cosmos account name from an endpoint URL.
-     * <p>
-     * Example: {@code https://my-account.documents.azure.com:443/} → {@code my-account}.
-     * Returns {@code null} if the URL cannot be parsed or has no host subdomain.
-     *
-     * @param endpoint the full Cosmos DB endpoint URL
-     * @return the account name portion of the hostname, or {@code null}
-     */
-    private static String extractAccountName(String endpoint) {
-        try {
-            String host = URI.create(endpoint).getHost();
-            if (host != null && host.contains(".")) {
-                return host.substring(0, host.indexOf('.'));
-            }
-        } catch (IllegalArgumentException ignored) {
-            // fall through
-        }
-        return null;
-    }
 
     /**
      * Converts a caller-supplied {@code Map<String, Object>} document into a Jackson

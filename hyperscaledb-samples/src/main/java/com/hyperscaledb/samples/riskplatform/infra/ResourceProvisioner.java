@@ -4,28 +4,25 @@
 package com.hyperscaledb.samples.riskplatform.infra;
 
 import com.hyperscaledb.api.HyperscaleDbClient;
+import com.hyperscaledb.api.ResourceAddress;
 
 import java.util.*;
 
 /**
  * Pre-creates databases and containers/tables required by the Risk Platform.
  * <p>
- * Uses the portable {@link HyperscaleDbClient#ensureDatabase(String)} and
- * {@link HyperscaleDbClient#ensureContainer(ResourceAddress)} methods — no
- * provider-specific code required. The SDK handles provider-native semantics:
+ * <strong>Note:</strong> The SDK provisioning API ({@code ensureDatabase},
+ * {@code ensureContainer}, {@code provisionSchema}) is deprecated and will be
+ * removed. For production use, create resources with your provider's own tooling
+ * before the application starts:
  * <ul>
- * <li><b>Cosmos DB</b>: creates databases + containers with
- * {@code /partitionKey}</li>
- * <li><b>DynamoDB</b>: creates tables named {@code database__collection} with
- * hash key {@code partitionKey} + range key {@code id}</li>
- * <li><b>Spanner</b>: creates tables with {@code partitionKey + id} primary key
- * columns in the configured database</li>
+ *   <li><b>Cosmos DB</b>: Azure Portal, ARM templates, Bicep, or Terraform</li>
+ *   <li><b>DynamoDB</b>: AWS Console, CloudFormation, CDK, or Terraform</li>
+ *   <li><b>Spanner</b>: GCP Console, Deployment Manager, or Terraform</li>
  * </ul>
- * <p>
- * The schema is defined as a map of database names to collection lists.
- * To add a new tenant or collection, simply update the {@link #SCHEMA} map —
- * no provider-specific provisioning code changes needed.
+ * This class keeps the deprecated calls for local-emulator / dev convenience only.
  */
+@SuppressWarnings("deprecation")
 public class ResourceProvisioner {
 
     /** Admin database storing the tenant registry. */
@@ -51,27 +48,29 @@ public class ResourceProvisioner {
     }
 
     /**
-     * Provision all required databases and containers/tables for any provider.
+     * Provision all required databases and containers/tables.
      * <p>
-     * Iterates the schema and calls:
-     * <ol>
-     * <li>{@link HyperscaleDbClient#ensureDatabase(String)} for each database</li>
-     * <li>{@link HyperscaleDbClient#ensureContainer(ResourceAddress)} for each
-     * collection</li>
-     * </ol>
+     * For local-emulator / dev use only. In production, create these resources
+     * with Terraform, the Azure Portal, AWS Console, or GCP Console before
+     * starting the application.
+     *
+     * @deprecated Provisioning will be removed from the SDK. Use your provider's
+     *             own infrastructure tooling instead.
      */
+    @Deprecated
     public void provision() {
         System.out.println("  Provisioning resources for " + client.providerId().displayName() + "...");
+        System.out.println("  (Note: SDK provisioning is deprecated — use Terraform/IaC for production)");
 
         for (Map.Entry<String, List<String>> entry : SCHEMA.entrySet()) {
-            System.out.println("    Database: " + entry.getKey());
+            String database = entry.getKey();
+            System.out.println("    Database: " + database);
+            client.ensureDatabase(database);
             for (String collection : entry.getValue()) {
                 System.out.println("      Container: " + collection);
+                client.ensureContainer(new ResourceAddress(database, collection));
             }
         }
-
-        // Single SDK call — parallelism is handled internally by the provider
-        client.provisionSchema(SCHEMA);
 
         System.out.println("  Resource provisioning complete.");
     }

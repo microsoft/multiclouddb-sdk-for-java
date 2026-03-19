@@ -45,6 +45,19 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class HyperscaleDbErrorCategory {
 
+    // ── Internal registry — must be declared BEFORE the public constants ─────
+    // (static fields are initialised top-to-bottom; the constants below call
+    //  fromString() which writes into VALUES, so VALUES must exist first)
+
+    private static final Map<String, HyperscaleDbErrorCategory> VALUES =
+            new ConcurrentHashMap<>();
+
+    private final String value;
+
+    private HyperscaleDbErrorCategory(String value) {
+        this.value = value;
+    }
+
     // ── Well-known categories ────────────────────────────────────────────────
 
     /** The request was malformed or contained invalid parameters. */
@@ -111,20 +124,6 @@ public final class HyperscaleDbErrorCategory {
     public static final HyperscaleDbErrorCategory UNSUPPORTED_CAPABILITY =
             fromString("UNSUPPORTED_CAPABILITY");
 
-    // ── Internal registry ────────────────────────────────────────────────────
-
-    /**
-     * Interned registry: ensures that {@code fromString("X") == fromString("X")}
-     * for all well-known constants and any values created at runtime.
-     */
-    private static final Map<String, HyperscaleDbErrorCategory> VALUES =
-            new ConcurrentHashMap<>();
-
-    private final String value;
-
-    private HyperscaleDbErrorCategory(String value) {
-        this.value = value;
-    }
 
     // ── Factory ──────────────────────────────────────────────────────────────
 
