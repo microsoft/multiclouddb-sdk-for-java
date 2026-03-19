@@ -59,6 +59,19 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
     private final String instanceId;
     private final String databaseId;
 
+    /**
+     * Constructs a Cloud Spanner provider client from the supplied configuration.
+     * <p>
+     * If {@code connection.emulatorHost} is set (e.g. {@code localhost:9010}), the
+     * Spanner emulator is targeted instead of the live Cloud Spanner service.
+     * Application Default Credentials are used when connecting to the live service;
+     * no explicit credential config is needed when running on GCP with a service account.
+     *
+     * @param config client configuration carrying connection, auth, options, and
+     *               feature flags
+     * @throws IllegalArgumentException if {@code connection.instanceId} or
+     *         {@code connection.databaseId} is missing or blank
+     */
     public SpannerProviderClient(HyperscaleDbClientConfig config) {
         this.config = config;
         this.projectId = config.connection().getOrDefault("projectId", "test-project");
@@ -87,6 +100,28 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
                 projectId, instanceId, databaseId, emulatorHost != null ? emulatorHost : "none");
     }
 
+    /**
+     * Inserts a new row into the Spanner table that corresponds to
+     * {@code address.collection()}.
+     * <p>
+     * Uses a Spanner {@code INSERT} mutation. Two primary key columns are always
+     * written first:
+     * <ul>
+     *   <li>{@code partitionKey} — set to {@code key.partitionKey()}.</li>
+     *   <li>{@code sortKey} — set to {@code key.sortKey()} if present, otherwise
+     *       {@code key.partitionKey()}.</li>
+     * </ul>
+     * All remaining document fields are written as individual columns via
+     * {@link #writeMutationFields}. If the row already exists, the mutation fails
+     * with {@link com.hyperscaledb.api.HyperscaleDbErrorCategory#CONFLICT}.
+     *
+     * @param address  the logical database + collection; the collection maps directly to
+     *                 a Spanner table name
+     * @param key      the document key
+     * @param document the document payload; map entries become column values
+     * @param options  operation options (currently unused by this provider)
+     * @throws com.hyperscaledb.api.HyperscaleDbException on any Spanner error
+     */
     @Override
     public void create(ResourceAddress address, com.hyperscaledb.api.Key key, Map<String, Object> document, OperationOptions options) {
         try {
@@ -102,6 +137,22 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
+    /**
+     * Replaces an existing row in Spanner (UPDATE mutation).
+     * <p>
+     * Uses a Spanner {@code UPDATE} mutation, which requires the row to already exist.
+     * If the row is not found, Spanner throws a {@code NOT_FOUND} error which is mapped
+     * to {@link com.hyperscaledb.api.HyperscaleDbErrorCategory#NOT_FOUND}.
+     * The primary key columns and all document fields are written consistently with
+     * {@link #create}.
+     *
+     * @param address  the logical database + collection
+     * @param key      the document key identifying the row to update
+     * @param document the new document payload; replaces all non-key columns
+     * @param options  operation options (currently unused by this provider)
+     * @throws com.hyperscaledb.api.HyperscaleDbException category {@code NOT_FOUND} if
+     *         the row does not exist, or any other Spanner error
+     */
     @Override
     public void update(ResourceAddress address, com.hyperscaledb.api.Key key, Map<String, Object> document, OperationOptions options) {
         try {
@@ -117,6 +168,18 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
+    /**
+     * Creates or replaces a row in Spanner (INSERT_OR_UPDATE mutation / upsert semantics).
+     * <p>
+     * Uses a Spanner {@code INSERT_OR_UPDATE} mutation, which inserts the row if it does
+     * not exist, or updates it in-place if it does.
+     *
+     * @param address  the logical database + collection
+     * @param key      the document key
+     * @param document the document payload
+     * @param options  operation options (currently unused by this provider)
+     * @throws com.hyperscaledb.api.HyperscaleDbException on any Spanner error
+     */
     @Override
     public void upsert(ResourceAddress address, com.hyperscaledb.api.Key key, Map<String, Object> document, OperationOptions options) {
         try {
@@ -132,7 +195,16 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
-    /** Writes document fields into a mutation, skipping PK columns. */
+    /**
+     * Writes all document fields (except primary key columns) into a Spanner mutation.
+     * <p>
+     * The fields {@code partitionKey} and {@code sortKey} are skipped because they are
+     * set by the caller before invoking this method. Each remaining entry is written
+     * via {@link #setMutationValue}.
+     *
+     * @param mutation the mutation builder to populate
+     * @param document the document payload; may be {@code null} (no fields written)
+     */
     private void writeMutationFields(Mutation.WriteBuilder mutation, Map<String, Object> document) {
         if (document != null) {
             for (Map.Entry<String, Object> entry : document.entrySet()) {
@@ -147,6 +219,19 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
+    /**
+     * Reads a single row from Spanner by its composite primary key.
+     * <p>
+     * Executes a GoogleSQL query of the form
+     * {@code SELECT * FROM <table> WHERE partitionKey = @partitionKey AND sortKey = @sortKey}.
+     * Uses a {@code singleUse} read-only transaction (no session overhead).
+     *
+     * @param address the logical database + collection
+     * @param key     the document key
+     * @param options operation options (currently unused by this provider)
+     * @return the row as a {@code Map<String, Object>}, or {@code null} if not found
+     * @throws com.hyperscaledb.api.HyperscaleDbException on any Spanner error
+     */
     @Override
     public Map<String, Object> read(ResourceAddress address, com.hyperscaledb.api.Key key, OperationOptions options) {
         try {
@@ -171,6 +256,17 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
+    /**
+     * Deletes a row from Spanner by its composite primary key.
+     * <p>
+     * Uses a {@code DELETE} mutation. A {@code NOT_FOUND} Spanner error is silently
+     * swallowed — delete is idempotent.
+     *
+     * @param address the logical database + collection
+     * @param key     the document key identifying the row to delete
+     * @param options operation options (currently unused by this provider)
+     * @throws com.hyperscaledb.api.HyperscaleDbException on any non-NOT_FOUND Spanner error
+     */
     @Override
     public void delete(ResourceAddress address, com.hyperscaledb.api.Key key, OperationOptions options) {
         try {
@@ -191,6 +287,34 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
+    /**
+     * Executes a query and returns a single page of results using LIMIT/OFFSET pagination.
+     * <p>
+     * Query routing logic (evaluated in order):
+     * <ol>
+     *   <li><b>Native GoogleSQL passthrough</b> — if {@link QueryRequest#nativeExpression()}
+     *       is set, it is executed as-is.</li>
+     *   <li><b>Full scan</b> — if expression is null/blank or equals the Cosmos-style
+     *       {@code "SELECT * FROM c"} sentinel, a {@code SELECT * FROM <table>} is
+     *       executed.</li>
+     *   <li><b>Legacy expression</b> — the expression is passed through to
+     *       {@link #executeStatement} as-is (backward-compatible path).</li>
+     * </ol>
+     * If {@link QueryRequest#partitionKey()} is set, a {@code WHERE partitionKey = @_pkval}
+     * (or {@code AND partitionKey = @_pkval}) condition is appended automatically.
+     * <p>
+     * Pagination uses integer OFFSET encoding via {@link SpannerContinuationToken}.
+     * Note: OFFSET-based pagination is not ideal for large datasets — it rescans all
+     * preceding rows on each call.
+     *
+     * @param address the logical database + collection
+     * @param query   query request containing expression, parameters, page size, and
+     *                optional continuation token
+     * @param options operation options (currently unused by this provider)
+     * @return a page of results; {@link QueryPage#continuationToken()} is non-null when
+     *         more pages are available
+     * @throws com.hyperscaledb.api.HyperscaleDbException on any Spanner error
+     */
     @Override
     public QueryPage query(ResourceAddress address, QueryRequest query, OperationOptions options) {
         try {
@@ -244,6 +368,29 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
+    /**
+     * Executes a pre-translated portable query using GoogleSQL and returns a single
+     * page of results.
+     * <p>
+     * Called by {@link com.hyperscaledb.api.internal.DefaultHyperscaleDbClient} after
+     * the portable expression has been parsed, validated, and translated into GoogleSQL
+     * by {@link SpannerExpressionTranslator}. Named parameters from
+     * {@link TranslatedQuery#namedParameters()} are bound; leading {@code @} prefixes
+     * are stripped because Spanner's {@link Statement.Builder} expects bare names.
+     * <p>
+     * {@code LIMIT (pageSize + 1) OFFSET offset} is appended for pagination; if the
+     * result set contains more than {@code pageSize} rows, a continuation token is
+     * encoded and returned.
+     *
+     * @param address    the logical database + collection
+     * @param translated the GoogleSQL statement and named parameters produced by the
+     *                   expression translator
+     * @param query      the original query request (used for page size, continuation
+     *                   token, and partition key)
+     * @param options    operation options (currently unused by this provider)
+     * @return a page of results with an optional continuation token
+     * @throws com.hyperscaledb.api.HyperscaleDbException on any Spanner error
+     */
     @Override
     public QueryPage queryWithTranslation(ResourceAddress address, TranslatedQuery translated,
             QueryRequest query, OperationOptions options) {
@@ -336,6 +483,30 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
         LOG.debug("ensureDatabase is a no-op for Spanner (database={})", database);
     }
 
+    /**
+     * Ensures the Spanner table for the given address exists, creating it if absent.
+     * <p>
+     * Existence is detected by issuing a lightweight {@code SELECT 1 FROM <table> LIMIT 1}
+     * query. If that throws {@code NOT_FOUND} or {@code INVALID_ARGUMENT} (table does not
+     * exist), a DDL {@code CREATE TABLE} statement is issued via the
+     * {@link DatabaseAdminClient}.
+     * <p>
+     * The table is always created with the standard schema:
+     * <pre>
+     * CREATE TABLE &lt;tableName&gt; (
+     *   partitionKey STRING(MAX) NOT NULL,
+     *   sortKey      STRING(MAX) NOT NULL,
+     *   data         STRING(MAX)
+     * ) PRIMARY KEY (partitionKey, sortKey)
+     * </pre>
+     * Race conditions ("Duplicate name in schema") are silently ignored.
+     *
+     * @param address the logical database + collection; {@code address.collection()} is
+     *                used as the Spanner table name
+     * @throws com.hyperscaledb.api.HyperscaleDbException on DDL errors
+     * @throws RuntimeException if the DDL future completes exceptionally for a non-Spanner
+     *         reason
+     */
     @Override
     public void ensureContainer(ResourceAddress address) {
         String tableName = address.collection();
@@ -380,9 +551,15 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
     // ---- Internal helpers ----
 
     /**
-     * Appends {@code AND partitionKey = @_pkval} (or
-     * {@code WHERE partitionKey = @_pkval})
-     * to a SQL statement so the query is scoped to a single partition key value.
+     * Appends a partition key scoping condition to a GoogleSQL statement.
+     * <p>
+     * If the statement already has a {@code WHERE} clause, appends
+     * {@code AND partitionKey = @_pkval}; otherwise appends
+     * {@code WHERE partitionKey = @_pkval}.
+     * The caller must bind the {@code @_pkval} parameter separately.
+     *
+     * @param sql the base SQL statement
+     * @return the statement with the partition key condition appended
      */
     private String appendPartitionKeyConditionSQL(String sql) {
         if (sql.toUpperCase().contains("WHERE")) {
@@ -391,6 +568,18 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
         return sql + " WHERE partitionKey = @_pkval";
     }
 
+    /**
+     * Executes a GoogleSQL statement with LIMIT/OFFSET pagination and returns one page.
+     * <p>
+     * Appends {@code LIMIT (pageSize + 1) OFFSET offset} to detect whether more pages
+     * exist. Parameter names starting with {@code @} are stripped before binding.
+     *
+     * @param sql        the GoogleSQL statement (without LIMIT/OFFSET)
+     * @param parameters named query parameters, or {@code null}
+     * @param pageSize   maximum items per page; defaults to 100 if {@code null}
+     * @param offset     the number of rows to skip (0 for the first page)
+     * @return a page of results with an encoded continuation token if more rows exist
+     */
     private QueryPage executeStatement(String sql, Map<String, Object> parameters,
             Integer pageSize, long offset) {
         int limit = pageSize != null ? pageSize : 100;
@@ -428,6 +617,17 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
         return new QueryPage(items, continuationToken);
     }
 
+    /**
+     * Binds a single named parameter to a Spanner {@link Statement.Builder}.
+     * <p>
+     * Supported Java types: {@link String}, {@link Long}, {@link Integer},
+     * {@link Boolean}, {@link Double}, {@link Float}, and {@code null} (bound as
+     * {@code STRING NULL}). All other types are converted via {@link Object#toString()}.
+     *
+     * @param builder the statement builder to bind the parameter to
+     * @param name    the bare parameter name (without the leading {@code @})
+     * @param value   the parameter value; {@code null} is bound as a null STRING
+     */
     private void bindParameter(Statement.Builder builder, String name, Object value) {
         if (value instanceof String s) {
             builder.bind(name).to(s);
@@ -449,6 +649,18 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
+    /**
+     * Sets a single column value in a Spanner mutation builder.
+     * <p>
+     * Supported Java types: {@link String}, {@link Long}, {@link Integer},
+     * {@link Boolean}, {@link Double}, {@link Float}, and {@code null}
+     * (written as {@code NULL STRING}). Complex types (maps, lists, etc.) are
+     * serialised via {@link Object#toString()}.
+     *
+     * @param mutation the mutation builder to write the column into
+     * @param column   the Spanner column name
+     * @param value    the value to write; {@code null} writes a null STRING
+     */
     private void setMutationValue(Mutation.WriteBuilder mutation, String column, Object value) {
         if (value == null) {
             mutation.set(column).to((String) null);

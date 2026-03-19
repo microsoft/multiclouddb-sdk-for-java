@@ -53,6 +53,26 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
     private final String resourceGroupName;
     private final String accountName;
 
+    /**
+     * Constructs a Cosmos DB provider client from the supplied configuration.
+     * <p>
+     * Authentication is selected automatically:
+     * <ul>
+     *   <li>If {@code connection.key} is present, key-based authentication is used.</li>
+     *   <li>Otherwise {@link DefaultAzureCredentialBuilder} is used, supporting
+     *       Managed Identity, Azure CLI, environment variables, and the full
+     *       DefaultAzureCredential chain.</li>
+     * </ul>
+     * When RBAC (key-less) authentication is used and all three management config
+     * keys ({@code subscriptionId}, {@code resourceGroupName}, and a valid endpoint)
+     * are present, a {@link CosmosManager} is also initialised for data-plane
+     * provisioning operations ({@link #ensureDatabase}/{@link #ensureContainer}).
+     * If management config is incomplete, provisioning falls back to data-plane calls.
+     *
+     * @param config client configuration carrying connection, auth, options, and
+     *               feature flags
+     * @throws IllegalArgumentException if {@code connection.endpoint} is missing or blank
+     */
     public CosmosProviderClient(HyperscaleDbClientConfig config) {
         String endpoint = config.connection().get(CosmosConstants.CONFIG_ENDPOINT);
         String key      = config.connection().get(CosmosConstants.CONFIG_KEY);
@@ -110,6 +130,27 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
         LOG.info("Cosmos client created for endpoint: {}", endpoint);
     }
 
+    /**
+     * Inserts a new document into the specified container.
+     * <p>
+     * Before writing, two system fields are injected into the document:
+     * <ul>
+     *   <li>{@code id} — set to {@code key.sortKey()} if present, otherwise {@code key.partitionKey()}.
+     *       This is the Cosmos DB item identifier required by the SDK.</li>
+     *   <li>{@code partitionKey} — set to {@code key.partitionKey()}, matching the
+     *       container's partition key path ({@code /partitionKey}).</li>
+     * </ul>
+     * Uses a {@code createItem} call with no pre-condition, so the operation fails with
+     * {@link com.hyperscaledb.api.HyperscaleDbErrorCategory#CONFLICT} if an item with
+     * the same {@code id} already exists in the partition.
+     *
+     * @param address the logical database + container to write to
+     * @param key     the document key; {@code partitionKey} is required, {@code sortKey} is optional
+     * @param document the document payload as a flat or nested map
+     * @param options  operation options (currently unused by this provider; reserved for timeout support)
+     * @throws com.hyperscaledb.api.HyperscaleDbException mapped from {@link CosmosException} —
+     *         category {@code CONFLICT} (409) if the key already exists
+     */
     @Override
     public void create(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
         try {
@@ -125,6 +166,20 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
+    /**
+     * Reads a single document by its composite key.
+     * <p>
+     * Performs a direct point-read using the Cosmos DB {@code readItem} API, which is
+     * the lowest-latency read path. The item is looked up by the Cosmos {@code id}
+     * (derived from {@code key.sortKey()} or {@code key.partitionKey()}) within the
+     * specified logical partition.
+     *
+     * @param address the logical database + container to read from
+     * @param key     the document key; {@code partitionKey} is required, {@code sortKey} is optional
+     * @param options operation options (currently unused by this provider)
+     * @return the document as a {@code Map<String, Object>}, or {@code null} if not found (HTTP 404)
+     * @throws com.hyperscaledb.api.HyperscaleDbException for any non-404 Cosmos error
+     */
     @Override
     public Map<String, Object> read(ResourceAddress address, Key key, OperationOptions options) {
         try {
@@ -142,6 +197,21 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
+    /**
+     * Replaces an existing document in the specified container.
+     * <p>
+     * Uses the Cosmos DB {@code replaceItem} API, which requires the item to already
+     * exist — the operation fails with {@link com.hyperscaledb.api.HyperscaleDbErrorCategory#NOT_FOUND}
+     * if no matching item is found. The system fields {@code id} and {@code partitionKey}
+     * are injected before the write, consistent with {@link #create}.
+     *
+     * @param address  the logical database + container
+     * @param key      the document key identifying the item to replace
+     * @param document the new document payload; replaces the entire stored document
+     * @param options  operation options (currently unused by this provider)
+     * @throws com.hyperscaledb.api.HyperscaleDbException category {@code NOT_FOUND} (404) if the item
+     *         does not exist
+     */
     @Override
     public void update(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
         try {
@@ -158,6 +228,19 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
+    /**
+     * Creates or replaces a document (upsert semantics).
+     * <p>
+     * Uses the Cosmos DB {@code upsertItem} API, which inserts the item if it does not
+     * exist, or replaces it completely if it does. The system fields {@code id} and
+     * {@code partitionKey} are injected before the write.
+     *
+     * @param address  the logical database + container
+     * @param key      the document key
+     * @param document the document payload
+     * @param options  operation options (currently unused by this provider)
+     * @throws com.hyperscaledb.api.HyperscaleDbException on any Cosmos error
+     */
     @Override
     public void upsert(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
         try {
@@ -173,6 +256,17 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
+    /**
+     * Deletes a document by its composite key.
+     * <p>
+     * A 404 (item not found) response is treated as a success — delete is idempotent.
+     * All other Cosmos errors are mapped to a {@link com.hyperscaledb.api.HyperscaleDbException}.
+     *
+     * @param address the logical database + container
+     * @param key     the document key identifying the item to delete
+     * @param options operation options (currently unused by this provider)
+     * @throws com.hyperscaledb.api.HyperscaleDbException on any non-404 Cosmos error
+     */
     @Override
     public void delete(ResourceAddress address, Key key, OperationOptions options) {
         try {
@@ -189,6 +283,36 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
+    /**
+     * Executes a query and returns a single page of results.
+     * <p>
+     * Query routing logic (evaluated in order):
+     * <ol>
+     *   <li>If {@link QueryRequest#nativeExpression()} is set, it is used as-is as the
+     *       Cosmos SQL string (native passthrough).</li>
+     *   <li>If {@link QueryRequest#expression()} is set, it is used as the Cosmos SQL
+     *       WHERE expression.</li>
+     *   <li>If neither is set, {@code SELECT * FROM c} is used (full container scan).</li>
+     * </ol>
+     * Named parameters ({@code @name} syntax) from {@link QueryRequest#parameters()} are
+     * bound as {@link SqlParameter} values. Parameter names that do not already start with
+     * {@code @} are prefixed automatically.
+     * <p>
+     * If {@link QueryRequest#partitionKey()} is set, the query is scoped to a single
+     * logical partition via {@link CosmosQueryRequestOptions#setPartitionKey}, avoiding
+     * a cross-partition fan-out.
+     * <p>
+     * Only the first page of results is returned; pass the returned
+     * {@link QueryPage#continuationToken()} in the next request to page forward.
+     *
+     * @param address the logical database + container to query
+     * @param query   query request containing expression, parameters, page size, and
+     *                optional continuation token
+     * @param options operation options (currently unused by this provider)
+     * @return a page of results; {@link QueryPage#continuationToken()} is non-null when
+     *         more pages are available
+     * @throws com.hyperscaledb.api.HyperscaleDbException on any Cosmos query error
+     */
     @Override
     public QueryPage query(ResourceAddress address, QueryRequest query, OperationOptions options) {
         try {
@@ -245,6 +369,27 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
+    /**
+     * Executes a pre-translated portable query and returns a single page of results.
+     * <p>
+     * Called by {@link com.hyperscaledb.api.internal.DefaultHyperscaleDbClient} after
+     * the portable expression has been parsed, validated, and translated into Cosmos SQL
+     * by {@link CosmosExpressionTranslator}. Named parameters from
+     * {@link TranslatedQuery#namedParameters()} are bound directly as
+     * {@link SqlParameter} values.
+     * <p>
+     * If {@link QueryRequest#partitionKey()} is set the query is scoped to a single
+     * partition, consistent with {@link #query}.
+     *
+     * @param address    the logical database + container to query
+     * @param translated the Cosmos SQL string and bound named parameters produced by the
+     *                   expression translator
+     * @param query      the original query request (used for page size, continuation
+     *                   token, and partition key)
+     * @param options    operation options (currently unused by this provider)
+     * @return a page of results with an optional continuation token
+     * @throws com.hyperscaledb.api.HyperscaleDbException on any Cosmos query error
+     */
     @Override
     public QueryPage queryWithTranslation(ResourceAddress address, TranslatedQuery translated,
             QueryRequest query, OperationOptions options) {
@@ -318,6 +463,24 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
 
     // ── Provisioning ────────────────────────────────────────────────────────
 
+    /**
+     * Ensures the specified logical database (Cosmos DB database) exists.
+     * <p>
+     * Behaviour depends on whether the management-plane client was initialised:
+     * <ul>
+     *   <li><b>Management SDK available</b> — checks for the database via the ARM API and
+     *       creates it if absent. This path is used in RBAC / key-less mode when
+     *       {@code subscriptionId} and {@code resourceGroupName} are configured.</li>
+     *   <li><b>Management SDK unavailable</b> — falls back to the Cosmos data-plane
+     *       {@code createDatabaseIfNotExists} call (works with key auth or when the
+     *       identity has data-plane RBAC write permissions).</li>
+     * </ul>
+     * The operation is idempotent — if the database already exists it returns without
+     * error in both paths.
+     *
+     * @param database the logical database name to create if absent
+     * @throws com.hyperscaledb.api.HyperscaleDbException if creation fails
+     */
     @Override
     public void ensureDatabase(String database) {
         if (cosmosManager != null) {
@@ -350,6 +513,24 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
+    /**
+     * Ensures the specified container exists within its logical database.
+     * <p>
+     * Behaviour depends on whether the management-plane client was initialised:
+     * <ul>
+     *   <li><b>Management SDK available</b> — checks for the container via the ARM API
+     *       and creates it with partition key path {@code /partitionKey} if absent.</li>
+     *   <li><b>Management SDK unavailable</b> — falls back to
+     *       {@code createContainerIfNotExists} using the Cosmos data-plane SDK.</li>
+     * </ul>
+     * The container is always created with {@code /partitionKey} as the partition key
+     * path, matching the system fields injected by the CRUD methods.
+     * The operation is idempotent.
+     *
+     * @param address the logical database + container address; {@code address.database()}
+     *                must already exist (call {@link #ensureDatabase} first)
+     * @throws com.hyperscaledb.api.HyperscaleDbException if creation fails
+     */
     @Override
     public void ensureContainer(ResourceAddress address) {
         if (cosmosManager != null) {
@@ -392,12 +573,25 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
-
+    /**
+     * Returns the {@link CosmosContainer} handle for the given resource address.
+     * Does not make a network call — the Cosmos SDK resolves the container lazily.
+     *
+     * @param address the logical database + container
+     * @return a live {@link CosmosContainer} reference
+     */
     private CosmosContainer getContainer(ResourceAddress address) {
         CosmosDatabase database = cosmosClient.getDatabase(address.database());
         return database.getContainer(address.collection());
     }
 
+    /**
+     * Resolves the Cosmos DB {@link PartitionKey} from the portable {@link Key}.
+     * The partition key value is always {@code key.partitionKey()}.
+     *
+     * @param key the portable document key
+     * @return the Cosmos SDK partition key object
+     */
     private PartitionKey resolvePartitionKey(Key key) {
         return new PartitionKey(key.partitionKey());
     }
@@ -439,8 +633,12 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
 
     /**
      * Extracts the Cosmos account name from an endpoint URL.
-     * E.g. {@code https://my-account.documents.azure.com:443/} →
-     * {@code my-account}.
+     * <p>
+     * Example: {@code https://my-account.documents.azure.com:443/} → {@code my-account}.
+     * Returns {@code null} if the URL cannot be parsed or has no host subdomain.
+     *
+     * @param endpoint the full Cosmos DB endpoint URL
+     * @return the account name portion of the hostname, or {@code null}
      */
     private static String extractAccountName(String endpoint) {
         try {
@@ -454,15 +652,30 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
         return null;
     }
 
-    /** Convert a caller-supplied {@code Map<String, Object>} to a Jackson {@link ObjectNode} for Cosmos SDK calls. */
+    /**
+     * Converts a caller-supplied {@code Map<String, Object>} document into a Jackson
+     * {@link ObjectNode} suitable for Cosmos SDK write calls.
+     * Jackson is used as a private implementation detail and does not appear on the
+     * public API surface.
+     *
+     * @param document the document payload
+     * @return an {@link ObjectNode} representation of the document
+     */
     private ObjectNode toObjectNode(Map<String, Object> document) {
         return MAPPER.convertValue(document, ObjectNode.class);
     }
 
-    /** Convert a Cosmos SDK {@link JsonNode} response to a plain {@code Map<String, Object>}. */
+    /**
+     * Converts a Cosmos SDK {@link JsonNode} response item into a plain
+     * {@code Map<String, Object>} for return on the public API surface.
+     *
+     * @param node the JSON node returned by the Cosmos SDK; may be {@code null}
+     * @return a map representation, or {@code null} if {@code node} is {@code null}
+     */
     @SuppressWarnings("unchecked")
     private Map<String, Object> toMap(JsonNode node) {
         if (node == null) return null;
         return MAPPER.convertValue(node, Map.class);
     }
 }
+

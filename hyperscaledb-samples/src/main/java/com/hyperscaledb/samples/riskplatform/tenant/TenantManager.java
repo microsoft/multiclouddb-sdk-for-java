@@ -109,8 +109,26 @@ public class TenantManager {
 
     /**
      * Upsert a document into a tenant-scoped collection.
+     *
+     * @param tenantId   the tenant identifier
+     * @param collection the logical collection name
+     * @param key        the document key
+     * @param document   the document payload as a plain map
      */
-    public void upsert(String tenantId, String collection, Key key, JsonNode document) {
+    public void upsert(String tenantId, String collection, Key key, Map<String, Object> document) {
+        client.upsert(addressFor(tenantId, collection), key, document);
+    }
+
+    /**
+     * Upsert a document into a tenant-scoped collection from a Jackson {@link JsonNode}.
+     * Convenience overload for callers that build documents using Jackson APIs internally.
+     *
+     * @param tenantId   the tenant identifier
+     * @param collection the logical collection name
+     * @param key        the document key
+     * @param document   the document payload as a Jackson node (converted to Map internally)
+     */
+    public void upsert(String tenantId, String collection, Key key, com.fasterxml.jackson.databind.JsonNode document) {
         client.upsert(addressFor(tenantId, collection), key, MAPPER.convertValue(document, MAP_TYPE));
     }
 
