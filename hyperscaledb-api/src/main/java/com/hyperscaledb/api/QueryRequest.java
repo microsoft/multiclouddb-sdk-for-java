@@ -4,10 +4,19 @@
 package com.hyperscaledb.api;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Portable query request.
+ * Immutable, portable query request.
+ * <p>
+ * Encapsulates an optional filter expression (portable or native), named
+ * parameters, page size, an opaque continuation token for paging, and an
+ * optional partition key for provider-native scoping.
+ * <p>
+ * All map accessors return <em>unmodifiable</em> views — any attempt to mutate
+ * them will throw {@link UnsupportedOperationException}.
+ * Use {@link #builder()} to construct instances.
  */
 public final class QueryRequest {
 
@@ -45,6 +54,13 @@ public final class QueryRequest {
         return nativeExpression;
     }
 
+    /**
+     * Named query parameters bound to the expression (e.g. {@code @status → "active"}).
+     * <p>
+     * The returned map is <em>unmodifiable</em>; mutations throw
+     * {@link UnsupportedOperationException}. Returns an empty map when no parameters
+     * were supplied.
+     */
     public Map<String, Object> parameters() {
         return parameters;
     }
@@ -108,8 +124,13 @@ public final class QueryRequest {
             return this;
         }
 
+        /**
+         * Set query parameters.
+         * A defensive copy is made immediately; subsequent mutations to
+         * {@code parameters} do not affect this builder.
+         */
         public Builder parameters(Map<String, Object> parameters) {
-            this.parameters = parameters;
+            this.parameters = parameters != null ? new HashMap<>(parameters) : null;
             return this;
         }
 

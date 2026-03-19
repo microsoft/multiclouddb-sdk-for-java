@@ -7,8 +7,12 @@ import java.util.Collections;
 import java.util.Map;
 
 /**
- * Provider-neutral structured error with retryability and sanitized provider
+ * Immutable, provider-neutral structured error carrying error category,
+ * human-readable message, retryability hint, and sanitized provider-specific
  * details.
+ * <p>
+ * All map accessors return <em>unmodifiable</em> views — any attempt to mutate
+ * them will throw {@link UnsupportedOperationException}.
  */
 public final class HyperscaleDbError {
 
@@ -50,8 +54,11 @@ public final class HyperscaleDbError {
     }
 
     /**
-     * Sanitized provider-specific details (error codes, request ids) suitable for
+     * Sanitized provider-specific details (error codes, request IDs) suitable for
      * logging.
+     * <p>
+     * The returned map is <em>unmodifiable</em>; mutations throw
+     * {@link UnsupportedOperationException}.
      */
     public Map<String, String> providerDetails() {
         return providerDetails;

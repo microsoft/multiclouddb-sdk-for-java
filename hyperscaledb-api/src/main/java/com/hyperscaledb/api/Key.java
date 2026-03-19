@@ -74,6 +74,13 @@ public final class Key {
         return sortKey;
     }
 
+    /**
+     * Additional composite key components (future use).
+     * <p>
+     * The returned map is <em>unmodifiable</em>; mutations throw
+     * {@link UnsupportedOperationException}. Returns an empty map when no
+     * components were provided.
+     */
     public Map<String, String> components() {
         return components;
     }
