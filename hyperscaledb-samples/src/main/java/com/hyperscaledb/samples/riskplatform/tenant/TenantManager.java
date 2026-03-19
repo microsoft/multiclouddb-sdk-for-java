@@ -56,7 +56,7 @@ public class TenantManager {
     public JsonNode createTenant(String tenantId, String name, String tier, String industry) {
         ResourceAddress addr = new ResourceAddress(ADMIN_DB, TENANTS_COLLECTION);
         JsonNode doc = Models.tenant(tenantId, name, tier, industry);
-        Key key = Key.of(tenantId, tenantId);
+        HyperscaleDbKey key = HyperscaleDbKey.of(tenantId, tenantId);
         client.upsert(addr, key, MAPPER.convertValue(doc, MAP_TYPE));
         tenantDatabases.put(tenantId, tenantId + "-risk-db");
         return doc;
@@ -90,7 +90,7 @@ public class TenantManager {
      */
     public JsonNode getTenant(String tenantId) {
         ResourceAddress addr = new ResourceAddress(ADMIN_DB, TENANTS_COLLECTION);
-        Key key = Key.of(tenantId, tenantId);
+        HyperscaleDbKey key = HyperscaleDbKey.of(tenantId, tenantId);
         Map<String, Object> result = client.read(addr, key);
         return result != null ? MAPPER.valueToTree(result) : null;
     }
@@ -115,7 +115,7 @@ public class TenantManager {
      * @param key        the document key
      * @param document   the document payload as a plain map
      */
-    public void upsert(String tenantId, String collection, Key key, Map<String, Object> document) {
+    public void upsert(String tenantId, String collection, HyperscaleDbKey key, Map<String, Object> document) {
         client.upsert(addressFor(tenantId, collection), key, document);
     }
 
@@ -128,14 +128,14 @@ public class TenantManager {
      * @param key        the document key
      * @param document   the document payload as a Jackson node (converted to Map internally)
      */
-    public void upsert(String tenantId, String collection, Key key, com.fasterxml.jackson.databind.JsonNode document) {
+    public void upsert(String tenantId, String collection, HyperscaleDbKey key, com.fasterxml.jackson.databind.JsonNode document) {
         client.upsert(addressFor(tenantId, collection), key, MAPPER.convertValue(document, MAP_TYPE));
     }
 
     /**
      * Read a document from a tenant-scoped collection.
      */
-    public JsonNode read(String tenantId, String collection, Key key) {
+    public JsonNode read(String tenantId, String collection, HyperscaleDbKey key) {
         Map<String, Object> result = client.read(addressFor(tenantId, collection), key);
         return result != null ? MAPPER.valueToTree(result) : null;
     }
@@ -143,7 +143,7 @@ public class TenantManager {
     /**
      * Delete a document from a tenant-scoped collection.
      */
-    public void delete(String tenantId, String collection, Key key) {
+    public void delete(String tenantId, String collection, HyperscaleDbKey key) {
         client.delete(addressFor(tenantId, collection), key);
     }
 

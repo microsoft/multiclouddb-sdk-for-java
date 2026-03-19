@@ -152,7 +152,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
      *         category {@code CONFLICT} (409) if the key already exists
      */
     @Override
-    public void create(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
+    public void create(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options) {
         try {
             CosmosContainer container = getContainer(address);
             ObjectNode doc = toObjectNode(document);
@@ -181,7 +181,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
      * @throws com.hyperscaledb.api.HyperscaleDbException for any non-404 Cosmos error
      */
     @Override
-    public Map<String, Object> read(ResourceAddress address, Key key, OperationOptions options) {
+    public Map<String, Object> read(ResourceAddress address, HyperscaleDbKey key, OperationOptions options) {
         try {
             CosmosContainer container = getContainer(address);
             PartitionKey pk = resolvePartitionKey(key);
@@ -213,7 +213,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
      *         does not exist
      */
     @Override
-    public void update(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
+    public void update(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options) {
         try {
             CosmosContainer container = getContainer(address);
             ObjectNode doc = toObjectNode(document);
@@ -242,7 +242,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
      * @throws com.hyperscaledb.api.HyperscaleDbException on any Cosmos error
      */
     @Override
-    public void upsert(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
+    public void upsert(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options) {
         try {
             CosmosContainer container = getContainer(address);
             ObjectNode doc = toObjectNode(document);
@@ -268,7 +268,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
      * @throws com.hyperscaledb.api.HyperscaleDbException on any non-404 Cosmos error
      */
     @Override
-    public void delete(ResourceAddress address, Key key, OperationOptions options) {
+    public void delete(ResourceAddress address, HyperscaleDbKey key, OperationOptions options) {
         try {
             CosmosContainer container = getContainer(address);
             PartitionKey pk = resolvePartitionKey(key);
@@ -592,7 +592,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
      * @param key the portable document key
      * @return the Cosmos SDK partition key object
      */
-    private PartitionKey resolvePartitionKey(Key key) {
+    private PartitionKey resolvePartitionKey(HyperscaleDbKey key) {
         return new PartitionKey(key.partitionKey());
     }
 

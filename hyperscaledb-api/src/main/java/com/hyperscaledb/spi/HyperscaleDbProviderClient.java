@@ -24,31 +24,31 @@ public interface HyperscaleDbProviderClient extends AutoCloseable {
      *
      * @throws HyperscaleDbException with category CONFLICT if the key already exists
      */
-    void create(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options);
+    void create(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Read a document by key.
      *
      * @return the document as a map, or null if not found
      */
-    Map<String, Object> read(ResourceAddress address, Key key, OperationOptions options);
+    Map<String, Object> read(ResourceAddress address, HyperscaleDbKey key, OperationOptions options);
 
     /**
      * Update an existing document. Fails if the key does not exist.
      *
      * @throws HyperscaleDbException with category NOT_FOUND if the key does not exist
      */
-    void update(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options);
+    void update(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Upsert (create or replace) a document.
      */
-    void upsert(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options);
+    void upsert(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Delete a document by key.
      */
-    void delete(ResourceAddress address, Key key, OperationOptions options);
+    void delete(ResourceAddress address, HyperscaleDbKey key, OperationOptions options);
 
     /**
      * Execute a query and return a single page of results.

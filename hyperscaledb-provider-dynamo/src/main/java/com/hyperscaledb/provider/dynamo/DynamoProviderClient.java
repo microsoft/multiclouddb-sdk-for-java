@@ -5,7 +5,7 @@ package com.hyperscaledb.provider.dynamo;
 
 import com.hyperscaledb.api.CapabilitySet;
 import com.hyperscaledb.api.HyperscaleDbClientConfig;
-import com.hyperscaledb.api.Key;
+import com.hyperscaledb.api.HyperscaleDbKey;
 import com.hyperscaledb.api.OperationNames;
 import com.hyperscaledb.api.OperationOptions;
 import com.hyperscaledb.api.ProviderId;
@@ -141,7 +141,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
      *         item already exists, or any other mapped DynamoDB error
      */
     @Override
-    public void create(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
+    public void create(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options) {
         try {
             Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
@@ -178,7 +178,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
      * @throws com.hyperscaledb.api.HyperscaleDbException on any DynamoDB error
      */
     @Override
-    public Map<String, Object> read(ResourceAddress address, Key key, OperationOptions options) {
+    public Map<String, Object> read(ResourceAddress address, HyperscaleDbKey key, OperationOptions options) {
         try {
             Map<String, AttributeValue> keyMap = new LinkedHashMap<>();
             keyMap.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
@@ -219,7 +219,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
      *         item does not exist
      */
     @Override
-    public void update(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
+    public void update(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options) {
         try {
             Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
@@ -255,7 +255,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
      * @throws com.hyperscaledb.api.HyperscaleDbException on any DynamoDB error
      */
     @Override
-    public void upsert(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
+    public void upsert(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options) {
         try {
             Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
@@ -288,7 +288,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
      * @throws com.hyperscaledb.api.HyperscaleDbException on any DynamoDB error
      */
     @Override
-    public void delete(ResourceAddress address, Key key, OperationOptions options) {
+    public void delete(ResourceAddress address, HyperscaleDbKey key, OperationOptions options) {
         try {
             Map<String, AttributeValue> keyMap = new LinkedHashMap<>();
             keyMap.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
