@@ -6,7 +6,6 @@ package com.hyperscaledb.samples;
 import com.hyperscaledb.api.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.Map;
 
@@ -57,10 +56,10 @@ public class PortableCrudQuerySample {
             System.out.println("--- UPSERT: Creating documents ---");
             for (int i = 1; i <= 5; i++) {
                 Key key = Key.of("sample-" + i, "sample-" + i);
-                ObjectNode doc = MAPPER.createObjectNode();
-                doc.put("title", "Task " + i);
-                doc.put("status", i <= 3 ? "active" : "completed");
-                doc.put("priority", i);
+                Map<String, Object> doc = Map.of(
+                        "title", "Task " + i,
+                        "status", i <= 3 ? "active" : "completed",
+                        "priority", i);
                 client.upsert(address, key, doc);
                 System.out.println("  Created: sample-" + i + " (status=" + (i <= 3 ? "active" : "completed") + ")");
             }
@@ -69,18 +68,19 @@ public class PortableCrudQuerySample {
             // === 2. READ: Retrieve a document ===
             System.out.println("--- READ: Retrieve document ---");
             Key getKey = Key.of("sample-1", "sample-1");
-            JsonNode retrieved = client.read(address, getKey);
+            Map<String, Object> retrieved = client.read(address, getKey);
             if (retrieved != null) {
-                System.out.println("  Retrieved: " + retrieved.toPrettyString());
+                JsonNode prettyNode = MAPPER.valueToTree(retrieved);
+                System.out.println("  Retrieved: " + prettyNode.toPrettyString());
             }
             System.out.println();
 
             // === 3. UPSERT: Update a document ===
             System.out.println("--- UPSERT: Update document ---");
-            ObjectNode updated = MAPPER.createObjectNode();
-            updated.put("title", "Task 1 (Updated)");
-            updated.put("status", "completed");
-            updated.put("priority", 1);
+            Map<String, Object> updated = Map.of(
+                    "title", "Task 1 (Updated)",
+                    "status", "completed",
+                    "priority", 1);
             client.upsert(address, getKey, updated);
             System.out.println("  Updated sample-1 status to 'completed'");
             System.out.println();

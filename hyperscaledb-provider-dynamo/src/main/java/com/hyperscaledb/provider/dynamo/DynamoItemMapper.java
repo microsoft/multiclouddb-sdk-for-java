@@ -148,4 +148,24 @@ public final class DynamoItemMapper {
         }
         return AttributeValue.fromS(value.toString());
     }
+
+    /**
+     * Convert a caller-supplied {@code Map<String, Object>} document into a
+     * DynamoDB attribute map. Uses Jackson internally to handle nested structures.
+     */
+    public static Map<String, AttributeValue> mapToAttributeMap(Map<String, Object> document) {
+        if (document == null) return new LinkedHashMap<>();
+        JsonNode node = MAPPER.valueToTree(document);
+        return jsonNodeToAttributeMap(node);
+    }
+
+    /**
+     * Convert a DynamoDB attribute map to a plain {@code Map<String, Object>}.
+     * Uses Jackson internally to handle nested structures.
+     */
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> attributeMapToMap(Map<String, AttributeValue> item) {
+        JsonNode node = attributeMapToJsonNode(item);
+        return MAPPER.convertValue(node, Map.class);
+    }
 }

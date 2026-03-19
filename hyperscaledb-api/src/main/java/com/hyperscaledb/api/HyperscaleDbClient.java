@@ -3,7 +3,7 @@
 
 package com.hyperscaledb.api;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import java.util.Map;
 
 /**
  * Portable client interface for CRUD + query operations across cloud database
@@ -25,12 +25,12 @@ public interface HyperscaleDbClient extends AutoCloseable {
      * @param options  operation options (timeout, etc.)
      * @throws HyperscaleDbException with category CONFLICT if the key already exists
      */
-    void create(ResourceAddress address, Key key, JsonNode document, OperationOptions options);
+    void create(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Insert a new document using default options. Fails if key already exists.
      */
-    default void create(ResourceAddress address, Key key, JsonNode document) {
+    default void create(ResourceAddress address, Key key, Map<String, Object> document) {
         create(address, key, document, OperationOptions.defaults());
     }
 
@@ -40,14 +40,14 @@ public interface HyperscaleDbClient extends AutoCloseable {
      * @param address target database + collection
      * @param key     document key
      * @param options operation options
-     * @return the document, or null if not found
+     * @return the document as a map, or null if not found
      */
-    JsonNode read(ResourceAddress address, Key key, OperationOptions options);
+    Map<String, Object> read(ResourceAddress address, Key key, OperationOptions options);
 
     /**
      * Read a document by key, using default options.
      */
-    default JsonNode read(ResourceAddress address, Key key) {
+    default Map<String, Object> read(ResourceAddress address, Key key) {
         return read(address, key, OperationOptions.defaults());
     }
 
@@ -61,13 +61,13 @@ public interface HyperscaleDbClient extends AutoCloseable {
      * @param options  operation options
      * @throws HyperscaleDbException with category NOT_FOUND if the key does not exist
      */
-    void update(ResourceAddress address, Key key, JsonNode document, OperationOptions options);
+    void update(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Update an existing document using default options. Fails if key does not
      * exist.
      */
-    default void update(ResourceAddress address, Key key, JsonNode document) {
+    default void update(ResourceAddress address, Key key, Map<String, Object> document) {
         update(address, key, document, OperationOptions.defaults());
     }
 
@@ -79,13 +79,13 @@ public interface HyperscaleDbClient extends AutoCloseable {
      * @param document document payload
      * @param options  operation options (timeout, etc.)
      */
-    void upsert(ResourceAddress address, Key key, JsonNode document, OperationOptions options);
+    void upsert(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Upsert (create or replace) a document identified by key, using default
      * options.
      */
-    default void upsert(ResourceAddress address, Key key, JsonNode document) {
+    default void upsert(ResourceAddress address, Key key, Map<String, Object> document) {
         upsert(address, key, document, OperationOptions.defaults());
     }
 

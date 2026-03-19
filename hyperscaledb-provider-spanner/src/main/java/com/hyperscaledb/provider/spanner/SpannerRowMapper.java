@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.cloud.spanner.ResultSet;
 import com.google.cloud.spanner.Type;
 
+import java.util.Map;
+
 /**
  * Maps Spanner {@link ResultSet} rows to Jackson {@link JsonNode} documents.
  * <p>
@@ -64,5 +66,20 @@ public final class SpannerRowMapper {
         }
 
         return node;
+    }
+
+    /**
+     * Convert the current row of a {@link ResultSet} into a plain
+     * {@code Map<String, Object>}.
+     * The cursor must already be positioned on a valid row (i.e., after
+     * {@code rs.next()} returned true).
+     *
+     * @param rs the result set positioned on a row
+     * @return a map of column name to Java value
+     */
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> toMap(ResultSet rs) {
+        JsonNode node = toJsonNode(rs);
+        return MAPPER.convertValue(node, Map.class);
     }
 }

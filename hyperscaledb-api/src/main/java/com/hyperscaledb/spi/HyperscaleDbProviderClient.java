@@ -5,7 +5,6 @@ package com.hyperscaledb.spi;
 
 import com.hyperscaledb.api.*;
 import com.hyperscaledb.api.query.TranslatedQuery;
-import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,26 +24,26 @@ public interface HyperscaleDbProviderClient extends AutoCloseable {
      *
      * @throws HyperscaleDbException with category CONFLICT if the key already exists
      */
-    void create(ResourceAddress address, Key key, JsonNode document, OperationOptions options);
+    void create(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Read a document by key.
      *
-     * @return the document, or null if not found
+     * @return the document as a map, or null if not found
      */
-    JsonNode read(ResourceAddress address, Key key, OperationOptions options);
+    Map<String, Object> read(ResourceAddress address, Key key, OperationOptions options);
 
     /**
      * Update an existing document. Fails if the key does not exist.
      *
      * @throws HyperscaleDbException with category NOT_FOUND if the key does not exist
      */
-    void update(ResourceAddress address, Key key, JsonNode document, OperationOptions options);
+    void update(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Upsert (create or replace) a document.
      */
-    void upsert(ResourceAddress address, Key key, JsonNode document, OperationOptions options);
+    void upsert(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Delete a document by key.

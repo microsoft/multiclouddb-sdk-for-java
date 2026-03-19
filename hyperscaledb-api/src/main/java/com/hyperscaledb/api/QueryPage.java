@@ -3,35 +3,33 @@
 
 package com.hyperscaledb.api;
 
-import com.fasterxml.jackson.databind.JsonNode;
-
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
  * A single page of query results.
  */
 public final class QueryPage {
 
-    private final List<JsonNode> items;
+    private final List<Map<String, Object>> items;
     private final String continuationToken;
     private final List<PortabilityWarning> warnings;
 
-    public QueryPage(List<JsonNode> items, String continuationToken, List<PortabilityWarning> warnings) {
+    public QueryPage(List<Map<String, Object>> items, String continuationToken, List<PortabilityWarning> warnings) {
         this.items = items != null ? List.copyOf(items) : Collections.emptyList();
         this.continuationToken = continuationToken;
         this.warnings = warnings != null ? List.copyOf(warnings) : Collections.emptyList();
     }
 
-    public QueryPage(List<JsonNode> items, String continuationToken) {
+    public QueryPage(List<Map<String, Object>> items, String continuationToken) {
         this(items, continuationToken, null);
     }
 
     /**
-     * Items in this page.
+     * Items in this page, each represented as a map of field name to value.
      */
-    public List<JsonNode> items() {
+    public List<Map<String, Object>> items() {
         return items;
     }
 

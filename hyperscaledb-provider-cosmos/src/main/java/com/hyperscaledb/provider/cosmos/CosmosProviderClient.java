@@ -111,10 +111,10 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
     }
 
     @Override
-    public void create(ResourceAddress address, Key key, JsonNode document, OperationOptions options) {
+    public void create(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
         try {
             CosmosContainer container = getContainer(address);
-            ObjectNode doc = document.isObject() ? (ObjectNode) document.deepCopy() : MAPPER.createObjectNode();
+            ObjectNode doc = toObjectNode(document);
             doc.put(CosmosConstants.FIELD_ID, key.sortKey() != null ? key.sortKey() : key.partitionKey());
             doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
             PartitionKey pk = resolvePartitionKey(key);
@@ -126,14 +126,14 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
     }
 
     @Override
-    public JsonNode read(ResourceAddress address, Key key, OperationOptions options) {
+    public Map<String, Object> read(ResourceAddress address, Key key, OperationOptions options) {
         try {
             CosmosContainer container = getContainer(address);
             PartitionKey pk = resolvePartitionKey(key);
             String cosmosId = key.sortKey() != null ? key.sortKey() : key.partitionKey();
             CosmosItemResponse<JsonNode> response = container.readItem(cosmosId, pk, JsonNode.class);
             logItemDiagnostics(OperationNames.READ, address, response);
-            return response.getItem();
+            return toMap(response.getItem());
         } catch (CosmosException e) {
             if (e.getStatusCode() == 404) {
                 return null;
@@ -143,10 +143,10 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
     }
 
     @Override
-    public void update(ResourceAddress address, Key key, JsonNode document, OperationOptions options) {
+    public void update(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
         try {
             CosmosContainer container = getContainer(address);
-            ObjectNode doc = document.isObject() ? (ObjectNode) document.deepCopy() : MAPPER.createObjectNode();
+            ObjectNode doc = toObjectNode(document);
             String cosmosId = key.sortKey() != null ? key.sortKey() : key.partitionKey();
             doc.put(CosmosConstants.FIELD_ID, cosmosId);
             doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
@@ -159,10 +159,10 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
     }
 
     @Override
-    public void upsert(ResourceAddress address, Key key, JsonNode document, OperationOptions options) {
+    public void upsert(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
         try {
             CosmosContainer container = getContainer(address);
-            ObjectNode doc = document.isObject() ? (ObjectNode) document.deepCopy() : MAPPER.createObjectNode();
+            ObjectNode doc = toObjectNode(document);
             doc.put(CosmosConstants.FIELD_ID, key.sortKey() != null ? key.sortKey() : key.partitionKey());
             doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
             PartitionKey pk = resolvePartitionKey(key);
@@ -218,7 +218,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
 
             SqlQuerySpec sqlQuery = new SqlQuerySpec(expression, sqlParams);
             int pageSize = query.pageSize() != null ? query.pageSize() : CosmosConstants.PAGE_SIZE_DEFAULT;
-            List<JsonNode> items = new ArrayList<>();
+            List<Map<String, Object>> items = new ArrayList<>();
             String continuationToken = null;
 
             Iterable<FeedResponse<JsonNode>> pages;
@@ -231,7 +231,9 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             }
 
             for (FeedResponse<JsonNode> page : pages) {
-                items.addAll(page.getResults());
+                for (JsonNode item : page.getResults()) {
+                    items.add(toMap(item));
+                }
                 continuationToken = page.getContinuationToken();
                 logFeedDiagnostics(OperationNames.QUERY, address, page, items.size());
                 break;
@@ -263,7 +265,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
 
             SqlQuerySpec sqlQuery = new SqlQuerySpec(translated.queryString(), sqlParams);
             int pageSize = query.pageSize() != null ? query.pageSize() : CosmosConstants.PAGE_SIZE_DEFAULT;
-            List<JsonNode> items = new ArrayList<>();
+            List<Map<String, Object>> items = new ArrayList<>();
             String continuationToken = null;
 
             Iterable<FeedResponse<JsonNode>> pages;
@@ -276,7 +278,9 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             }
 
             for (FeedResponse<JsonNode> page : pages) {
-                items.addAll(page.getResults());
+                for (JsonNode item : page.getResults()) {
+                    items.add(toMap(item));
+                }
                 continuationToken = page.getContinuationToken();
                 logFeedDiagnostics(OperationNames.QUERY_WITH_TRANSLATION, address, page, items.size());
                 break;
@@ -448,5 +452,17 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             // fall through
         }
         return null;
+    }
+
+    /** Convert a caller-supplied {@code Map<String, Object>} to a Jackson {@link ObjectNode} for Cosmos SDK calls. */
+    private ObjectNode toObjectNode(Map<String, Object> document) {
+        return MAPPER.convertValue(document, ObjectNode.class);
+    }
+
+    /** Convert a Cosmos SDK {@link JsonNode} response to a plain {@code Map<String, Object>}. */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> toMap(JsonNode node) {
+        if (node == null) return null;
+        return MAPPER.convertValue(node, Map.class);
     }
 }

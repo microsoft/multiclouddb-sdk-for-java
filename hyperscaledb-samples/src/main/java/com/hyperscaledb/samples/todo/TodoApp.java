@@ -17,6 +17,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Properties;
 
 /**
@@ -37,6 +38,9 @@ import java.util.Properties;
 public class TodoApp {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    @SuppressWarnings("unchecked")
+    private static final com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>> MAP_TYPE =
+            new com.fasterxml.jackson.core.type.TypeReference<>() {};
     private static final String DATABASE = "todoapp";
     private static final String COLLECTION = "todos";
     private static final int DEFAULT_PORT = 8080;
@@ -59,7 +63,7 @@ public class TodoApp {
         doc.put("updatedAt", Instant.now().toString());
 
         Key key = Key.of(id, id); // id doubles as partition key
-        client.upsert(address, key, doc);
+        client.upsert(address, key, MAPPER.convertValue(doc, MAP_TYPE));
 
         doc.put("id", id);
         return doc;
@@ -67,21 +71,24 @@ public class TodoApp {
 
     public JsonNode getTodo(String id) {
         Key key = Key.of(id, id);
-        return client.read(address, key);
+        Map<String, Object> result = client.read(address, key);
+        return result != null ? MAPPER.valueToTree(result) : null;
     }
 
     public JsonNode updateTodo(String id, JsonNode updates) {
         Key key = Key.of(id, id);
-        JsonNode existing = client.read(address, key);
+        Map<String, Object> existing = client.read(address, key);
         if (existing == null) {
             return null;
         }
 
-        ObjectNode updated = existing.deepCopy();
-        updates.fields().forEachRemaining(field -> updated.set(field.getKey(), field.getValue()));
+        // Merge updates into existing map
+        Map<String, Object> updated = new java.util.LinkedHashMap<>(existing);
+        updates.fields().forEachRemaining(field ->
+                updated.put(field.getKey(), MAPPER.convertValue(field.getValue(), Object.class)));
         updated.put("updatedAt", Instant.now().toString());
         client.upsert(address, key, updated);
-        return updated;
+        return MAPPER.valueToTree(updated);
     }
 
     public void deleteTodo(String id) {
@@ -96,8 +103,8 @@ public class TodoApp {
 
         ArrayNode result = MAPPER.createArrayNode();
         QueryPage page = client.query(address, query);
-        for (JsonNode item : page.items()) {
-            result.add(item);
+        for (Map<String, Object> item : page.items()) {
+            result.add(MAPPER.valueToTree(item));
         }
         return result;
     }

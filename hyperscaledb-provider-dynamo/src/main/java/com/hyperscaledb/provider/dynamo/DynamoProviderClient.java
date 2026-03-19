@@ -14,7 +14,6 @@ import com.hyperscaledb.api.QueryRequest;
 import com.hyperscaledb.api.ResourceAddress;
 import com.hyperscaledb.api.query.TranslatedQuery;
 import com.hyperscaledb.spi.HyperscaleDbProviderClient;
-import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -99,9 +98,9 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
     }
 
     @Override
-    public void create(ResourceAddress address, Key key, JsonNode document, OperationOptions options) {
+    public void create(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
         try {
-            Map<String, AttributeValue> item = DynamoItemMapper.jsonNodeToAttributeMap(document);
+            Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
             item.put(DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(
                     key.sortKey() != null ? key.sortKey() : key.partitionKey()));
@@ -122,7 +121,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
     }
 
     @Override
-    public JsonNode read(ResourceAddress address, Key key, OperationOptions options) {
+    public Map<String, Object> read(ResourceAddress address, Key key, OperationOptions options) {
         try {
             Map<String, AttributeValue> keyMap = new LinkedHashMap<>();
             keyMap.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
@@ -141,16 +140,16 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
             if (!response.hasItem() || response.item().isEmpty()) {
                 return null;
             }
-            return DynamoItemMapper.attributeMapToJsonNode(response.item());
+            return DynamoItemMapper.attributeMapToMap(response.item());
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.READ);
         }
     }
 
     @Override
-    public void update(ResourceAddress address, Key key, JsonNode document, OperationOptions options) {
+    public void update(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
         try {
-            Map<String, AttributeValue> item = DynamoItemMapper.jsonNodeToAttributeMap(document);
+            Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
             item.put(DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(
                     key.sortKey() != null ? key.sortKey() : key.partitionKey()));
@@ -171,9 +170,9 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
     }
 
     @Override
-    public void upsert(ResourceAddress address, Key key, JsonNode document, OperationOptions options) {
+    public void upsert(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
         try {
-            Map<String, AttributeValue> item = DynamoItemMapper.jsonNodeToAttributeMap(document);
+            Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
             item.put(DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(
                     key.sortKey() != null ? key.sortKey() : key.partitionKey()));
@@ -308,9 +307,9 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
 
             ExecuteStatementResponse response = dynamoClient.executeStatement(stmtBuilder.build());
 
-            List<JsonNode> items = new ArrayList<>();
+            List<Map<String, Object>> items = new ArrayList<>();
             for (Map<String, AttributeValue> item : response.items()) {
-                items.add(DynamoItemMapper.attributeMapToJsonNode(item));
+                items.add(DynamoItemMapper.attributeMapToMap(item));
             }
 
             logQueryDiagnostics(OperationNames.QUERY_WITH_TRANSLATION, address,
@@ -341,9 +340,9 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
 
         ExecuteStatementResponse response = dynamoClient.executeStatement(stmtBuilder.build());
 
-        List<JsonNode> items = new ArrayList<>();
+        List<Map<String, Object>> items = new ArrayList<>();
         for (Map<String, AttributeValue> item : response.items()) {
-            items.add(DynamoItemMapper.attributeMapToJsonNode(item));
+            items.add(DynamoItemMapper.attributeMapToMap(item));
         }
 
         logQueryDiagnostics(DynamoConstants.OP_QUERY_PARTIQL, null,
@@ -363,9 +362,9 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
         if (exclusiveStartKey != null) scanBuilder.exclusiveStartKey(exclusiveStartKey);
 
         ScanResponse response = dynamoClient.scan(scanBuilder.build());
-        List<JsonNode> items = new ArrayList<>();
+        List<Map<String, Object>> items = new ArrayList<>();
         for (Map<String, AttributeValue> item : response.items()) {
-            items.add(DynamoItemMapper.attributeMapToJsonNode(item));
+            items.add(DynamoItemMapper.attributeMapToMap(item));
         }
 
         String continuationToken = null;
@@ -403,9 +402,9 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
         if (exclusiveStartKey != null) scanBuilder.exclusiveStartKey(exclusiveStartKey);
 
         ScanResponse response = dynamoClient.scan(scanBuilder.build());
-        List<JsonNode> items = new ArrayList<>();
+        List<Map<String, Object>> items = new ArrayList<>();
         for (Map<String, AttributeValue> item : response.items()) {
-            items.add(DynamoItemMapper.attributeMapToJsonNode(item));
+            items.add(DynamoItemMapper.attributeMapToMap(item));
         }
 
         String continuationToken = null;

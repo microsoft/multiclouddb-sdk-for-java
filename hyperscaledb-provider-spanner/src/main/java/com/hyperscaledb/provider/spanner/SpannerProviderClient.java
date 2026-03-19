@@ -12,7 +12,6 @@ import com.hyperscaledb.api.QueryRequest;
 import com.hyperscaledb.api.ResourceAddress;
 import com.hyperscaledb.api.query.TranslatedQuery;
 import com.hyperscaledb.spi.HyperscaleDbProviderClient;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.google.cloud.spanner.DatabaseAdminClient;
 import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.DatabaseId;
@@ -89,7 +88,7 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
     }
 
     @Override
-    public void create(ResourceAddress address, com.hyperscaledb.api.Key key, JsonNode document, OperationOptions options) {
+    public void create(ResourceAddress address, com.hyperscaledb.api.Key key, Map<String, Object> document, OperationOptions options) {
         try {
             String table = address.collection();
             Mutation.WriteBuilder mutation = Mutation.newInsertBuilder(table)
@@ -104,7 +103,7 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
     }
 
     @Override
-    public void update(ResourceAddress address, com.hyperscaledb.api.Key key, JsonNode document, OperationOptions options) {
+    public void update(ResourceAddress address, com.hyperscaledb.api.Key key, Map<String, Object> document, OperationOptions options) {
         try {
             String table = address.collection();
             Mutation.WriteBuilder mutation = Mutation.newUpdateBuilder(table)
@@ -119,7 +118,7 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
     }
 
     @Override
-    public void upsert(ResourceAddress address, com.hyperscaledb.api.Key key, JsonNode document, OperationOptions options) {
+    public void upsert(ResourceAddress address, com.hyperscaledb.api.Key key, Map<String, Object> document, OperationOptions options) {
         try {
             String table = address.collection();
             Mutation.WriteBuilder mutation = Mutation.newInsertOrUpdateBuilder(table)
@@ -134,17 +133,14 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
     }
 
     /** Writes document fields into a mutation, skipping PK columns. */
-    private void writeMutationFields(Mutation.WriteBuilder mutation, JsonNode document) {
-        if (document != null && document.isObject()) {
-            Iterator<Map.Entry<String, JsonNode>> fields = document.fields();
-            while (fields.hasNext()) {
-                Map.Entry<String, JsonNode> field = fields.next();
-                String name = field.getKey();
-                JsonNode value = field.getValue();
+    private void writeMutationFields(Mutation.WriteBuilder mutation, Map<String, Object> document) {
+        if (document != null) {
+            for (Map.Entry<String, Object> entry : document.entrySet()) {
+                String name = entry.getKey();
+                Object value = entry.getValue();
 
                 // Skip primary key fields — already set by caller
-                if ("sortKey".equals(name) || "partitionKey".equals(name))
-                    continue;
+                if ("sortKey".equals(name) || "partitionKey".equals(name)) continue;
 
                 setMutationValue(mutation, name, value);
             }
@@ -152,7 +148,7 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
     }
 
     @Override
-    public JsonNode read(ResourceAddress address, com.hyperscaledb.api.Key key, OperationOptions options) {
+    public Map<String, Object> read(ResourceAddress address, com.hyperscaledb.api.Key key, OperationOptions options) {
         try {
             String table = address.collection();
             String partitionKeyVal = key.partitionKey();
@@ -166,7 +162,7 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
 
             try (ResultSet rs = databaseClient.singleUse().executeQuery(statement)) {
                 if (rs.next()) {
-                    return SpannerRowMapper.toJsonNode(rs);
+                    return SpannerRowMapper.toMap(rs);
                 }
                 return null;
             }
@@ -283,10 +279,10 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
 
             Statement stmt = stmtBuilder.build();
 
-            List<JsonNode> items = new ArrayList<>();
+            List<Map<String, Object>> items = new ArrayList<>();
             try (ResultSet rs = databaseClient.singleUse().executeQuery(stmt)) {
                 while (rs.next() && items.size() < pageSize + 1) {
-                    items.add(SpannerRowMapper.toJsonNode(rs));
+                    items.add(SpannerRowMapper.toMap(rs));
                 }
             }
 
@@ -413,11 +409,11 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
             }
         }
 
-        List<JsonNode> items = new ArrayList<>();
+        List<Map<String, Object>> items = new ArrayList<>();
 
         try (ResultSet rs = databaseClient.singleUse().executeQuery(stmtBuilder.build())) {
             while (rs.next() && items.size() < limit + 1) {
-                items.add(SpannerRowMapper.toJsonNode(rs));
+                items.add(SpannerRowMapper.toMap(rs));
             }
         }
 
@@ -453,17 +449,21 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
         }
     }
 
-    private void setMutationValue(Mutation.WriteBuilder mutation, String column, JsonNode value) {
-        if (value == null || value.isNull()) {
+    private void setMutationValue(Mutation.WriteBuilder mutation, String column, Object value) {
+        if (value == null) {
             mutation.set(column).to((String) null);
-        } else if (value.isTextual()) {
-            mutation.set(column).to(value.asText());
-        } else if (value.isInt() || value.isLong()) {
-            mutation.set(column).to(value.asLong());
-        } else if (value.isBoolean()) {
-            mutation.set(column).to(value.asBoolean());
-        } else if (value.isDouble() || value.isFloat()) {
-            mutation.set(column).to(value.asDouble());
+        } else if (value instanceof String s) {
+            mutation.set(column).to(s);
+        } else if (value instanceof Long l) {
+            mutation.set(column).to(l);
+        } else if (value instanceof Integer i) {
+            mutation.set(column).to((long) i);
+        } else if (value instanceof Boolean b) {
+            mutation.set(column).to(b);
+        } else if (value instanceof Double d) {
+            mutation.set(column).to(d);
+        } else if (value instanceof Float f) {
+            mutation.set(column).to((double) f);
         } else {
             // Complex types: serialize as JSON string
             mutation.set(column).to(value.toString());

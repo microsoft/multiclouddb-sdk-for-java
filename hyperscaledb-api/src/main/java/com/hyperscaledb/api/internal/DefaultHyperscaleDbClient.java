@@ -6,7 +6,6 @@ package com.hyperscaledb.api.internal;
 import com.hyperscaledb.api.*;
 import com.hyperscaledb.api.query.*;
 import com.hyperscaledb.spi.HyperscaleDbProviderClient;
-import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +41,7 @@ public final class DefaultHyperscaleDbClient implements HyperscaleDbClient {
     }
 
     @Override
-    public void create(ResourceAddress address, Key key, JsonNode document, OperationOptions options) {
+    public void create(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
         Instant start = Instant.now();
         try {
             providerClient.create(address, key, document, options);
@@ -56,10 +55,10 @@ public final class DefaultHyperscaleDbClient implements HyperscaleDbClient {
     }
 
     @Override
-    public JsonNode read(ResourceAddress address, Key key, OperationOptions options) {
+    public Map<String, Object> read(ResourceAddress address, Key key, OperationOptions options) {
         Instant start = Instant.now();
         try {
-            JsonNode result = providerClient.read(address, key, options);
+            Map<String, Object> result = providerClient.read(address, key, options);
             LOG.debug("read completed: address={}, key={}, found={}, duration={}ms",
                     address, key, result != null, Duration.between(start, Instant.now()).toMillis());
             return result;
@@ -71,7 +70,7 @@ public final class DefaultHyperscaleDbClient implements HyperscaleDbClient {
     }
 
     @Override
-    public void update(ResourceAddress address, Key key, JsonNode document, OperationOptions options) {
+    public void update(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
         Instant start = Instant.now();
         try {
             providerClient.update(address, key, document, options);
@@ -85,7 +84,7 @@ public final class DefaultHyperscaleDbClient implements HyperscaleDbClient {
     }
 
     @Override
-    public void upsert(ResourceAddress address, Key key, JsonNode document, OperationOptions options) {
+    public void upsert(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
         Instant start = Instant.now();
         try {
             providerClient.upsert(address, key, document, options);
