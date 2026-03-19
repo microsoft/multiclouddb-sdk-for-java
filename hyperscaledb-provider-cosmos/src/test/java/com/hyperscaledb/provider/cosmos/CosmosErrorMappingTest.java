@@ -41,7 +41,7 @@ class CosmosErrorMappingTest {
         CosmosException cosmosEx = mockCosmosException(statusCode, 0);
         HyperscaleDbException result = CosmosErrorMapper.map(cosmosEx, OperationNames.READ);
 
-        assertEquals(HyperscaleDbErrorCategory.valueOf(expectedCategory), result.error().category());
+        assertEquals(HyperscaleDbErrorCategory.fromString(expectedCategory), result.error().category());
         assertEquals("cosmos", result.error().provider().id());
         assertEquals(OperationNames.READ, result.error().operation());
         assertNotNull(result.error().providerDetails());

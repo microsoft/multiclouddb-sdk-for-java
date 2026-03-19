@@ -39,7 +39,7 @@ class DynamoErrorMappingTest {
         DynamoDbException ex = mockDynamoException(400, errorCode);
         HyperscaleDbException result = DynamoErrorMapper.map(ex, OperationNames.READ);
 
-        assertEquals(HyperscaleDbErrorCategory.valueOf(expectedCategory), result.error().category());
+        assertEquals(HyperscaleDbErrorCategory.fromString(expectedCategory), result.error().category());
         assertEquals("dynamo", result.error().provider().id());
         assertEquals(OperationNames.READ, result.error().operation());
     }
@@ -60,7 +60,7 @@ class DynamoErrorMappingTest {
         DynamoDbException ex = mockDynamoException(statusCode, "UnknownError");
         HyperscaleDbException result = DynamoErrorMapper.map(ex, OperationNames.QUERY);
 
-        assertEquals(HyperscaleDbErrorCategory.valueOf(expectedCategory), result.error().category());
+        assertEquals(HyperscaleDbErrorCategory.fromString(expectedCategory), result.error().category());
     }
 
     @Test

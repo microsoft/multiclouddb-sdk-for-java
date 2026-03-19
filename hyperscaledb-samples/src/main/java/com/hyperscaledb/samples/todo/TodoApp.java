@@ -225,7 +225,7 @@ public class TodoApp {
         } catch (HyperscaleDbException e) {
             ObjectNode err = MAPPER.createObjectNode();
             err.put("error", e.getMessage());
-            err.put("category", e.error().category().name());
+            err.put("category", e.error().category().getValue());
             sendJson(exchange, 500, err);
         } catch (Exception e) {
             sendJson(exchange, 500,

@@ -86,7 +86,7 @@ public abstract class DiagnosticsConformanceTest {
         ResourceAddress badAddress = new ResourceAddress("nonexistent-db-12345", "nonexistent-collection-12345");
         try {
             client.upsert(badAddress, Key.of("bad-key", "bad-key"),
-                    new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("test", true),
+                    java.util.Map.of("test", true),
                     OperationOptions.defaults());
         } catch (HyperscaleDbException e) {
             if (e.diagnostics() != null) {

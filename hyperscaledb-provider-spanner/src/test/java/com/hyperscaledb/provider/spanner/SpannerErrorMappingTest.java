@@ -43,7 +43,7 @@ class SpannerErrorMappingTest {
 
         HyperscaleDbException result = SpannerErrorMapper.map(spannerEx, "test-op");
 
-        assertEquals(HyperscaleDbErrorCategory.valueOf(expectedCategory), result.error().category());
+        assertEquals(HyperscaleDbErrorCategory.fromString(expectedCategory), result.error().category());
         assertEquals("spanner", result.error().provider().id());
         assertEquals("test-op", result.error().operation());
     }
