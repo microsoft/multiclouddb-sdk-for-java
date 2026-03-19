@@ -4,6 +4,7 @@
 package com.hyperscaledb.conformance.us2;
 
 import com.hyperscaledb.api.*;
+import com.hyperscaledb.api.HyperscaleDbKey;
 import com.hyperscaledb.conformance.ConformanceConfig;
 import org.junit.jupiter.api.*;
 
@@ -46,7 +47,7 @@ public abstract class DiagnosticsConformanceTest {
         // Use a deliberately invalid/nonexistent address to trigger an error
         ResourceAddress badAddress = new ResourceAddress("nonexistent-db-12345", "nonexistent-collection-12345");
         try {
-            client.read(badAddress, Key.of("nonexistent-key", "nonexistent-key"), OperationOptions.defaults());
+            client.read(badAddress, HyperscaleDbKey.of("nonexistent-key", "nonexistent-key"), OperationOptions.defaults());
             // Some providers may return null instead of throwing — that's OK, skip
             // diagnostics check
         } catch (HyperscaleDbException e) {
@@ -70,7 +71,7 @@ public abstract class DiagnosticsConformanceTest {
     void exceptionErrorHasProvider() {
         ResourceAddress badAddress = new ResourceAddress("nonexistent-db-12345", "nonexistent-collection-12345");
         try {
-            client.delete(badAddress, Key.of("no-such-key", "no-such-key"), OperationOptions.defaults());
+            client.delete(badAddress, HyperscaleDbKey.of("no-such-key", "no-such-key"), OperationOptions.defaults());
         } catch (HyperscaleDbException e) {
             assertEquals(providerId(), e.error().provider(),
                     "Error provider should match the client's provider");
@@ -85,7 +86,7 @@ public abstract class DiagnosticsConformanceTest {
     void exceptionHasOperationName() {
         ResourceAddress badAddress = new ResourceAddress("nonexistent-db-12345", "nonexistent-collection-12345");
         try {
-            client.upsert(badAddress, Key.of("bad-key", "bad-key"),
+            client.upsert(badAddress, HyperscaleDbKey.of("bad-key", "bad-key"),
                     java.util.Map.of("test", true),
                     OperationOptions.defaults());
         } catch (HyperscaleDbException e) {
@@ -103,7 +104,7 @@ public abstract class DiagnosticsConformanceTest {
     void deleteErrorOperationName() {
         ResourceAddress badAddress = new ResourceAddress("nonexistent-db-12345", "nonexistent-collection-12345");
         try {
-            client.delete(badAddress, Key.of("no-key", "no-key"), OperationOptions.defaults());
+            client.delete(badAddress, HyperscaleDbKey.of("no-key", "no-key"), OperationOptions.defaults());
         } catch (HyperscaleDbException e) {
             if (e.diagnostics() != null) {
                 assertEquals(OperationNames.DELETE, e.diagnostics().operation(),

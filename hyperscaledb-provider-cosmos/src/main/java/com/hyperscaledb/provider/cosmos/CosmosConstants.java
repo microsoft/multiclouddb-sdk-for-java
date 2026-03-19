@@ -82,9 +82,46 @@ public final class CosmosConstants {
     /** Prefix for named query parameters in Cosmos SQL. */
     public static final String QUERY_PARAM_PREFIX = "@";
 
-    // ── Error / validation messages ───────────────────────────────────────────
+    /** Error / validation messages ───────────────────────────────────────────
 
     /** Error message thrown when the endpoint config key is missing or blank. */
     public static final String ERR_ENDPOINT_REQUIRED = "Cosmos connection.endpoint is required";
+
+    // ── Diagnostics thresholds (ms) ───────────────────────────────────────────
+    // Mirrors the thresholds recommended by the Azure Cosmos DB Java SDK v4
+    // troubleshooting guide:
+    // https://learn.microsoft.com/en-us/azure/cosmos-db/troubleshoot-java-sdk-v4
+
+    /**
+     * WARN threshold for point-read / write latency (ms).
+     * Operations slower than this emit a WARN log with full diagnostics.
+     * Cosmos DB SLA for point reads in the same region is ~10 ms.
+     */
+    public static final long DIAG_THRESHOLD_POINT_MS = 10L;
+
+    /**
+     * WARN threshold for query latency (ms).
+     * Single-partition queries slower than this emit a WARN log with full diagnostics.
+     */
+    public static final long DIAG_THRESHOLD_QUERY_MS = 100L;
+
+    /**
+     * ERROR threshold for query latency (ms).
+     * Queries slower than this emit an ERROR log — indicative of cross-partition
+     * fan-out, missing index, or throttling.
+     */
+    public static final long DIAG_THRESHOLD_QUERY_ERROR_MS = 1000L;
+
+    /**
+     * Maximum RU charge for a single point-read before a WARN is emitted.
+     * A well-partitioned point-read should cost ~1 RU; higher charges suggest
+     * large document size or misconfigured partition key.
+     */
+    public static final double DIAG_THRESHOLD_POINT_RU = 10.0;
+
+    /**
+     * Maximum RU charge for a single query page before a WARN is emitted.
+     */
+    public static final double DIAG_THRESHOLD_QUERY_RU = 100.0;
 }
 

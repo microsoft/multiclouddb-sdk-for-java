@@ -106,7 +106,7 @@ class DynamoQueryIntegrationTest {
     private void insertDoc(String id, String title, String status, int priority, String category) {
         Map<String, Object> doc = Map.of(
                 "title", title, "status", status, "priority", priority, "category", category);
-        client.upsert(address, Key.of(id, id), doc);
+        client.upsert(address, HyperscaleDbKey.of(id, id), doc);
     }
 
     /** Convenience: extract a string field from a result-map item. */

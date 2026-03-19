@@ -174,7 +174,7 @@ public class RiskPlatformApp {
 
                 ObjectNode doc = com.hyperscaledb.samples.riskplatform.model.Models
                         .portfolio(pid, name, type, currency, benchmark);
-                tenantManager.upsert(tenantId, "portfolios", Key.of(pid, pid), doc);
+                tenantManager.upsert(tenantId, "portfolios", HyperscaleDbKey.of(pid, pid), doc);
                 sendJson(exchange, 201, doc);
                 return;
             }
@@ -186,7 +186,7 @@ public class RiskPlatformApp {
                     sendError(exchange, 400, "Missing portfolio ID in path");
                     return;
                 }
-                tenantManager.delete(tenantId, "portfolios", Key.of(portfolioId, portfolioId));
+                tenantManager.delete(tenantId, "portfolios", HyperscaleDbKey.of(portfolioId, portfolioId));
                 ObjectNode resp = MAPPER.createObjectNode();
                 resp.put("deleted", portfolioId);
                 sendJson(exchange, 200, resp);
@@ -266,7 +266,7 @@ public class RiskPlatformApp {
                 ObjectNode doc = com.hyperscaledb.samples.riskplatform.model.Models
                         .position(posId, portfolioId, symbol, assetClass,
                                 quantity, avgCost, currentPrice, sector);
-                tenantManager.upsert(tenantId, "positions", Key.of(portfolioId, posId), doc);
+                tenantManager.upsert(tenantId, "positions", HyperscaleDbKey.of(portfolioId, posId), doc);
                 sendJson(exchange, 201, doc);
                 return;
             }
@@ -284,7 +284,7 @@ public class RiskPlatformApp {
                     return;
                 }
                 tenantManager.delete(tenantId, "positions",
-                        Key.of(portfolioIdParam, positionId));
+                        HyperscaleDbKey.of(portfolioIdParam, positionId));
                 ObjectNode resp = MAPPER.createObjectNode();
                 resp.put("deleted", positionId);
                 sendJson(exchange, 200, resp);
@@ -384,7 +384,7 @@ public class RiskPlatformApp {
 
                 ObjectNode doc = com.hyperscaledb.samples.riskplatform.model.Models
                         .alert(alertId, portfolioId, severity, type, message);
-                tenantManager.upsert(tenantId, "alerts", Key.of(portfolioId, alertId), doc);
+                tenantManager.upsert(tenantId, "alerts", HyperscaleDbKey.of(portfolioId, alertId), doc);
                 sendJson(exchange, 201, doc);
             } else if ("PUT".equals(method)) {
                 // Acknowledge alert
@@ -399,13 +399,13 @@ public class RiskPlatformApp {
                         return;
                     }
                     JsonNode existing = tenantManager.read(tenantId, "alerts",
-                            Key.of(portfolioId, alertId));
+                            HyperscaleDbKey.of(portfolioId, alertId));
                     if (existing != null) {
                         ObjectNode updated = existing.deepCopy();
                         updated.put("acknowledged", true);
                         updated.put("status", "ACKNOWLEDGED");
                         tenantManager.upsert(tenantId, "alerts",
-                                Key.of(portfolioId, alertId), updated);
+                                HyperscaleDbKey.of(portfolioId, alertId), updated);
                         sendJson(exchange, 200, updated);
                     } else {
                         sendError(exchange, 404, "Alert not found");
@@ -426,7 +426,7 @@ public class RiskPlatformApp {
                             "Missing 'portfolio' query parameter for alert delete");
                     return;
                 }
-                tenantManager.delete(tenantId, "alerts", Key.of(portfolioId, alertId));
+                tenantManager.delete(tenantId, "alerts", HyperscaleDbKey.of(portfolioId, alertId));
                 ObjectNode resp = MAPPER.createObjectNode();
                 resp.put("deleted", alertId);
                 sendJson(exchange, 200, resp);

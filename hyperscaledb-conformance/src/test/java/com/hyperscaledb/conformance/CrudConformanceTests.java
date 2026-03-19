@@ -50,7 +50,7 @@ public abstract class CrudConformanceTests {
     @Test @Order(1)
     @DisplayName("upsert + read roundtrip")
     void upsertAndRead() {
-        Key key = Key.of("conf-test-1", "conf-test-1");
+        HyperscaleDbKey key = HyperscaleDbKey.of("conf-test-1", "conf-test-1");
         client.upsert(getAddress(), key,
                 Map.of("title", "Conformance Test Item", "value", 42, "active", true));
 
@@ -64,7 +64,7 @@ public abstract class CrudConformanceTests {
     @Test @Order(2)
     @DisplayName("upsert overwrites existing document")
     void upsertOverwrites() {
-        Key key = Key.of("conf-test-upsert", "conf-test-upsert");
+        HyperscaleDbKey key = HyperscaleDbKey.of("conf-test-upsert", "conf-test-upsert");
         client.upsert(getAddress(), key, Map.of("version", 1));
         client.upsert(getAddress(), key, Map.of("version", 2, "extra", "field"));
 
@@ -78,14 +78,14 @@ public abstract class CrudConformanceTests {
     @Test @Order(3)
     @DisplayName("read returns null for nonexistent key")
     void readNonExistent() {
-        assertNull(client.read(getAddress(), Key.of("does-not-exist-xyz", "does-not-exist-xyz")),
+        assertNull(client.read(getAddress(), HyperscaleDbKey.of("does-not-exist-xyz", "does-not-exist-xyz")),
                 "Should return null for nonexistent document");
     }
 
     @Test @Order(4)
     @DisplayName("delete removes document")
     void deleteDocument() {
-        Key key = Key.of("conf-test-delete", "conf-test-delete");
+        HyperscaleDbKey key = HyperscaleDbKey.of("conf-test-delete", "conf-test-delete");
         client.upsert(getAddress(), key, Map.of("title", "To be deleted"));
         assertNotNull(client.read(getAddress(), key));
         client.delete(getAddress(), key);
@@ -95,35 +95,35 @@ public abstract class CrudConformanceTests {
     @Test @Order(5)
     @DisplayName("delete of nonexistent key is idempotent")
     void deleteIdempotent() {
-        assertDoesNotThrow(() -> client.delete(getAddress(), Key.of("never-existed-xyz", "never-existed-xyz")));
+        assertDoesNotThrow(() -> client.delete(getAddress(), HyperscaleDbKey.of("never-existed-xyz", "never-existed-xyz")));
     }
 
     @Test @Order(6)
     @DisplayName("query returns items")
     void queryAll() {
         for (int i = 1; i <= 3; i++) {
-            client.upsert(getAddress(), Key.of("conf-query-" + i, "conf-query-" + i),
+            client.upsert(getAddress(), HyperscaleDbKey.of("conf-query-" + i, "conf-query-" + i),
                     Map.of("title", "Query Item " + i, "batch", "conformance"));
         }
         QueryPage page = client.query(getAddress(),
                 QueryRequest.builder().expression("SELECT * FROM c").pageSize(50).build());
         assertNotNull(page);
         assertFalse(page.items().isEmpty(), "Query should return at least our inserted items");
-        for (int i = 1; i <= 3; i++) client.delete(getAddress(), Key.of("conf-query-" + i, "conf-query-" + i));
+        for (int i = 1; i <= 3; i++) client.delete(getAddress(), HyperscaleDbKey.of("conf-query-" + i, "conf-query-" + i));
     }
 
     @Test @Order(7)
     @DisplayName("query with page size limits results")
     void queryPaging() {
         for (int i = 1; i <= 5; i++) {
-            client.upsert(getAddress(), Key.of("conf-page-" + i, "conf-page-" + i),
+            client.upsert(getAddress(), HyperscaleDbKey.of("conf-page-" + i, "conf-page-" + i),
                     Map.of("title", "Page Item " + i));
         }
         QueryPage page1 = client.query(getAddress(),
                 QueryRequest.builder().expression("SELECT * FROM c").pageSize(2).build());
         assertNotNull(page1);
         assertTrue(page1.items().size() <= 2, "Page should respect pageSize limit");
-        for (int i = 1; i <= 5; i++) client.delete(getAddress(), Key.of("conf-page-" + i, "conf-page-" + i));
+        for (int i = 1; i <= 5; i++) client.delete(getAddress(), HyperscaleDbKey.of("conf-page-" + i, "conf-page-" + i));
     }
 
     @Test @Order(8)
@@ -143,7 +143,7 @@ public abstract class CrudConformanceTests {
     @Test @Order(10)
     @DisplayName("cleanup conformance test items")
     void cleanup() {
-        client.delete(getAddress(), Key.of("conf-test-1", "conf-test-1"));
+        client.delete(getAddress(), HyperscaleDbKey.of("conf-test-1", "conf-test-1"));
     }
 
     // ── Partition-key-scoped query tests ──────────────────────────────────────
@@ -152,10 +152,10 @@ public abstract class CrudConformanceTests {
     @DisplayName("partitionKey scopes query to matching items only")
     void queryByPartitionKey() {
         for (int i = 1; i <= 3; i++)
-            client.upsert(getAddress(), Key.of("alpha", "pk-alpha-" + i),
+            client.upsert(getAddress(), HyperscaleDbKey.of("alpha", "pk-alpha-" + i),
                     Map.of("title", "Alpha Item " + i, "group", "alpha"));
         for (int i = 1; i <= 2; i++)
-            client.upsert(getAddress(), Key.of("beta", "pk-beta-" + i),
+            client.upsert(getAddress(), HyperscaleDbKey.of("beta", "pk-beta-" + i),
                     Map.of("title", "Beta Item " + i, "group", "beta"));
 
         QueryPage alphaPage = client.query(getAddress(),
@@ -170,15 +170,15 @@ public abstract class CrudConformanceTests {
         assertNotNull(betaPage);
         assertEquals(2, betaPage.items().size(), "Partition 'beta' should contain exactly 2 items");
 
-        for (int i = 1; i <= 3; i++) client.delete(getAddress(), Key.of("alpha", "pk-alpha-" + i));
-        for (int i = 1; i <= 2; i++) client.delete(getAddress(), Key.of("beta", "pk-beta-" + i));
+        for (int i = 1; i <= 3; i++) client.delete(getAddress(), HyperscaleDbKey.of("alpha", "pk-alpha-" + i));
+        for (int i = 1; i <= 2; i++) client.delete(getAddress(), HyperscaleDbKey.of("beta", "pk-beta-" + i));
     }
 
     @Test @Order(12)
     @DisplayName("partitionKey null falls back to cross-partition query")
     void queryWithoutPartitionKey() {
-        client.upsert(getAddress(), Key.of("cross-a", "pk-cross-a"), Map.of("title", "Cross-A"));
-        client.upsert(getAddress(), Key.of("cross-b", "pk-cross-b"), Map.of("title", "Cross-B"));
+        client.upsert(getAddress(), HyperscaleDbKey.of("cross-a", "pk-cross-a"), Map.of("title", "Cross-A"));
+        client.upsert(getAddress(), HyperscaleDbKey.of("cross-b", "pk-cross-b"), Map.of("title", "Cross-B"));
 
         QueryPage page = client.query(getAddress(),
                 QueryRequest.builder().pageSize(200).build());
@@ -186,8 +186,8 @@ public abstract class CrudConformanceTests {
         assertTrue(page.items().size() >= 2,
                 "Cross-partition query should return items from multiple partitions");
 
-        client.delete(getAddress(), Key.of("cross-a", "pk-cross-a"));
-        client.delete(getAddress(), Key.of("cross-b", "pk-cross-b"));
+        client.delete(getAddress(), HyperscaleDbKey.of("cross-a", "pk-cross-a"));
+        client.delete(getAddress(), HyperscaleDbKey.of("cross-b", "pk-cross-b"));
     }
 
     @Test @Order(13)

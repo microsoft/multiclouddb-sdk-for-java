@@ -62,7 +62,7 @@ public class TodoApp {
         doc.put("createdAt", Instant.now().toString());
         doc.put("updatedAt", Instant.now().toString());
 
-        Key key = Key.of(id, id); // id doubles as partition key
+        HyperscaleDbKey key = HyperscaleDbKey.of(id, id); // id doubles as partition key
         client.upsert(address, key, MAPPER.convertValue(doc, MAP_TYPE));
 
         doc.put("id", id);
@@ -70,13 +70,13 @@ public class TodoApp {
     }
 
     public JsonNode getTodo(String id) {
-        Key key = Key.of(id, id);
+        HyperscaleDbKey key = HyperscaleDbKey.of(id, id);
         Map<String, Object> result = client.read(address, key);
         return result != null ? MAPPER.valueToTree(result) : null;
     }
 
     public JsonNode updateTodo(String id, JsonNode updates) {
-        Key key = Key.of(id, id);
+        HyperscaleDbKey key = HyperscaleDbKey.of(id, id);
         Map<String, Object> existing = client.read(address, key);
         if (existing == null) {
             return null;
@@ -92,7 +92,7 @@ public class TodoApp {
     }
 
     public void deleteTodo(String id) {
-        Key key = Key.of(id, id);
+        HyperscaleDbKey key = HyperscaleDbKey.of(id, id);
         client.delete(address, key);
     }
 

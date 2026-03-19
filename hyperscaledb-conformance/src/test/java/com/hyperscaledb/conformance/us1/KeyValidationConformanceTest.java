@@ -60,25 +60,25 @@ public abstract class KeyValidationConformanceTest {
     @Test
     @DisplayName("Key.of rejects null partitionKey")
     void keyOfNullPartitionKey() {
-        assertThrows(Exception.class, () -> Key.of(null));
+        assertThrows(Exception.class, () -> HyperscaleDbKey.of(null));
     }
 
     @Test
     @DisplayName("Key.of rejects empty partitionKey")
     void keyOfEmptyPartitionKey() {
-        assertThrows(Exception.class, () -> Key.of(""));
+        assertThrows(Exception.class, () -> HyperscaleDbKey.of(""));
     }
 
     @Test
     @DisplayName("Key.of rejects blank partitionKey")
     void keyOfBlankPartitionKey() {
-        assertThrows(Exception.class, () -> Key.of("   "));
+        assertThrows(Exception.class, () -> HyperscaleDbKey.of("   "));
     }
 
     @Test
     @DisplayName("valid key with partition and sort key succeeds")
     void validKeyWithPartitionAndSortKey() {
-        Key key = Key.of("partition-1", "valid-key-test");
+        HyperscaleDbKey key = HyperscaleDbKey.of("partition-1", "valid-key-test");
         assertDoesNotThrow(() -> client.upsert(getAddress(), key, java.util.Map.of("title", "valid")));
         try { client.delete(getAddress(), key); } catch (Exception ignored) {}
     }
@@ -86,8 +86,8 @@ public abstract class KeyValidationConformanceTest {
     @Test
     @DisplayName("valid key without sort key succeeds")
     void validKeyWithoutSortKey() {
-        Key key = Key.of("valid-key-no-part");
+        HyperscaleDbKey key = HyperscaleDbKey.of("valid-key-no-part");
         assertDoesNotThrow(() -> client.upsert(getAddress(), key, java.util.Map.of("title", "valid")));
-        try { client.delete(getAddress(), Key.of("valid-key-no-part", "valid-key-no-part")); } catch (Exception ignored) {}
+        try { client.delete(getAddress(), HyperscaleDbKey.of("valid-key-no-part", "valid-key-no-part")); } catch (Exception ignored) {}
     }
 }

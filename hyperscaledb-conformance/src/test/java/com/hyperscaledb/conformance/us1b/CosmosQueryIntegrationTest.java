@@ -62,7 +62,7 @@ class CosmosQueryIntegrationTest {
     void tearDown() throws Exception {
         // Cleanup test data
         for (int i = 1; i <= 6; i++) {
-            try { client.delete(address, Key.of("qtest-" + i, "qtest-" + i)); } catch (Exception ignored) {}
+            try { client.delete(address, HyperscaleDbKey.of("qtest-" + i, "qtest-" + i)); } catch (Exception ignored) {}
         }
         System.out.println("[Cosmos] Cleaned up test documents");
         if (client != null) client.close();
@@ -71,7 +71,7 @@ class CosmosQueryIntegrationTest {
     private void insertDoc(String id, String title, String status, int priority, String category) {
         Map<String, Object> doc = Map.of(
                 "title", title, "status", status, "priority", priority, "category", category);
-        client.upsert(address, Key.of(id, id), doc);
+        client.upsert(address, HyperscaleDbKey.of(id, id), doc);
     }
 
     /** Convenience: extract a string field from a result-map item. */

@@ -5,6 +5,7 @@ package com.hyperscaledb.provider.spanner;
 
 import com.hyperscaledb.api.CapabilitySet;
 import com.hyperscaledb.api.HyperscaleDbClientConfig;
+import com.hyperscaledb.api.HyperscaleDbKey;
 import com.hyperscaledb.api.OperationOptions;
 import com.hyperscaledb.api.ProviderId;
 import com.hyperscaledb.api.QueryPage;
@@ -123,7 +124,7 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
      * @throws com.hyperscaledb.api.HyperscaleDbException on any Spanner error
      */
     @Override
-    public void create(ResourceAddress address, com.hyperscaledb.api.Key key, Map<String, Object> document, OperationOptions options) {
+    public void create(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options) {
         try {
             String table = address.collection();
             Mutation.WriteBuilder mutation = Mutation.newInsertBuilder(table)
@@ -154,7 +155,7 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
      *         the row does not exist, or any other Spanner error
      */
     @Override
-    public void update(ResourceAddress address, com.hyperscaledb.api.Key key, Map<String, Object> document, OperationOptions options) {
+    public void update(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options) {
         try {
             String table = address.collection();
             Mutation.WriteBuilder mutation = Mutation.newUpdateBuilder(table)
@@ -181,7 +182,7 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
      * @throws com.hyperscaledb.api.HyperscaleDbException on any Spanner error
      */
     @Override
-    public void upsert(ResourceAddress address, com.hyperscaledb.api.Key key, Map<String, Object> document, OperationOptions options) {
+    public void upsert(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options) {
         try {
             String table = address.collection();
             Mutation.WriteBuilder mutation = Mutation.newInsertOrUpdateBuilder(table)
@@ -233,7 +234,7 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
      * @throws com.hyperscaledb.api.HyperscaleDbException on any Spanner error
      */
     @Override
-    public Map<String, Object> read(ResourceAddress address, com.hyperscaledb.api.Key key, OperationOptions options) {
+    public Map<String, Object> read(ResourceAddress address, HyperscaleDbKey key, OperationOptions options) {
         try {
             String table = address.collection();
             String partitionKeyVal = key.partitionKey();
@@ -268,7 +269,7 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
      * @throws com.hyperscaledb.api.HyperscaleDbException on any non-NOT_FOUND Spanner error
      */
     @Override
-    public void delete(ResourceAddress address, com.hyperscaledb.api.Key key, OperationOptions options) {
+    public void delete(ResourceAddress address, HyperscaleDbKey key, OperationOptions options) {
         try {
             String table = address.collection();
             String partitionKeyVal = key.partitionKey();

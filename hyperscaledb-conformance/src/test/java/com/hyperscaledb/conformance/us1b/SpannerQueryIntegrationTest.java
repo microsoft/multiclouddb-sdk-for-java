@@ -103,7 +103,7 @@ class SpannerQueryIntegrationTest {
     @AfterAll
     void tearDown() throws Exception {
         for (int i = 1; i <= 6; i++) {
-            try { client.delete(address, com.hyperscaledb.api.Key.of("qtest-" + i, "qtest-" + i)); }
+            try { client.delete(address, com.hyperscaledb.api.HyperscaleDbKey.of("qtest-" + i, "qtest-" + i)); }
             catch (Exception ignored) {}
         }
         System.out.println("[Spanner] Cleaned up test documents");
@@ -111,7 +111,7 @@ class SpannerQueryIntegrationTest {
     }
 
     private void insertDoc(String id, String title, String status, int priority, String category) {
-        client.upsert(address, com.hyperscaledb.api.Key.of(id, id),
+        client.upsert(address, com.hyperscaledb.api.HyperscaleDbKey.of(id, id),
                 Map.of("title", title, "status", status, "priority", priority, "category", category));
     }
 

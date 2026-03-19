@@ -162,6 +162,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             CosmosItemResponse<ObjectNode> response = container.createItem(doc, pk, new CosmosItemRequestOptions());
             logItemDiagnostics(OperationNames.CREATE, address, response);
         } catch (CosmosException e) {
+            logExceptionDiagnostics(OperationNames.CREATE, address, e);
             throw CosmosErrorMapper.map(e, OperationNames.CREATE);
         }
     }
@@ -193,6 +194,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             if (e.getStatusCode() == 404) {
                 return null;
             }
+            logExceptionDiagnostics(OperationNames.READ, address, e);
             throw CosmosErrorMapper.map(e, OperationNames.READ);
         }
     }
@@ -224,6 +226,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             CosmosItemResponse<ObjectNode> response = container.replaceItem(doc, cosmosId, pk, new CosmosItemRequestOptions());
             logItemDiagnostics(OperationNames.UPDATE, address, response);
         } catch (CosmosException e) {
+            logExceptionDiagnostics(OperationNames.UPDATE, address, e);
             throw CosmosErrorMapper.map(e, OperationNames.UPDATE);
         }
     }
@@ -252,6 +255,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             CosmosItemResponse<ObjectNode> response = container.upsertItem(doc, pk, new CosmosItemRequestOptions());
             logItemDiagnostics(OperationNames.UPSERT, address, response);
         } catch (CosmosException e) {
+            logExceptionDiagnostics(OperationNames.UPSERT, address, e);
             throw CosmosErrorMapper.map(e, OperationNames.UPSERT);
         }
     }
@@ -279,6 +283,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             if (e.getStatusCode() == 404) {
                 return;
             }
+            logExceptionDiagnostics(OperationNames.DELETE, address, e);
             throw CosmosErrorMapper.map(e, OperationNames.DELETE);
         }
     }
@@ -365,6 +370,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
 
             return new QueryPage(items, continuationToken);
         } catch (CosmosException e) {
+            logExceptionDiagnostics(OperationNames.QUERY, address, e);
             throw CosmosErrorMapper.map(e, OperationNames.QUERY);
         }
     }
@@ -433,6 +439,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
 
             return new QueryPage(items, continuationToken);
         } catch (CosmosException e) {
+            logExceptionDiagnostics(OperationNames.QUERY_WITH_TRANSLATION, address, e);
             throw CosmosErrorMapper.map(e, OperationNames.QUERY);
         }
     }
@@ -596,39 +603,19 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
         return new PartitionKey(key.partitionKey());
     }
 
-    /**
-     * Logs per-operation diagnostics from a {@link CosmosItemResponse} at DEBUG
-     * level: activity ID (request correlation), request charge (RU cost), and
-     * HTTP status code.
-     */
     private void logItemDiagnostics(String operation, ResourceAddress address,
             CosmosItemResponse<?> response) {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("cosmos.diagnostics op={} db={} col={} activityId={} requestCharge={} statusCode={}",
-                    operation,
-                    address.database(),
-                    address.collection(),
-                    response.getActivityId(),
-                    response.getRequestCharge(),
-                    response.getStatusCode());
-        }
+        CosmosDiagnosticsLogger.logItem(operation, address, response);
     }
 
-    /**
-     * Logs per-page diagnostics from a {@link FeedResponse} at DEBUG level:
-     * request charge (RU cost) and result count for the current page.
-     */
     private void logFeedDiagnostics(String operation, ResourceAddress address,
             FeedResponse<?> page, int itemCount) {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("cosmos.diagnostics op={} db={} col={} requestCharge={} itemCount={} hasMore={}",
-                    operation,
-                    address.database(),
-                    address.collection(),
-                    page.getRequestCharge(),
-                    itemCount,
-                    page.getContinuationToken() != null);
-        }
+        CosmosDiagnosticsLogger.logFeed(operation, address, page, itemCount);
+    }
+
+    private void logExceptionDiagnostics(String operation, ResourceAddress address,
+            CosmosException e) {
+        CosmosDiagnosticsLogger.logException(operation, address, e);
     }
 
     /**

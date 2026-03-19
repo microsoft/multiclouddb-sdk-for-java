@@ -41,7 +41,7 @@ public final class DefaultHyperscaleDbClient implements HyperscaleDbClient {
     }
 
     @Override
-    public void create(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
+    public void create(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options) {
         Instant start = Instant.now();
         try {
             providerClient.create(address, key, document, options);
@@ -55,7 +55,7 @@ public final class DefaultHyperscaleDbClient implements HyperscaleDbClient {
     }
 
     @Override
-    public Map<String, Object> read(ResourceAddress address, Key key, OperationOptions options) {
+    public Map<String, Object> read(ResourceAddress address, HyperscaleDbKey key, OperationOptions options) {
         Instant start = Instant.now();
         try {
             Map<String, Object> result = providerClient.read(address, key, options);
@@ -70,7 +70,7 @@ public final class DefaultHyperscaleDbClient implements HyperscaleDbClient {
     }
 
     @Override
-    public void update(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
+    public void update(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options) {
         Instant start = Instant.now();
         try {
             providerClient.update(address, key, document, options);
@@ -84,7 +84,7 @@ public final class DefaultHyperscaleDbClient implements HyperscaleDbClient {
     }
 
     @Override
-    public void upsert(ResourceAddress address, Key key, Map<String, Object> document, OperationOptions options) {
+    public void upsert(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options) {
         Instant start = Instant.now();
         try {
             providerClient.upsert(address, key, document, options);
@@ -98,7 +98,7 @@ public final class DefaultHyperscaleDbClient implements HyperscaleDbClient {
     }
 
     @Override
-    public void delete(ResourceAddress address, Key key, OperationOptions options) {
+    public void delete(ResourceAddress address, HyperscaleDbKey key, OperationOptions options) {
         Instant start = Instant.now();
         try {
             providerClient.delete(address, key, options);

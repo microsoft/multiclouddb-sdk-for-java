@@ -52,7 +52,7 @@ public abstract class QueryPagingConformanceTest {
     @DisplayName("setup: insert test items for paging")
     void setupItems() {
         for (int i = 1; i <= TOTAL_ITEMS; i++) {
-            Key key = Key.of(KEY_PREFIX + i, KEY_PREFIX + i);
+            HyperscaleDbKey key = HyperscaleDbKey.of(KEY_PREFIX + i, KEY_PREFIX + i);
             client.upsert(getAddress(), key,
                     Map.of("title", "Paging Item " + i, "batch", "paging-conformance"));
         }
@@ -155,7 +155,7 @@ public abstract class QueryPagingConformanceTest {
     void cleanup() {
         for (int i = 1; i <= TOTAL_ITEMS; i++) {
             try {
-                client.delete(getAddress(), Key.of(KEY_PREFIX + i, KEY_PREFIX + i));
+                client.delete(getAddress(), HyperscaleDbKey.of(KEY_PREFIX + i, KEY_PREFIX + i));
             } catch (Exception ignored) {
             }
         }

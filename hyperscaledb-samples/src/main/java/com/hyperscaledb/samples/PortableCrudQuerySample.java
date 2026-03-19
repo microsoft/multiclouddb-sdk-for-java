@@ -55,7 +55,7 @@ public class PortableCrudQuerySample {
             // === 1. UPSERT: Create documents ===
             System.out.println("--- UPSERT: Creating documents ---");
             for (int i = 1; i <= 5; i++) {
-                Key key = Key.of("sample-" + i, "sample-" + i);
+                HyperscaleDbKey key = HyperscaleDbKey.of("sample-" + i, "sample-" + i);
                 Map<String, Object> doc = Map.of(
                         "title", "Task " + i,
                         "status", i <= 3 ? "active" : "completed",
@@ -67,7 +67,7 @@ public class PortableCrudQuerySample {
 
             // === 2. READ: Retrieve a document ===
             System.out.println("--- READ: Retrieve document ---");
-            Key getKey = Key.of("sample-1", "sample-1");
+            HyperscaleDbKey getKey = HyperscaleDbKey.of("sample-1", "sample-1");
             Map<String, Object> retrieved = client.read(address, getKey);
             if (retrieved != null) {
                 JsonNode prettyNode = MAPPER.valueToTree(retrieved);
@@ -161,7 +161,7 @@ public class PortableCrudQuerySample {
             // === 7. DELETE: Clean up ===
             System.out.println("--- DELETE: Cleaning up ---");
             for (int i = 1; i <= 5; i++) {
-                client.delete(address, Key.of("sample-" + i, "sample-" + i));
+                client.delete(address, HyperscaleDbKey.of("sample-" + i, "sample-" + i));
                 System.out.println("  Deleted: sample-" + i);
             }
             System.out.println();
