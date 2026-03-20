@@ -9,10 +9,12 @@ import java.util.Map;
  * Portable client interface for CRUD + query operations across cloud database
  * providers.
  * <p>
- * Operations use the portable contract by default. Provider selection is
- * configuration-only.
- * Operations may emit {@link PortabilityWarning}s when opt-in extensions affect
- * behavior.
+ * All operations use a provider-neutral synchronous contract. Provider
+ * selection is configuration-only — no code changes are required to switch
+ * providers.
+ * <p>
+ * For async / reactive access use {@link #nativeClient(Class)} to obtain the
+ * provider's native async client directly.
  */
 public interface HyperscaleDbClient extends AutoCloseable {
 
@@ -186,11 +188,31 @@ public interface HyperscaleDbClient extends AutoCloseable {
 
     /**
      * Access the underlying native provider client for escape-hatch scenarios.
-     * Returns null if the requested type doesn't match the provider's native client
-     * type.
+     * <p>
+     * Returns {@code null} if {@code clientType} does not match the provider's
+     * native client type.
+     * <p>
+     * <b>Common uses:</b>
+     * <ul>
+     *   <li>Provider-specific operations not covered by the portable API.</li>
+     *   <li>Async / reactive access — the portable API is intentionally
+     *       synchronous. Each provider exposes a separate async client type:
+     *       <ul>
+     *         <li>Cosmos DB: {@code com.azure.cosmos.CosmosAsyncClient} (Reactor)</li>
+     *         <li>DynamoDB: {@code software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient}
+     *             ({@code CompletableFuture})</li>
+     *         <li>Spanner: {@code com.google.cloud.spanner.Spanner} (ApiFuture / gRPC)</li>
+     *       </ul>
+     *       These async client types are provider-specific — requesting them breaks
+     *       portability but gives full access to the provider's native async model.
+     *   </li>
+     * </ul>
+     * <p>
+     * <b>Warning:</b> using the native client breaks portability. The SDK logs an
+     * INFO message when this method is called.
      *
      * @param clientType the expected native client class
-     * @return the native client instance, or null
+     * @return the native client instance, or {@code null} if the type does not match
      */
     <T> T nativeClient(Class<T> clientType);
 
