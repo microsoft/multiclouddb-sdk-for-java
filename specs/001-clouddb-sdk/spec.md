@@ -3,7 +3,6 @@
 **Feature Branch**: `001-clouddb-sdk`  
 **Created**: 2026-01-23  
 **Status**: Draft  
-**Input**: User description: "We are building a new SDK called \"Hyperscale DB SDK\" which will abstract SDK/client driver semantics for three different cloud native database services: Azure Cosmos DB, AWS DynamoDB, and Google Spanner. The goal will be to abstract the best elements of all three and create a unifying experience that allows code written using the SDK to be \"written once, run anyway\" (in any cloud, with only config dictating which underlying database is used). The SDK should give its users confidence in its portability by ensuring that both feature sets and behaviours (where possible) are the same (or clearly flagged when potential differences are possible)."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -135,6 +134,58 @@ As an application developer, I can opt into provider-specific features or behavi
 
 ---
 
+### User Story 5 - Result Set Control: Top N and Ordering (Priority: P1)
+
+As an application developer, I can limit query results to the first N items and control the sort order (ascending or descending) so that I can efficiently retrieve "most recent" or "top K" results without fetching and discarding excess data.
+
+**Why this priority**: Top N is a fundamental query pattern used heavily in production workloads (e.g., "most recent 10 events", "top 5 positions by value"). Without portable result limiting, applications must fetch all matching items and truncate client-side, which is wasteful and expensive at scale.
+
+**Independent Test**: A query with a result limit of 5 returns at most 5 items on any supported provider. A query with ORDER BY descending on a timestamp field returns items in reverse chronological order, and applying a limit of 1 returns only the most recent item.
+
+**Acceptance Scenarios**:
+
+1. **Given** a collection with 100 items, **When** a query specifies a result limit of 10, **Then** at most 10 items are returned, regardless of how many match the filter.
+2. **Given** a collection with timestamped items, **When** a query specifies ORDER BY timestamp descending with a limit of 1, **Then** only the most recently written item is returned.
+3. **Given** a query with both a filter expression and a result limit, **When** executed, **Then** the filter is applied first and the limit restricts how many matching items are returned.
+4. **Given** a provider that does not support ORDER BY, **When** a query specifies ORDER BY, **Then** the SDK raises a clear error indicating the capability is unavailable.
+
+---
+
+### User Story 6 - Document Time-to-Live and Write Metadata (Priority: P2)
+
+As an application developer, I can set a time-to-live (TTL) on individual documents so they are automatically removed after expiration, and I can retrieve metadata (TTL remaining, last write timestamp) to make data freshness decisions — all without writing provider-specific code.
+
+**Why this priority**: TTL-based automatic expiration is a critical pattern for time-series data, session management, and operational data with defined retention windows. Write timestamps enable applications to determine data freshness when reconciling across multiple sources. Both are heavily used in Cassandra workloads being migrated.
+
+**Independent Test**: A document created with a TTL of 60 seconds is automatically removed after 60 seconds on any provider that supports TTL. Reading the document before expiration returns the TTL remaining and the last write timestamp.
+
+**Acceptance Scenarios**:
+
+1. **Given** a provider that supports row-level TTL, **When** a document is created with a TTL of 300 seconds, **Then** the document is automatically removed after approximately 300 seconds.
+2. **Given** a document with TTL set, **When** the document is read, **Then** the response includes metadata indicating the approximate remaining TTL.
+3. **Given** a document that was recently written, **When** the document is read, **Then** the response includes metadata indicating the write timestamp.
+4. **Given** a provider that does not support row-level TTL, **When** a document is created with a TTL value, **Then** the SDK raises a clear error indicating the capability is unavailable.
+5. **Given** a document without TTL set, **When** the document is read, **Then** the TTL metadata is absent or indicates no expiration, and the write timestamp is still available.
+
+---
+
+### User Story 7 - Uniform Document Size and Quota Limits (Priority: P2)
+
+As an application developer, I experience consistent document size limits and quota constraints across all providers, so that my application behaves predictably regardless of which provider is selected.
+
+**Why this priority**: Providers impose different native limits for document size, partition size, and other quotas (e.g., DynamoDB's 400 KB item size vs. Cosmos DB's 2 MB default, or varying logical partition size caps). Without uniform enforcement, applications may work on one provider but fail unexpectedly on another, undermining portability.
+
+**Independent Test**: A document exceeding 400 KB is rejected with a clear error on every provider, and a document within 400 KB is accepted on every provider.
+
+**Acceptance Scenarios**:
+
+1. **Given** a document within the SDK's uniform size limit, **When** it is stored on any provider, **Then** it is persisted successfully.
+2. **Given** a document exceeding the SDK's uniform size limit, **When** the application attempts to store it on any provider, **Then** the SDK raises a clear, consistent error indicating the limit before sending the request to the provider.
+3. **Given** a provider with a native size limit larger than the SDK's uniform limit, **When** a document exceeding the SDK limit is submitted, **Then** the SDK still rejects it to maintain cross-provider consistency.
+4. **Given** quota limits defined by the SDK (e.g., maximum partition size), **When** those limits are approached or exceeded, **Then** the SDK surfaces clear, provider-neutral errors or warnings.
+
+---
+
 ### Edge Cases
 
 - What happens when the key model differs by provider (e.g., partitioned keys vs composite primary keys)?
@@ -148,6 +199,12 @@ As an application developer, I can opt into provider-specific features or behavi
 - What happens when the query expression is empty or null? The SDK must return all items (no filter), equivalent to a full scan.
 - What happens when a field name in the expression is a reserved word in the target provider (e.g., `status` in DynamoDB)? The SDK must handle escaping/quoting automatically.
 - What happens when the expression references a field that does not exist on some documents? Items where the field is absent should not match equality/comparison conditions.
+- What happens when a document exceeds the SDK's uniform size limit? The SDK must reject it with a clear error before sending the request to the provider.
+- What happens when TTL is set on a provider that does not support row-level TTL? The SDK must fail fast with a clear error.
+- What happens when a provider's native quota (e.g., partition size) is exceeded? The SDK must surface the provider error in a provider-neutral format so applications can handle it uniformly.
+- What happens when a query with a result limit spans multiple pages? The limit applies to the total result count, not per-page.
+- What happens when ORDER BY is requested on a field that is not indexed by the provider? Performance may degrade; the SDK should allow the query but may log a diagnostic warning.
+- How does the SDK handle multi-tenant isolation patterns? The SDK does not enforce tenant isolation but supports partition key schemes that enable tenant scoping. Applications can use the existing `partitionKey` query scope (FR-039) to restrict queries to a single tenant's data.
 
 ## Portability Defaults
 
@@ -240,6 +297,28 @@ Portability is the default mode of the SDK.
   - **Query operations**: log cost metric, result count for the page, and whether more pages exist.
   - Log output MUST NOT include secrets, credentials, or user document contents.
 
+#### Result Set Control Requirements
+
+- **FR-052**: `QueryRequest` MUST support an optional result limit (Top N) that restricts the maximum number of items returned by a query. When set, the query returns at most N matching items.
+- **FR-053**: `QueryRequest` MUST support an optional ORDER BY clause that specifies one or more fields and an explicit sort direction (ascending or descending) for each field.
+- **FR-054**: ORDER BY MUST be a capability-gated feature. When ORDER BY is requested on a provider that does not support it, the SDK MUST raise a clear error at translation time before executing the query.
+- **FR-055**: Result limit (Top N) MUST be combinable with filter expressions, partition key scoping, and ORDER BY. The filter and partition scope narrow the result set; ORDER BY controls the sort; and the limit caps the number of returned items.
+
+#### Document TTL and Write Metadata Requirements
+
+- **FR-056**: The SDK MUST support setting a time-to-live (TTL) duration (in seconds) on individual documents during create or upsert operations. When set, the provider MUST automatically remove the document after the specified duration.
+- **FR-057**: Row-level TTL MUST be a capability-gated feature. When TTL is set on a provider that does not support row-level TTL, the SDK MUST raise a clear error indicating the capability is unavailable.
+- **FR-058**: When reading a document, the SDK MUST return available document metadata — including approximate remaining TTL (when set) and last write timestamp — in a portable metadata envelope alongside the document payload.
+- **FR-059**: Document metadata retrieval MUST be optional and opt-in. Applications that do not request metadata MUST NOT incur additional overhead or behavioral changes.
+
+#### Uniform Document Size and Quota Limit Requirements
+
+- **FR-060**: The SDK MUST define a uniform maximum document size that is enforced consistently across all providers. The lowest common denominator is currently DynamoDB's 400 KB item size limit, so the SDK's uniform limit MUST be 400 KB, ensuring documents accepted by the SDK are storable on every provider.
+- **FR-061**: The SDK MUST validate document size against the uniform limit before sending the request to the provider and MUST reject oversized documents with a clear, actionable error.
+- **FR-062**: The SDK MUST define and document uniform quota limits for provider resources (e.g., maximum logical partition size) so that applications can anticipate constraints regardless of the selected provider.
+- **FR-063**: When a provider-specific quota limit is reached (e.g., partition size exceeded, throughput exhausted), the SDK MUST surface the failure through the standard provider-neutral error model with clear categorization and actionable guidance.
+- **FR-064**: The SDK MUST expose the configured uniform document size limit and documented quota limits programmatically so applications can perform pre-validation or display limits to end users.
+
 ### Portable Operator and Function Reference
 
 The following operators and functions form the portable query subset, available on all supported providers:
@@ -264,7 +343,10 @@ The following operators and functions form the portable query subset, available 
 | `LIKE` pattern matching | Cosmos DB, Spanner |
 | `LOWER(field)` / `UPPER(field)` | Cosmos DB, Spanner |
 | Regex matching | Cosmos DB, Spanner |
-| `ORDER BY` | Cosmos DB, Spanner |
+| `ORDER BY` (with ASC/DESC direction) | Cosmos DB, Spanner |
+| `TOP N` / result limit | Cosmos DB, DynamoDB, Spanner |
+| Row-level TTL | Cosmos DB, DynamoDB |
+| Write timestamp metadata | Cosmos DB, DynamoDB, Spanner |
 
 ### Key Entities *(include if feature involves data)*
 
@@ -282,6 +364,10 @@ The following operators and functions form the portable query subset, available 
 - **Query Page**: A single page of results and an optional continuation token.
 - **Capability**: A named feature/behavior that can be supported or unsupported by a provider.
 - **Error**: A provider-neutral categorization of failures with retryability and provider details.
+- **Document Metadata**: An optional envelope of system-managed properties returned alongside a document, including approximate remaining TTL and last write timestamp. Not all metadata fields are available on all providers.
+- **Result Limit**: An optional constraint on the maximum number of items a query returns (Top N). Applied after filtering and partition scoping.
+- **Sort Order**: An optional specification of one or more fields and their sort direction (ascending or descending) for query results. Capability-gated to providers that support ORDER BY.
+- **Quota Limit**: A provider-neutral constraint on resource usage (e.g., maximum logical partition size, throughput caps) that the SDK documents and surfaces uniformly across all providers.
 
 ## Success Criteria *(mandatory)*
 
@@ -305,6 +391,12 @@ The following operators and functions form the portable query subset, available 
 - **SC-014**: A query with both `partitionKey` and a filter expression correctly scopes to the partition first, then applies the filter, on all supported providers.
 - **SC-017**: All operation name strings used in diagnostics, error context, and log lines across all provider adapters are sourced from `OperationNames` in `hyperscaledb-api`. No provider adapter re-declares a shared operation name string locally; duplicates that would cause log-correlation ambiguity are caught by `OperationNamesTest` at compile/test time.
 - **SC-018**: On every successful data-plane operation, the SDK emits a `DEBUG`-level diagnostic log line capturing the provider's native correlation ID and cost metric. A developer can correlate SDK log output with Azure portal Activity IDs or AWS CloudTrail request IDs without requiring a failure to trigger the diagnostic.
+- **SC-019**: A query with a result limit of N returns at most N items on all supported providers, regardless of how many items match the filter.
+- **SC-020**: A query specifying ORDER BY with a descending sort direction returns items in reverse order on all providers that support ORDER BY. Providers that do not support ORDER BY produce a clear, actionable error.
+- **SC-021**: A document created with a TTL of T seconds is automatically removed after approximately T seconds on all providers that support row-level TTL.
+- **SC-022**: Reading a document returns write timestamp metadata on all providers that support it, enabling applications to determine data freshness within 1 second of accuracy.
+- **SC-023**: A document within the SDK's uniform size limit can be stored and retrieved identically on all supported providers. A document exceeding the uniform limit is rejected with a clear, consistent error on every provider, regardless of individual provider native limits.
+- **SC-024**: When a provider-specific quota limit is reached (e.g., partition size exceeded), the SDK surfaces a provider-neutral error with clear categorization and actionable guidance, consistent across all providers.
 
 ## Assumptions
 
@@ -326,6 +418,12 @@ The following operators and functions form the portable query subset, available 
 - Properties files containing credentials or connection secrets (e.g., `*.properties` with endpoint/key values) MUST be gitignored and MUST NOT be committed to source control. Template files (`*.properties.template`) with placeholder values are provided so users can copy them, fill in their credentials, and keep the result local-only.
 - Cleanup scripts for removing provider resources (containers, tables, databases) created during sample runs are provided under `hyperscaledb-samples/scripts/` for each supported provider, in both Bash and PowerShell variants.
 - Sample application output banners use fixed-width ASCII box-drawing characters (printable ASCII only, no Unicode box-drawing code points) to ensure consistent rendering across all terminal environments and operating systems.
+- **Row-level TTL scope**: The SDK supports row-level (document-level) TTL only. Cell-level TTL (per-field expiration) as found in Cassandra is not supported because the native TTL engines in Cosmos DB and DynamoDB operate at the row/item level. Applications migrating from Cassandra cell-level TTL should evaluate whether row-level TTL is sufficient for their use case.
+- **TTL precision**: TTL expiration is approximate. Providers may enforce TTL with varying granularity (e.g., Cosmos DB checks TTL in the background periodically, DynamoDB typically deletes within 48 hours of expiration). The SDK does not guarantee exact-second expiration precision.
+- **Write timestamp source**: Write timestamps are sourced from the provider's system metadata (e.g., Cosmos DB `_ts`, DynamoDB stream record timestamps). The SDK does not maintain its own write timestamps. Precision and availability may vary by provider.
+- **Uniform document size limit**: The SDK enforces a single maximum document size of 400 KB across all providers, driven by DynamoDB's 400 KB item size limit as the lowest common denominator. Cosmos DB natively supports up to 2 MB (or 10 MB for eligible accounts) and Spanner supports up to 10 MB, but the SDK enforces the 400 KB ceiling to guarantee cross-provider portability. Applications needing to store larger documents should use provider-specific escape hatches or external storage patterns.
+- **Uniform quota limits**: The SDK documents and surfaces provider quota constraints (e.g., logical partition size limits, throughput caps) in a uniform way. While exact quota values may differ by provider, the SDK ensures that quota-related failures are reported through the standard error model with consistent categorization.
+- **Multi-tenancy patterns**: The SDK does not enforce tenant isolation. Multi-tenant applications can use partition key schemes to scope data by tenant (e.g., including an organization code in the partition key value) and use the existing `partitionKey` query scope (FR-039) to restrict queries to a single tenant's data. For stronger isolation (per-tenant encryption, noisy-neighbor protection), applications should use collection-per-tenant or account-per-tenant patterns with provider fleet management features. This is a deployment architecture decision, not an SDK-level concern.
 
 ## Acceptance Checklist
 
@@ -369,6 +467,31 @@ This checklist is used to accept the feature as “done” at the spec level.
 - [ ] A query combining `partitionKey` with a portable expression filters within the partition on all providers.
 - [ ] Queries without `partitionKey` continue to work as cross-partition scans (backward compatible).
 - [ ] The sample application demonstrates partition-key-scoped queries with correctly partitioned data (e.g., positions partitioned by portfolioId).
+
+### Result Set Control (Top N / ORDER BY)
+
+- [ ] A query with a result limit returns at most N items on all supported providers.
+- [ ] A query with ORDER BY and explicit sort direction (ASC/DESC) returns correctly ordered results on providers that support it.
+- [ ] A query combining result limit with ORDER BY returns the top/bottom N items in the specified order.
+- [ ] A query combining result limit with filter expressions and partition key scoping works correctly.
+- [ ] Requesting ORDER BY on a provider that does not support it raises a clear, capability-gated error at translation time.
+
+### Document TTL and Write Metadata
+
+- [ ] A document created with a TTL value is automatically removed after the specified duration on providers that support row-level TTL.
+- [ ] Reading a document with TTL returns the approximate remaining TTL in the document metadata.
+- [ ] Reading a document returns the write timestamp in the document metadata on providers that support it.
+- [ ] Setting TTL on a provider that does not support row-level TTL raises a clear, capability-gated error.
+- [ ] Documents without TTL set do not expire and return absent/no-expiration TTL metadata.
+- [ ] Document metadata retrieval is opt-in and does not affect applications that do not request it.
+
+### Uniform Document Size and Quota Limits
+
+- [ ] A document within the SDK's uniform size limit is accepted and persisted on every supported provider.
+- [ ] A document exceeding the SDK's uniform size limit is rejected with a clear, consistent error on every provider, even if the provider's native limit is larger.
+- [ ] The SDK's uniform document size limit and quota limits are exposed programmatically for application pre-validation.
+- [ ] When a provider-specific quota limit is reached, the SDK surfaces a provider-neutral error with clear categorization and actionable guidance.
+- [ ] Quota-related errors are consistent in format across all providers.
 
 ### Escape Hatch
 
