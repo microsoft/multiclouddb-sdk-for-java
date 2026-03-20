@@ -19,7 +19,8 @@ public final class QueryPage {
         this.items = items != null
                 ? items.stream().map(Map::copyOf).collect(java.util.stream.Collectors.toUnmodifiableList())
                 : Collections.emptyList();
-        this.continuationToken = continuationToken;
+        this.continuationToken = (continuationToken != null && !continuationToken.isEmpty())
+                ? continuationToken : null;
     }
 
     /**
@@ -36,6 +37,9 @@ public final class QueryPage {
     /**
      * Opaque continuation token for fetching the next page, or {@code null} if
      * this is the last page.
+     * <p>
+     * Empty strings are normalised to {@code null} — a {@code null} return
+     * always means no more pages are available.
      */
     public String continuationToken() {
         return continuationToken;

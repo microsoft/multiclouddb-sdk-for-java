@@ -44,6 +44,8 @@ import java.time.Duration;
  */
 final class CosmosDiagnosticsLogger {
 
+    // Intentionally uses CosmosProviderClient's logger so all Cosmos diagnostics
+    // appear under a single logger name, simplifying log configuration.
     static final Logger LOG = LoggerFactory.getLogger(CosmosProviderClient.class);
 
     private CosmosDiagnosticsLogger() {}

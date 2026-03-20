@@ -4,6 +4,7 @@
 package com.hyperscaledb.provider.spanner;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.cloud.spanner.ResultSet;
@@ -20,6 +21,7 @@ import java.util.Map;
 public final class SpannerRowMapper {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private SpannerRowMapper() {
     }
@@ -77,9 +79,8 @@ public final class SpannerRowMapper {
      * @param rs the result set positioned on a row
      * @return a map of column name to Java value
      */
-    @SuppressWarnings("unchecked")
     public static Map<String, Object> toMap(ResultSet rs) {
         JsonNode node = toJsonNode(rs);
-        return MAPPER.convertValue(node, Map.class);
+        return MAPPER.convertValue(node, MAP_TYPE);
     }
 }

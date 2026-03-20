@@ -7,6 +7,9 @@ import com.hyperscaledb.api.*;
 import com.google.cloud.spanner.ErrorCode;
 import com.google.cloud.spanner.SpannerException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -15,6 +18,8 @@ import java.util.Map;
  * instances.
  */
 public final class SpannerErrorMapper {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SpannerErrorMapper.class);
 
     private SpannerErrorMapper() {
     }
@@ -70,7 +75,10 @@ public final class SpannerErrorMapper {
             case INTERNAL -> HyperscaleDbErrorCategory.PROVIDER_ERROR;
             case UNAVAILABLE -> HyperscaleDbErrorCategory.TRANSIENT_FAILURE;
             case UNAUTHENTICATED -> HyperscaleDbErrorCategory.AUTHENTICATION_FAILED;
-            default -> HyperscaleDbErrorCategory.PROVIDER_ERROR;
+            default -> {
+                LOG.warn("Unmapped Spanner ErrorCode for category mapping: {}", errorCode);
+                yield HyperscaleDbErrorCategory.PROVIDER_ERROR;
+            }
         };
     }
 
@@ -97,7 +105,10 @@ public final class SpannerErrorMapper {
             case UNAVAILABLE -> 14;
             case DATA_LOSS -> 15;
             case UNAUTHENTICATED -> 16;
-            default -> 2; // UNKNOWN
+            default -> {
+                LOG.warn("Unmapped gRPC ErrorCode: {}; defaulting to UNKNOWN (2)", errorCode);
+                yield 2; // UNKNOWN
+            }
         };
     }
 }

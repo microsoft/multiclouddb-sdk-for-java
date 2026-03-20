@@ -77,7 +77,7 @@ public final class CosmosConstants {
     /** Prefix for named query parameters in Cosmos SQL. */
     public static final String QUERY_PARAM_PREFIX = "@";
 
-    /** Error / validation messages ───────────────────────────────────────────
+    // ── Error / validation messages ───────────────────────────────────────────
 
     /** Error message thrown when the endpoint config key is missing or blank. */
     public static final String ERR_ENDPOINT_REQUIRED = "Cosmos connection.endpoint is required";

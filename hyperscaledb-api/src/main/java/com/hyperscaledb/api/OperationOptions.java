@@ -9,14 +9,15 @@ import java.time.Duration;
  * Per-operation controls applied to a single CRUD or query call.
  * <p>
  * <h3>Timeout contract</h3>
- * When a timeout is set the SDK passes it directly to the underlying provider
- * SDK's request-level timeout mechanism. The call will throw
- * {@link HyperscaleDbException} with category
+ * When a timeout is set it is passed to the underlying provider SDK's
+ * request-level timeout mechanism. Provider implementations that support
+ * timeout enforcement will throw {@link HyperscaleDbException} with category
  * {@link HyperscaleDbErrorCategory#TRANSIENT_FAILURE} if the provider does not
- * respond within the specified duration. This is a hard deadline, not a hint.
+ * respond within the specified duration.
  * <p>
- * When no timeout is set ({@link #defaults()}) the provider SDK's own default
- * timeout applies.
+ * <b>Note:</b> timeout enforcement is provider-dependent and may not be
+ * available in all providers in the current release. When no timeout is set
+ * ({@link #defaults()}) the provider SDK's own default timeout applies.
  */
 public final class OperationOptions {
 

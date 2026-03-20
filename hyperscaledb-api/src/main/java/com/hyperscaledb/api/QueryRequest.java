@@ -172,7 +172,9 @@ public final class QueryRequest {
         }
 
         /**
-         * Set query parameters as a bulk map.
+         * Set query parameters as a bulk map, <strong>replacing</strong> any
+         * parameters previously set via {@link #parameter(String, Object)}.
+         * <p>
          * A defensive copy is made immediately; subsequent mutations to
          * {@code params} do not affect this builder or the built
          * {@link QueryRequest}.
@@ -204,6 +206,9 @@ public final class QueryRequest {
          * but may return fewer. See {@link QueryRequest#maxPageSize()} for details.
          */
         public Builder maxPageSize(int maxPageSize) {
+            if (maxPageSize <= 0) {
+                throw new IllegalArgumentException("maxPageSize must be positive");
+            }
             this.maxPageSize = maxPageSize;
             return this;
         }

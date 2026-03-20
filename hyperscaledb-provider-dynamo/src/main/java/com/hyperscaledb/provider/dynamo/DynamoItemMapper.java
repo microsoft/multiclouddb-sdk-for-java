@@ -4,6 +4,7 @@
 package com.hyperscaledb.provider.dynamo;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.*;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -17,6 +18,7 @@ import java.util.*;
 public final class DynamoItemMapper {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private DynamoItemMapper() {
     }
@@ -163,9 +165,8 @@ public final class DynamoItemMapper {
      * Convert a DynamoDB attribute map to a plain {@code Map<String, Object>}.
      * Uses Jackson internally to handle nested structures.
      */
-    @SuppressWarnings("unchecked")
     public static Map<String, Object> attributeMapToMap(Map<String, AttributeValue> item) {
         JsonNode node = attributeMapToJsonNode(item);
-        return MAPPER.convertValue(node, Map.class);
+        return MAPPER.convertValue(node, MAP_TYPE);
     }
 }

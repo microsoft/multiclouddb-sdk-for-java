@@ -12,6 +12,7 @@ import com.hyperscaledb.api.OperationNames;
 import com.hyperscaledb.api.query.TranslatedQuery;
 import com.hyperscaledb.spi.HyperscaleDbProviderClient;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
@@ -36,6 +37,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(CosmosProviderClient.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private final CosmosClient cosmosClient;
 
@@ -543,10 +545,9 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
      * @param node the JSON node returned by the Cosmos SDK; may be {@code null}
      * @return a map representation, or {@code null} if {@code node} is {@code null}
      */
-    @SuppressWarnings("unchecked")
     private Map<String, Object> toMap(JsonNode node) {
         if (node == null) return null;
-        return MAPPER.convertValue(node, Map.class);
+        return MAPPER.convertValue(node, MAP_TYPE);
     }
 }
 

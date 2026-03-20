@@ -131,7 +131,7 @@ public final class HyperscaleDbErrorCategory {
      * Returns the {@code HyperscaleDbErrorCategory} for the given string value,
      * creating and interning a new instance if the value has not been seen before.
      * <p>
-     * The lookup is case-sensitive. Passing {@code null} throws
+     * The lookup is case-insensitive (the value is uppercased internally). Passing {@code null} throws
      * {@link NullPointerException}.
      *
      * @param value the category string (e.g. {@code "NOT_FOUND"})
@@ -139,7 +139,8 @@ public final class HyperscaleDbErrorCategory {
      */
     public static HyperscaleDbErrorCategory fromString(String value) {
         Objects.requireNonNull(value, "value must not be null");
-        return VALUES.computeIfAbsent(value, HyperscaleDbErrorCategory::new);
+        String key = value.toUpperCase();
+        return VALUES.computeIfAbsent(key, HyperscaleDbErrorCategory::new);
     }
 
     /**
