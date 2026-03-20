@@ -51,6 +51,9 @@ You can review and sign the Microsoft CLA at:
 
 ## Reporting Issues
 
+> **Security vulnerabilities** — do NOT report security issues via GitHub
+> Issues. See [SECURITY.md](SECURITY.md) for the responsible disclosure process.
+
 Before opening a new issue:
 
 1. **Search existing issues** to avoid duplicates.
@@ -89,7 +92,8 @@ Open a GitHub issue with the `enhancement` label. Please describe:
 ### Clone and build
 
 ```bash
-git clone https://github.com/microsoft/hyperscale-db-sdk-for-java.git
+# Fork the repository on GitHub first, then clone your fork:
+git clone https://github.com/<your-username>/hyperscale-db-sdk-for-java.git
 cd hyperscale-db-sdk-for-java
 mvn clean install -DskipTests
 ```
@@ -121,8 +125,8 @@ mvn test -pl hyperscaledb-api -Dtest=CapabilityTest
 ```
 
 Integration tests (against live emulators) are run via Maven profiles and
-require the relevant emulator to be running locally. See each provider's
-README in `hyperscaledb-samples/` for setup instructions.
+require the relevant emulator to be running locally. See the emulator table
+above for setup commands.
 
 ---
 
@@ -146,7 +150,6 @@ README in `hyperscaledb-samples/` for setup instructions.
 - [ ] `mvn clean install` passes
 - [ ] New public API methods have Javadoc
 - [ ] Tests added or updated for the change
-- [ ] `CHANGELOG.md` entry added (if applicable)
 - [ ] CLA signed
 
 ---

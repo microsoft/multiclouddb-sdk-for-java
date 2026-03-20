@@ -21,7 +21,7 @@ assignees: ''
 
 | Field | Value |
 |-------|-------|
-| SDK version | |
+| SDK version (e.g. `hyperscaledb-api:0.1.0`) | |
 | Java version | |
 | OS | |
 | Provider SDK version | |
