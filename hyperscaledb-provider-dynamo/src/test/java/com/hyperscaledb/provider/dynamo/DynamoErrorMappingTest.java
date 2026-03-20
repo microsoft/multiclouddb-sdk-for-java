@@ -64,6 +64,17 @@ class DynamoErrorMappingTest {
     }
 
     @Test
+    @DisplayName("statusCode() field carries the HTTP status code")
+    void statusCodeFieldSet() {
+        DynamoDbException ex = mockDynamoException(400, "ValidationException");
+        HyperscaleDbException result = DynamoErrorMapper.map(ex, OperationNames.UPSERT);
+
+        assertEquals(400, result.error().statusCode());
+        assertFalse(result.error().providerDetails().containsKey("statusCode"),
+                "statusCode must not be duplicated in providerDetails");
+    }
+
+    @Test
     @DisplayName("Provider details include error code and request id")
     void providerDetailsIncluded() {
         DynamoDbException ex = mockDynamoException(400, "ValidationException");
@@ -73,7 +84,6 @@ class DynamoErrorMappingTest {
 
         assertEquals("ValidationException", result.error().providerDetails().get("errorCode"));
         assertEquals("req-abc-123", result.error().providerDetails().get("requestId"));
-        assertEquals("400", result.error().providerDetails().get("statusCode"));
     }
 
     @Test

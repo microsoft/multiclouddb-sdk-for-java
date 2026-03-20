@@ -44,8 +44,10 @@ class CosmosErrorMappingTest {
         assertEquals(HyperscaleDbErrorCategory.fromString(expectedCategory), result.error().category());
         assertEquals("cosmos", result.error().provider().id());
         assertEquals(OperationNames.READ, result.error().operation());
-        assertNotNull(result.error().providerDetails());
-        assertEquals(String.valueOf(statusCode), result.error().providerDetails().get("statusCode"));
+        assertEquals(statusCode, result.error().statusCode(),
+                "statusCode() must match the HTTP status returned by Cosmos");
+        assertFalse(result.error().providerDetails().containsKey("statusCode"),
+                "statusCode must not be duplicated in providerDetails");
     }
 
     @ParameterizedTest(name = "HTTP {0} retryable={1}")
@@ -91,9 +93,10 @@ class CosmosErrorMappingTest {
         assertEquals(String.valueOf(subStatusCode),
                 result.error().providerDetails().get("subStatusCode"),
                 "subStatusCode must be captured in providerDetails");
-        assertEquals(String.valueOf(statusCode),
-                result.error().providerDetails().get("statusCode"),
-                "statusCode must also be present alongside subStatusCode");
+        assertEquals(statusCode, result.error().statusCode(),
+                "statusCode() field must carry the HTTP status code");
+        assertFalse(result.error().providerDetails().containsKey("statusCode"),
+                "statusCode must not be duplicated in providerDetails");
     }
 
     @Test

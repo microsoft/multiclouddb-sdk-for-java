@@ -20,11 +20,12 @@ public final class SpannerErrorMapper {
     }
 
     public static HyperscaleDbException map(SpannerException e, String operation) {
-        HyperscaleDbErrorCategory category = mapCategory(e.getErrorCode());
+        ErrorCode errorCode = e.getErrorCode();
+        HyperscaleDbErrorCategory category = mapCategory(errorCode);
         boolean retryable = e.isRetryable();
 
         Map<String, String> details = new LinkedHashMap<>();
-        details.put("grpcStatusCode", String.valueOf(e.getErrorCode()));
+        details.put("grpcStatus", errorCode.name());   // human-readable name, e.g. "NOT_FOUND"
         details.put("errorMessage", e.getMessage());
 
         HyperscaleDbError error = new HyperscaleDbError(
@@ -33,6 +34,7 @@ public final class SpannerErrorMapper {
                 ProviderId.SPANNER,
                 operation,
                 retryable,
+                grpcCode(errorCode),            // numeric gRPC status code
                 details);
         return new HyperscaleDbException(error, e);
     }
@@ -69,6 +71,33 @@ public final class SpannerErrorMapper {
             case UNAVAILABLE -> HyperscaleDbErrorCategory.TRANSIENT_FAILURE;
             case UNAUTHENTICATED -> HyperscaleDbErrorCategory.AUTHENTICATION_FAILED;
             default -> HyperscaleDbErrorCategory.PROVIDER_ERROR;
+        };
+    }
+
+    /**
+     * Maps a Spanner {@link ErrorCode} to its canonical gRPC status code integer.
+     * The mapping is fixed by the gRPC specification and will not change.
+     * gRPC status codes: https://grpc.github.io/grpc/core/md_doc_statuscodes.html
+     */
+    private static int grpcCode(ErrorCode errorCode) {
+        return switch (errorCode) {
+            case CANCELLED -> 1;
+            case UNKNOWN -> 2;
+            case INVALID_ARGUMENT -> 3;
+            case DEADLINE_EXCEEDED -> 4;
+            case NOT_FOUND -> 5;
+            case ALREADY_EXISTS -> 6;
+            case PERMISSION_DENIED -> 7;
+            case RESOURCE_EXHAUSTED -> 8;
+            case FAILED_PRECONDITION -> 9;
+            case ABORTED -> 10;
+            case OUT_OF_RANGE -> 11;
+            case UNIMPLEMENTED -> 12;
+            case INTERNAL -> 13;
+            case UNAVAILABLE -> 14;
+            case DATA_LOSS -> 15;
+            case UNAUTHENTICATED -> 16;
+            default -> 2; // UNKNOWN
         };
     }
 }

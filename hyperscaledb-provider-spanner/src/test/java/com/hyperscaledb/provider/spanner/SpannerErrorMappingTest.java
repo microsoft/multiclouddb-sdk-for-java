@@ -49,14 +49,29 @@ class SpannerErrorMappingTest {
     }
 
     @Test
-    @DisplayName("Provider details include gRPC status code")
+    @DisplayName("statusCode() field carries the numeric gRPC status code")
+    void statusCodeFieldSet() {
+        SpannerException spannerEx = SpannerExceptionFactory.newSpannerException(
+                ErrorCode.NOT_FOUND, "Resource not found");
+
+        HyperscaleDbException result = SpannerErrorMapper.map(spannerEx, "get");
+
+        // NOT_FOUND gRPC status = 5
+        assertEquals(5, result.error().statusCode());
+        assertFalse(result.error().providerDetails().containsKey("grpcStatusCode"),
+                "numeric code must not be duplicated in providerDetails");
+    }
+
+    @Test
+    @DisplayName("Provider details include gRPC status name and error message")
     void providerDetailsIncluded() {
         SpannerException spannerEx = SpannerExceptionFactory.newSpannerException(
                 ErrorCode.NOT_FOUND, "Resource not found");
 
         HyperscaleDbException result = SpannerErrorMapper.map(spannerEx, "get");
 
-        assertEquals("NOT_FOUND", result.error().providerDetails().get("grpcStatusCode"));
+        assertEquals("NOT_FOUND", result.error().providerDetails().get("grpcStatus"),
+                "human-readable gRPC status name must be in providerDetails");
         assertNotNull(result.error().providerDetails().get("errorMessage"));
     }
 

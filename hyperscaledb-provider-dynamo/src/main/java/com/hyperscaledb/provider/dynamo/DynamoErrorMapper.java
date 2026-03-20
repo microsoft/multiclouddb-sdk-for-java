@@ -18,11 +18,11 @@ public final class DynamoErrorMapper {
     }
 
     public static HyperscaleDbException map(DynamoDbException e, String operation) {
+        int httpStatus = e.statusCode();
         HyperscaleDbErrorCategory category = mapCategory(e);
         boolean retryable = isRetryable(e);
 
         Map<String, String> details = new LinkedHashMap<>();
-        details.put("statusCode", String.valueOf(e.statusCode()));
         if (e.awsErrorDetails() != null) {
             details.put("errorCode", e.awsErrorDetails().errorCode());
             details.put("serviceName", e.awsErrorDetails().serviceName());
@@ -37,6 +37,7 @@ public final class DynamoErrorMapper {
                 ProviderId.DYNAMO,
                 operation,
                 retryable,
+                httpStatus,
                 details);
         return new HyperscaleDbException(error, e);
     }
