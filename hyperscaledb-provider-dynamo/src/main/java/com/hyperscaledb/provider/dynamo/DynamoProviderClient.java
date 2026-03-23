@@ -44,6 +44,7 @@ import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
 import software.amazon.awssdk.services.dynamodb.model.ScanResponse;
 import software.amazon.awssdk.services.dynamodb.model.TableStatus;
 import software.amazon.awssdk.services.dynamodb.waiters.DynamoDbWaiter;
+import software.amazon.awssdk.http.SdkHttpResponse;
 
 import java.net.URI;
 import java.util.*;
@@ -67,10 +68,11 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(DynamoProviderClient.class);
 
+    private final HyperscaleDbClientConfig config;
     private final DynamoDbClient dynamoClient;
 
     public DynamoProviderClient(HyperscaleDbClientConfig config) {
-
+        this.config = config;
         String region   = config.connection().getOrDefault(DynamoConstants.CONFIG_REGION, DynamoConstants.REGION_DEFAULT);
         String endpoint = config.connection().get(DynamoConstants.CONFIG_ENDPOINT);
 
@@ -115,7 +117,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
             PutItemResponse response = dynamoClient.putItem(request);
             buildItemDiagnostics(OperationNames.CREATE, address, response.responseMetadata().requestId(),
                     response.consumedCapacity(),
-                    response.sdkHttpResponse().statusCode(),
+                    response.sdkHttpResponse(),
                     java.time.Duration.between(start, java.time.Instant.now()));
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.CREATE);
@@ -140,7 +142,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
             GetItemResponse response = dynamoClient.getItem(request);
             buildItemDiagnostics(OperationNames.READ, address, response.responseMetadata().requestId(),
                     response.consumedCapacity(),
-                    response.sdkHttpResponse().statusCode(),
+                    response.sdkHttpResponse(),
                     java.time.Duration.between(start, java.time.Instant.now()));
             if (!response.hasItem() || response.item().isEmpty()) {
                 return null;
@@ -170,7 +172,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
             PutItemResponse response = dynamoClient.putItem(request);
             buildItemDiagnostics(OperationNames.UPDATE, address, response.responseMetadata().requestId(),
                     response.consumedCapacity(),
-                    response.sdkHttpResponse().statusCode(),
+                    response.sdkHttpResponse(),
                     java.time.Duration.between(start, java.time.Instant.now()));
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.UPDATE);
@@ -195,7 +197,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
             PutItemResponse response = dynamoClient.putItem(request);
             buildItemDiagnostics(OperationNames.UPSERT, address, response.responseMetadata().requestId(),
                     response.consumedCapacity(),
-                    response.sdkHttpResponse().statusCode(),
+                    response.sdkHttpResponse(),
                     java.time.Duration.between(start, java.time.Instant.now()));
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.UPSERT);
@@ -220,7 +222,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
             DeleteItemResponse response = dynamoClient.deleteItem(request);
             buildItemDiagnostics(OperationNames.DELETE, address, response.responseMetadata().requestId(),
                     response.consumedCapacity(),
-                    response.sdkHttpResponse().statusCode(),
+                    response.sdkHttpResponse(),
                     java.time.Duration.between(start, java.time.Instant.now()));
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.DELETE);
@@ -329,7 +331,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
             OperationDiagnostics diag = buildQueryDiagnostics(OperationNames.QUERY_WITH_TRANSLATION, address,
                     response.responseMetadata().requestId(),
                     response.consumedCapacity(), items.size(), response.nextToken(),
-                    java.time.Duration.ZERO, response.sdkHttpResponse().statusCode());
+                    java.time.Duration.ZERO, response.sdkHttpResponse());
 
             return new QueryPage(items, response.nextToken(), null, diag);
         } catch (DynamoDbException e) {
@@ -363,7 +365,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
         OperationDiagnostics partiqlDiag = buildQueryDiagnostics(DynamoConstants.OP_QUERY_PARTIQL, null,
                 response.responseMetadata().requestId(),
                 response.consumedCapacity(), items.size(), response.nextToken(),
-                java.time.Duration.ZERO, response.sdkHttpResponse().statusCode());
+                java.time.Duration.ZERO, response.sdkHttpResponse());
 
         return new QueryPage(items, response.nextToken(), null, partiqlDiag);
     }
@@ -391,7 +393,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
         OperationDiagnostics scanDiag = buildQueryDiagnostics(DynamoConstants.OP_QUERY_SCAN, null,
                 response.sdkHttpResponse().firstMatchingHeader(DynamoConstants.HEADER_REQUEST_ID).orElse(null),
                 response.consumedCapacity(), items.size(), continuationToken,
-                java.time.Duration.ZERO, response.sdkHttpResponse().statusCode());
+                java.time.Duration.ZERO, response.sdkHttpResponse());
 
         return new QueryPage(items, continuationToken, null, scanDiag);
     }
@@ -432,7 +434,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
         OperationDiagnostics filterDiag = buildQueryDiagnostics(DynamoConstants.OP_QUERY_SCAN_FILTER, null,
                 response.sdkHttpResponse().firstMatchingHeader(DynamoConstants.HEADER_REQUEST_ID).orElse(null),
                 response.consumedCapacity(), items.size(), continuationToken,
-                java.time.Duration.ZERO, response.sdkHttpResponse().statusCode());
+                java.time.Duration.ZERO, response.sdkHttpResponse());
 
         return new QueryPage(items, continuationToken, null, filterDiag);
     }
@@ -566,13 +568,16 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
 
     /**
      * Builds {@link OperationDiagnostics} from item-operation response metadata,
-     * logs at DEBUG level, and logs native HTTP response details when opted-in.
+     * logs at DEBUG level.
+     * When {@code nativeDiagnosticsEnabled} is set in config, also logs the full
+     * HTTP response headers and {@link ConsumedCapacity} breakdown at INFO level.
      */
     private OperationDiagnostics buildItemDiagnostics(String operation, ResourceAddress address,
             String requestId, ConsumedCapacity consumedCapacity,
-            Integer statusCode, java.time.Duration duration) {
+            SdkHttpResponse httpResponse, java.time.Duration duration) {
         double capacityUnits = consumedCapacity != null && consumedCapacity.capacityUnits() != null
                 ? consumedCapacity.capacityUnits() : 0.0;
+        int statusCode = httpResponse != null ? httpResponse.statusCode() : 0;
         OperationDiagnostics diag = OperationDiagnostics
                 .builder(ProviderId.DYNAMO, operation, duration)
                 .requestId(requestId)
@@ -583,19 +588,30 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
         LOG.debug("dynamo.diagnostics op={} db={} col={} requestId={} capacityUnits={} statusCode={}",
                 operation, address.database(), address.collection(),
                 requestId, capacityUnits, statusCode);
+
+        if (config.nativeDiagnosticsEnabled()) {
+            LOG.info("dynamo.native-diagnostics op={} db={} col={} headers={} consumedCapacity={}",
+                    operation, address.database(), address.collection(),
+                    httpResponse != null ? httpResponse.headers() : null,
+                    formatConsumedCapacity(consumedCapacity));
+        }
         return diag;
     }
 
     /**
      * Builds {@link OperationDiagnostics} from query/scan response metadata,
      * logs at DEBUG level.
+     * When {@code nativeDiagnosticsEnabled} is set in config, also logs the full
+     * HTTP response headers and {@link ConsumedCapacity} breakdown (including
+     * per-table, GSI, and LSI capacity) at INFO level.
      */
     private OperationDiagnostics buildQueryDiagnostics(String operation, ResourceAddress address,
             String requestId, ConsumedCapacity consumedCapacity,
             int itemCount, String nextToken, java.time.Duration duration,
-            Integer statusCode) {
+            SdkHttpResponse httpResponse) {
         double capacityUnits = consumedCapacity != null && consumedCapacity.capacityUnits() != null
                 ? consumedCapacity.capacityUnits() : 0.0;
+        int statusCode = httpResponse != null ? httpResponse.statusCode() : 0;
         String db  = address != null ? address.database()   : "-";
         String col = address != null ? address.collection() : "-";
         OperationDiagnostics diag = OperationDiagnostics
@@ -608,6 +624,33 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
 
         LOG.debug("dynamo.diagnostics op={} db={} col={} requestId={} capacityUnits={} itemCount={} hasMore={}",
                 operation, db, col, requestId, capacityUnits, itemCount, nextToken != null);
+
+        if (config.nativeDiagnosticsEnabled()) {
+            LOG.info("dynamo.native-diagnostics op={} db={} col={} headers={} consumedCapacity={}",
+                    operation, db, col,
+                    httpResponse != null ? httpResponse.headers() : null,
+                    formatConsumedCapacity(consumedCapacity));
+        }
         return diag;
+    }
+
+    /**
+     * Formats a {@link ConsumedCapacity} object for native-diagnostics logging,
+     * including per-table, GSI, and LSI breakdowns when present.
+     */
+    private static String formatConsumedCapacity(ConsumedCapacity cc) {
+        if (cc == null) return "null";
+        StringBuilder sb = new StringBuilder();
+        sb.append("table=").append(cc.tableName())
+                .append(" total=").append(cc.capacityUnits());
+        if (cc.readCapacityUnits() != null) sb.append(" rcu=").append(cc.readCapacityUnits());
+        if (cc.writeCapacityUnits() != null) sb.append(" wcu=").append(cc.writeCapacityUnits());
+        if (cc.globalSecondaryIndexes() != null && !cc.globalSecondaryIndexes().isEmpty()) {
+            sb.append(" gsi=").append(cc.globalSecondaryIndexes());
+        }
+        if (cc.localSecondaryIndexes() != null && !cc.localSecondaryIndexes().isEmpty()) {
+            sb.append(" lsi=").append(cc.localSecondaryIndexes());
+        }
+        return sb.toString();
     }
 }
