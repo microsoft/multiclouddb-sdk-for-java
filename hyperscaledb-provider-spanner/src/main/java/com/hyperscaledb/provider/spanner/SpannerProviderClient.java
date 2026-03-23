@@ -2,6 +2,7 @@ package com.hyperscaledb.provider.spanner;
 
 import com.hyperscaledb.api.CapabilitySet;
 import com.hyperscaledb.api.HyperscaleDbClientConfig;
+import com.hyperscaledb.api.OperationDiagnostics;
 import com.hyperscaledb.api.OperationOptions;
 import com.hyperscaledb.api.ProviderId;
 import com.hyperscaledb.api.QueryPage;
@@ -295,7 +296,13 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
             String continuationToken = hasMore
                     ? SpannerContinuationToken.encode(offset + pageSize)
                     : null;
-            return new QueryPage(items, continuationToken);
+
+            OperationDiagnostics diag = OperationDiagnostics
+                    .builder(ProviderId.SPANNER, "queryWithTranslation", java.time.Duration.ZERO)
+                    .itemCount(items.size())
+                    .build();
+            LOG.debug("spanner.diagnostics op=queryWithTranslation itemCount={} hasMore={}", items.size(), hasMore);
+            return new QueryPage(items, continuationToken, diag);
         } catch (SpannerException e) {
             throw SpannerErrorMapper.map(e, "query");
         }
@@ -426,7 +433,13 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
         String continuationToken = hasMore
                 ? SpannerContinuationToken.encode(offset + limit)
                 : null;
-        return new QueryPage(items, continuationToken);
+
+        OperationDiagnostics diag = OperationDiagnostics
+                .builder(ProviderId.SPANNER, "query", java.time.Duration.ZERO)
+                .itemCount(items.size())
+                .build();
+        LOG.debug("spanner.diagnostics op=query itemCount={} hasMore={}", items.size(), hasMore);
+        return new QueryPage(items, continuationToken, diag);
     }
 
     private void bindParameter(Statement.Builder builder, String name, Object value) {

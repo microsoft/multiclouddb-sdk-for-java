@@ -2,12 +2,11 @@ package com.hyperscaledb.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 /**
- * A single page of query results.
+ * A single page of query results with optional diagnostics metadata.
  */
 public final class QueryPage {
 
@@ -15,14 +14,29 @@ public final class QueryPage {
     private final String continuationToken;
     private final List<PortabilityWarning> warnings;
 
-    public QueryPage(List<JsonNode> items, String continuationToken, List<PortabilityWarning> warnings) {
+    /**
+     * Diagnostics for this query page; null when diagnostics are not available.
+     */
+    private final OperationDiagnostics diagnostics;
+
+    public QueryPage(List<JsonNode> items, String continuationToken,
+                     List<PortabilityWarning> warnings, OperationDiagnostics diagnostics) {
         this.items = items != null ? List.copyOf(items) : Collections.emptyList();
         this.continuationToken = continuationToken;
         this.warnings = warnings != null ? List.copyOf(warnings) : Collections.emptyList();
+        this.diagnostics = diagnostics;
+    }
+
+    public QueryPage(List<JsonNode> items, String continuationToken, List<PortabilityWarning> warnings) {
+        this(items, continuationToken, warnings, null);
+    }
+
+    public QueryPage(List<JsonNode> items, String continuationToken, OperationDiagnostics diagnostics) {
+        this(items, continuationToken, null, diagnostics);
     }
 
     public QueryPage(List<JsonNode> items, String continuationToken) {
-        this(items, continuationToken, null);
+        this(items, continuationToken, null, null);
     }
 
     /**
@@ -46,6 +60,14 @@ public final class QueryPage {
      */
     public List<PortabilityWarning> warnings() {
         return warnings;
+    }
+
+    /**
+     * Diagnostics for this query page (duration, requestCharge, itemCount, etc.),
+     * or null if diagnostics are not available.
+     */
+    public OperationDiagnostics diagnostics() {
+        return diagnostics;
     }
 
     public boolean hasMore() {
