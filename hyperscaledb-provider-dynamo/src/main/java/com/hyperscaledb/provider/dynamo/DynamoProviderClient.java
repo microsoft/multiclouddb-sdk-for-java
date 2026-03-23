@@ -41,6 +41,7 @@ import software.amazon.awssdk.services.dynamodb.model.ResourceInUseException;
 import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
 import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
 import software.amazon.awssdk.services.dynamodb.model.ScanResponse;
+import software.amazon.awssdk.services.dynamodb.model.QueryResponse;
 import software.amazon.awssdk.services.dynamodb.model.TableStatus;
 import software.amazon.awssdk.services.dynamodb.waiters.DynamoDbWaiter;
 
@@ -237,27 +238,24 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
                 return executePartiQL(stmt, params, pageSize, query.continuationToken());
             }
 
-            // If expression is null/blank or the generic "SELECT * FROM c", do full scan
+            // If expression is null/blank or the generic "SELECT * FROM c":
+            // - With partitionKey: use DynamoDB Query API (O(partition size)) not Scan+Filter (O(table size))
+            // - Without partitionKey: full-table scan (no alternative)
             if (query.expression() == null || query.expression().isBlank()
                     || query.expression().trim().equalsIgnoreCase(DynamoConstants.QUERY_SELECT_ALL_COSMOS)) {
                 if (query.partitionKey() != null) {
-                    // Scope scan to items with matching partition key (hash key)
-                    return executeScanWithFilter(tableName,
-                            DynamoConstants.SCAN_PARTITION_KEY_CONDITION,
-                            Map.of(DynamoConstants.QUERY_PARTITION_KEY_PARAM, query.partitionKey()),
-                            pageSize, exclusiveStartKey);
+                    return executeQueryByPartitionKey(tableName, query.partitionKey(),
+                            null, null, pageSize, exclusiveStartKey);
                 }
                 return executeScan(tableName, pageSize, exclusiveStartKey);
             }
 
-            // Legacy: use expression as Scan filter (backward compat)
+            // Legacy expression path:
+            // - With partitionKey: Query API with KeyConditionExpression + FilterExpression
+            // - Without partitionKey: Scan with FilterExpression (no key to scope on)
             if (query.partitionKey() != null) {
-                String filter = DynamoConstants.ATTR_PARTITION_KEY + " = " + DynamoConstants.SCAN_PARTITION_KEY_PARAM
-                        + " AND " + query.expression();
-                Map<String, Object> combined = new LinkedHashMap<>();
-                if (query.parameters() != null) combined.putAll(query.parameters());
-                combined.put(DynamoConstants.QUERY_PARTITION_KEY_PARAM, query.partitionKey());
-                return executeScanWithFilter(tableName, filter, combined, pageSize, exclusiveStartKey);
+                return executeQueryByPartitionKey(tableName, query.partitionKey(),
+                        query.expression(), query.parameters(), pageSize, exclusiveStartKey);
             }
             return executeScanWithFilter(tableName, query.expression(), query.parameters(),
                     pageSize, exclusiveStartKey);
@@ -348,6 +346,76 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
                 response.consumedCapacity(), items.size(), response.nextToken());
 
         return new QueryPage(items, response.nextToken());
+    }
+
+    /**
+     * Executes a DynamoDB <em>Query</em> scoped to a single partition (hash key) using
+     * {@code KeyConditionExpression}. This is O(partition size), compared to
+     * {@link #executeScanWithFilter} which performs a full-table Scan and is O(table size).
+     *
+     * <p>If {@code filterExpression} is provided it is applied as a {@code FilterExpression}
+     * <em>after</em> the key-condition lookup; the caller must not include partition key
+     * conditions inside {@code filterExpression} — those are handled by
+     * {@link DynamoConstants#KEY_CONDITION_EXPRESSION} automatically.
+     *
+     * @param tableName          resolved DynamoDB table name
+     * @param partitionKeyValue  the partition key value to scope the query to
+     * @param filterExpression   optional additional filter expression; {@code null} for none
+     * @param filterParameters   expression attribute values for {@code filterExpression};
+     *                           {@code null} if no filter expression is provided
+     * @param pageSize           maximum number of items per page
+     * @param exclusiveStartKey  decoded continuation token for pagination; {@code null} for first page
+     * @return a {@link QueryPage} containing matching items and an optional continuation token
+     */
+    private QueryPage executeQueryByPartitionKey(String tableName, String partitionKeyValue,
+            String filterExpression, Map<String, Object> filterParameters,
+            int pageSize, Map<String, AttributeValue> exclusiveStartKey) {
+        Map<String, AttributeValue> expressionValues = new LinkedHashMap<>();
+        expressionValues.put(DynamoConstants.KEY_CONDITION_PK_PARAM,
+                AttributeValue.fromS(partitionKeyValue));
+
+        if (filterParameters != null) {
+            for (Map.Entry<String, Object> entry : filterParameters.entrySet()) {
+                String paramName = entry.getKey().startsWith(DynamoConstants.FILTER_PARAM_PREFIX)
+                        ? entry.getKey()
+                        : DynamoConstants.FILTER_PARAM_PREFIX + entry.getKey();
+                if (!DynamoConstants.KEY_CONDITION_PK_PARAM.equals(paramName)) {
+                    expressionValues.put(paramName, DynamoItemMapper.toAttributeValue(entry.getValue()));
+                }
+            }
+        }
+
+        software.amazon.awssdk.services.dynamodb.model.QueryRequest.Builder queryBuilder =
+                software.amazon.awssdk.services.dynamodb.model.QueryRequest.builder()
+                        .tableName(tableName)
+                        .keyConditionExpression(DynamoConstants.KEY_CONDITION_EXPRESSION)
+                        .expressionAttributeValues(expressionValues)
+                        .limit(pageSize)
+                        .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
+
+        if (filterExpression != null && !filterExpression.isBlank()) {
+            queryBuilder.filterExpression(filterExpression);
+        }
+        if (exclusiveStartKey != null) {
+            queryBuilder.exclusiveStartKey(exclusiveStartKey);
+        }
+
+        QueryResponse response = dynamoClient.query(queryBuilder.build());
+        List<JsonNode> items = new ArrayList<>();
+        for (Map<String, AttributeValue> item : response.items()) {
+            items.add(DynamoItemMapper.attributeMapToJsonNode(item));
+        }
+
+        String continuationToken = null;
+        if (response.lastEvaluatedKey() != null && !response.lastEvaluatedKey().isEmpty()) {
+            continuationToken = DynamoContinuationToken.encode(response.lastEvaluatedKey());
+        }
+
+        logQueryDiagnostics(DynamoConstants.OP_QUERY_KEY_CONDITION, null,
+                response.sdkHttpResponse().firstMatchingHeader(DynamoConstants.HEADER_REQUEST_ID).orElse(null),
+                response.consumedCapacity(), items.size(), continuationToken);
+
+        return new QueryPage(items, continuationToken);
     }
 
     private QueryPage executeScan(String tableName, int pageSize,
