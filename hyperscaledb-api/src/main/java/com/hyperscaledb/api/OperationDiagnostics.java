@@ -1,6 +1,7 @@
 package com.hyperscaledb.api;
 
 import java.time.Duration;
+import java.util.Objects;
 
 /**
  * Diagnostics metadata for a completed operation.
@@ -132,9 +133,9 @@ public final class OperationDiagnostics {
         private int itemCount;
 
         private Builder(ProviderId provider, String operation, Duration duration) {
-            this.provider = provider;
-            this.operation = operation;
-            this.duration = duration;
+            this.provider = Objects.requireNonNull(provider, "provider");
+            this.operation = Objects.requireNonNull(operation, "operation");
+            this.duration = Objects.requireNonNull(duration, "duration");
         }
 
         public Builder requestId(String requestId)       { this.requestId = requestId; return this; }

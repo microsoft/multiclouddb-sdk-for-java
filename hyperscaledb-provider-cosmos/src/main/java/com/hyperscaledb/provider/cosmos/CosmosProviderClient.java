@@ -13,7 +13,6 @@ import com.azure.resourcemanager.cosmos.models.SqlContainerCreateUpdateParameter
 import com.azure.resourcemanager.cosmos.models.SqlContainerResource;
 import com.azure.resourcemanager.cosmos.models.ContainerPartitionKey;
 import com.hyperscaledb.api.*;
-import com.hyperscaledb.api.OperationDiagnostics;
 import com.hyperscaledb.api.OperationNames;
 import com.hyperscaledb.api.query.TranslatedQuery;
 import com.hyperscaledb.spi.HyperscaleDbProviderClient;
@@ -120,7 +119,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             PartitionKey pk = resolvePartitionKey(key);
             java.time.Instant start = java.time.Instant.now();
             CosmosItemResponse<ObjectNode> response = container.createItem(doc, pk, new CosmosItemRequestOptions());
-            buildItemDiagnostics(OperationNames.CREATE, address, response,
+            logItemDiagnostics(OperationNames.CREATE, address, response,
                     java.time.Duration.between(start, java.time.Instant.now()));
         } catch (CosmosException e) {
             throw CosmosErrorMapper.map(e, OperationNames.CREATE);
@@ -157,7 +156,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             PartitionKey pk = resolvePartitionKey(key);
             java.time.Instant start = java.time.Instant.now();
             CosmosItemResponse<ObjectNode> response = container.replaceItem(doc, cosmosId, pk, new CosmosItemRequestOptions());
-            buildItemDiagnostics(OperationNames.UPDATE, address, response,
+            logItemDiagnostics(OperationNames.UPDATE, address, response,
                     java.time.Duration.between(start, java.time.Instant.now()));
         } catch (CosmosException e) {
             throw CosmosErrorMapper.map(e, OperationNames.UPDATE);
@@ -174,7 +173,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             PartitionKey pk = resolvePartitionKey(key);
             java.time.Instant start = java.time.Instant.now();
             CosmosItemResponse<ObjectNode> response = container.upsertItem(doc, pk, new CosmosItemRequestOptions());
-            buildItemDiagnostics(OperationNames.UPSERT, address, response,
+            logItemDiagnostics(OperationNames.UPSERT, address, response,
                     java.time.Duration.between(start, java.time.Instant.now()));
         } catch (CosmosException e) {
             throw CosmosErrorMapper.map(e, OperationNames.UPSERT);
@@ -189,7 +188,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             String cosmosId = key.sortKey() != null ? key.sortKey() : key.partitionKey();
             java.time.Instant start = java.time.Instant.now();
             CosmosItemResponse<Object> response = container.deleteItem(cosmosId, pk, new CosmosItemRequestOptions());
-            buildItemDiagnostics(OperationNames.DELETE, address, response,
+            logItemDiagnostics(OperationNames.DELETE, address, response,
                     java.time.Duration.between(start, java.time.Instant.now()));
         } catch (CosmosException e) {
             if (e.getStatusCode() == 404) {
@@ -246,10 +245,14 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
                 continuationToken = page.getContinuationToken();
                 OperationDiagnostics diag = buildFeedDiagnostics(OperationNames.QUERY, address, page,
                         items.size(), java.time.Duration.between(queryStart, java.time.Instant.now()));
-                return new QueryPage(items, continuationToken, diag);
+                return new QueryPage(items, continuationToken, null, diag);
             }
 
-            return new QueryPage(items, continuationToken);
+            OperationDiagnostics emptyDiag = OperationDiagnostics
+                    .builder(ProviderId.COSMOS, OperationNames.QUERY,
+                            java.time.Duration.between(queryStart, java.time.Instant.now()))
+                    .itemCount(0).build();
+            return new QueryPage(items, continuationToken, null, emptyDiag);
         } catch (CosmosException e) {
             throw CosmosErrorMapper.map(e, OperationNames.QUERY);
         }
@@ -293,10 +296,14 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
                 continuationToken = page.getContinuationToken();
                 OperationDiagnostics diag = buildFeedDiagnostics(OperationNames.QUERY_WITH_TRANSLATION, address,
                         page, items.size(), java.time.Duration.between(queryStart, java.time.Instant.now()));
-                return new QueryPage(items, continuationToken, diag);
+                return new QueryPage(items, continuationToken, null, diag);
             }
 
-            return new QueryPage(items, continuationToken);
+            OperationDiagnostics emptyDiag = OperationDiagnostics
+                    .builder(ProviderId.COSMOS, OperationNames.QUERY,
+                            java.time.Duration.between(queryStart, java.time.Instant.now()))
+                    .itemCount(0).build();
+            return new QueryPage(items, continuationToken, null, emptyDiag);
         } catch (CosmosException e) {
             throw CosmosErrorMapper.map(e, OperationNames.QUERY);
         }
@@ -417,6 +424,12 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
      * them at DEBUG level, and — when {@code nativeDiagnosticsEnabled} is set in
      * config — logs the full {@link CosmosDiagnostics} string at INFO level.
      */
+    /** Logs item diagnostics without returning the object (for write operations). */
+    private void logItemDiagnostics(String operation, ResourceAddress address,
+            CosmosItemResponse<?> response, java.time.Duration duration) {
+        buildItemDiagnostics(operation, address, response, duration);
+    }
+
     private OperationDiagnostics buildItemDiagnostics(String operation, ResourceAddress address,
             CosmosItemResponse<?> response, java.time.Duration duration) {
         OperationDiagnostics diag = OperationDiagnostics
@@ -448,9 +461,17 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
      */
     private OperationDiagnostics buildFeedDiagnostics(String operation, ResourceAddress address,
             FeedResponse<?> page, int itemCount, java.time.Duration duration) {
+        String feedRequestId = null;
+        String feedSessionToken = null;
+        CosmosDiagnostics feedNative = page.getCosmosDiagnostics();
+        if (feedNative != null) {
+            // CosmosDiagnostics does not expose requestId directly on feed responses
+        }
         OperationDiagnostics diag = OperationDiagnostics
                 .builder(ProviderId.COSMOS, operation, duration)
+                .requestId(feedRequestId)
                 .requestCharge(page.getRequestCharge())
+                .sessionToken(feedSessionToken)
                 .itemCount(itemCount)
                 .build();
 

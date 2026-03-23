@@ -31,10 +31,6 @@ public final class QueryPage {
         this(items, continuationToken, warnings, null);
     }
 
-    public QueryPage(List<JsonNode> items, String continuationToken, OperationDiagnostics diagnostics) {
-        this(items, continuationToken, null, diagnostics);
-    }
-
     public QueryPage(List<JsonNode> items, String continuationToken) {
         this(items, continuationToken, null, null);
     }

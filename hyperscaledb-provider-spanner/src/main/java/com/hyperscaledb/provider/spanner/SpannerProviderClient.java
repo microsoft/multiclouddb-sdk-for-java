@@ -3,6 +3,7 @@ package com.hyperscaledb.provider.spanner;
 import com.hyperscaledb.api.CapabilitySet;
 import com.hyperscaledb.api.HyperscaleDbClientConfig;
 import com.hyperscaledb.api.OperationDiagnostics;
+import com.hyperscaledb.api.OperationNames;
 import com.hyperscaledb.api.OperationOptions;
 import com.hyperscaledb.api.ProviderId;
 import com.hyperscaledb.api.QueryPage;
@@ -298,11 +299,11 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
                     : null;
 
             OperationDiagnostics diag = OperationDiagnostics
-                    .builder(ProviderId.SPANNER, "queryWithTranslation", java.time.Duration.ZERO)
+                    .builder(ProviderId.SPANNER, OperationNames.QUERY_WITH_TRANSLATION, java.time.Duration.ZERO)
                     .itemCount(items.size())
                     .build();
-            LOG.debug("spanner.diagnostics op=queryWithTranslation itemCount={} hasMore={}", items.size(), hasMore);
-            return new QueryPage(items, continuationToken, diag);
+            LOG.debug("spanner.diagnostics op={} itemCount={} hasMore={}", OperationNames.QUERY_WITH_TRANSLATION, items.size(), hasMore);
+            return new QueryPage(items, continuationToken, null, diag);
         } catch (SpannerException e) {
             throw SpannerErrorMapper.map(e, "query");
         }
@@ -435,11 +436,11 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
                 : null;
 
         OperationDiagnostics diag = OperationDiagnostics
-                .builder(ProviderId.SPANNER, "query", java.time.Duration.ZERO)
+                .builder(ProviderId.SPANNER, OperationNames.QUERY, java.time.Duration.ZERO)
                 .itemCount(items.size())
                 .build();
         LOG.debug("spanner.diagnostics op=query itemCount={} hasMore={}", items.size(), hasMore);
-        return new QueryPage(items, continuationToken, diag);
+        return new QueryPage(items, continuationToken, null, diag);
     }
 
     private void bindParameter(Statement.Builder builder, String name, Object value) {
