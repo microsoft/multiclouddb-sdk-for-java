@@ -22,6 +22,16 @@
         <dependency>
             <groupId>com.azure</groupId>
             <artifactId>azure-cosmos</artifactId>
+            <exclusions>
+                <!-- Netty 4.1.x netty-codec and Netty 4.2.x netty-codec-compression
+                     both export io.netty.handler.codec.compression, creating a JPMS
+                     split-package error. Exclude the 4.2.x artifact; the compression
+                     classes in netty-codec 4.1.x are sufficient at compile time. -->
+                <exclusion>
+                    <groupId>io.netty</groupId>
+                    <artifactId>netty-codec-compression</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>com.azure</groupId>
@@ -59,8 +69,17 @@
                     <!-- Byte Buddy (used by Mockito) does not officially support
                          Java versions beyond 22. Enable experimental mode so that
                          CosmosException (and other Azure SDK exception classes)
-                         can be mocked on Java 23+. -->
-                    <argLine>-Dnet.bytebuddy.experimental=true</argLine>
+                         can be mocked on Java 23+.
+                         JPMS: allow the named module to read test-scoped
+                         dependencies (logback, Mockito) and allow reflective
+                         access for Mockito. -->
+                    <argLine>
+                        -Dnet.bytebuddy.experimental=true
+                        --add-reads com.hyperscaledb.provider.cosmos=ALL-UNNAMED
+                        --add-reads com.hyperscaledb.provider.cosmos=ch.qos.logback.classic
+                        --add-reads com.hyperscaledb.provider.cosmos=ch.qos.logback.core
+                        --add-opens com.hyperscaledb.provider.cosmos/com.hyperscaledb.provider.cosmos=ALL-UNNAMED
+                    </argLine>
                 </configuration>
             </plugin>
         </plugins>
