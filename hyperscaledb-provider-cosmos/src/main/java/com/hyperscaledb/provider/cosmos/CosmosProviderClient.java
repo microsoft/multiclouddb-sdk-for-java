@@ -134,7 +134,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             String cosmosId = key.sortKey() != null ? key.sortKey() : key.partitionKey();
             java.time.Instant start = java.time.Instant.now();
             CosmosItemResponse<JsonNode> response = container.readItem(cosmosId, pk, JsonNode.class);
-            buildItemDiagnostics(OperationNames.READ, address, response,
+            logItemDiagnostics(OperationNames.READ, address, response,
                     java.time.Duration.between(start, java.time.Instant.now()));
             return response.getItem();
         } catch (CosmosException e) {
@@ -420,17 +420,11 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
     }
 
     /**
-     * Builds {@link OperationDiagnostics} from a {@link CosmosItemResponse}, logs
-     * them at DEBUG level, and — when {@code nativeDiagnosticsEnabled} is set in
-     * config — logs the full {@link CosmosDiagnostics} string at INFO level.
+     * Logs diagnostics for a single-item operation at DEBUG level.
+     * When {@code nativeDiagnosticsEnabled} is set in config, also logs the full
+     * {@link CosmosDiagnostics} string at INFO level.
      */
-    /** Logs item diagnostics without returning the object (for write operations). */
     private void logItemDiagnostics(String operation, ResourceAddress address,
-            CosmosItemResponse<?> response, java.time.Duration duration) {
-        buildItemDiagnostics(operation, address, response, duration);
-    }
-
-    private OperationDiagnostics buildItemDiagnostics(String operation, ResourceAddress address,
             CosmosItemResponse<?> response, java.time.Duration duration) {
         OperationDiagnostics diag = OperationDiagnostics
                 .builder(ProviderId.COSMOS, operation, duration)
@@ -452,7 +446,6 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
                         operation, address.database(), address.collection(), native_);
             }
         }
-        return diag;
     }
 
     /**
@@ -461,17 +454,9 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
      */
     private OperationDiagnostics buildFeedDiagnostics(String operation, ResourceAddress address,
             FeedResponse<?> page, int itemCount, java.time.Duration duration) {
-        String feedRequestId = null;
-        String feedSessionToken = null;
-        CosmosDiagnostics feedNative = page.getCosmosDiagnostics();
-        if (feedNative != null) {
-            // CosmosDiagnostics does not expose requestId directly on feed responses
-        }
         OperationDiagnostics diag = OperationDiagnostics
                 .builder(ProviderId.COSMOS, operation, duration)
-                .requestId(feedRequestId)
                 .requestCharge(page.getRequestCharge())
-                .sessionToken(feedSessionToken)
                 .itemCount(itemCount)
                 .build();
 
