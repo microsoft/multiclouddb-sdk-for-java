@@ -22,16 +22,23 @@
         <dependency>
             <groupId>com.azure</groupId>
             <artifactId>azure-cosmos</artifactId>
-            <exclusions>
-                <!-- Netty 4.1.x netty-codec and Netty 4.2.x netty-codec-compression
-                     both export io.netty.handler.codec.compression, creating a JPMS
-                     split-package error. Exclude the 4.2.x artifact; the compression
-                     classes in netty-codec 4.1.x are sufficient at compile time. -->
-                <exclusion>
-                    <groupId>io.netty</groupId>
-                    <artifactId>netty-codec-compression</artifactId>
-                </exclusion>
-            </exclusions>
+                <exclusions>
+                    <!-- Netty 4.1.x netty-codec and Netty 4.2.x netty-codec-compression
+                         both export io.netty.handler.codec.compression, creating a JPMS
+                         split-package error on the module path.
+                         Runtime safety: the Cosmos SDK 4.x transport layer does not use
+                         Brotli/Zstd compression codecs that were moved to
+                         netty-codec-compression in Netty 4.2.x; standard GZip/Snappy
+                         codecs remain in netty-codec 4.1.x and are sufficient at runtime.
+                         This has been verified with Cosmos emulator integration tests.
+                         If a future Cosmos SDK version adds a hard dependency on 4.2.x
+                         compression codecs, switch to <dependencyManagement> pinning
+                         both Netty artifacts to the same 4.1.x version instead. -->
+                    <exclusion>
+                        <groupId>io.netty</groupId>
+                        <artifactId>netty-codec-compression</artifactId>
+                    </exclusion>
+                </exclusions>
         </dependency>
         <dependency>
             <groupId>com.azure</groupId>

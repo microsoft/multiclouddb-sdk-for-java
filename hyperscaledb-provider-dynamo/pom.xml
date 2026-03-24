@@ -51,8 +51,17 @@
                     <!-- Byte Buddy (used by Mockito) does not officially support
                          Java versions beyond 22. Enable experimental mode so that
                          DynamoDbException (and other AWS SDK exception classes)
-                         can be mocked on Java 23+. -->
-                    <argLine>-Dnet.bytebuddy.experimental=true</argLine>
+                         can be mocked on Java 23+.
+                         JPMS: allow the named module to read test-scoped
+                         dependencies (logback, Mockito) and allow reflective
+                         access for Mockito. -->
+                    <argLine>
+                        -Dnet.bytebuddy.experimental=true
+                        --add-reads com.hyperscaledb.provider.dynamo=ALL-UNNAMED
+                        --add-reads com.hyperscaledb.provider.dynamo=ch.qos.logback.classic
+                        --add-reads com.hyperscaledb.provider.dynamo=ch.qos.logback.core
+                        --add-opens com.hyperscaledb.provider.dynamo/com.hyperscaledb.provider.dynamo=ALL-UNNAMED
+                    </argLine>
                 </configuration>
             </plugin>
         </plugins>
