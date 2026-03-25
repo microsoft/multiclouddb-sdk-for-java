@@ -42,6 +42,7 @@ public final class DefaultHyperscaleDbClient implements HyperscaleDbClient {
     public void create(ResourceAddress address, Key key, JsonNode document, OperationOptions options) {
         Instant start = Instant.now();
         try {
+            DocumentSizeValidator.validate(document, OperationNames.CREATE);
             providerClient.create(address, key, document, options);
             LOG.debug("create completed: address={}, key={}, duration={}ms",
                     address, key, Duration.between(start, Instant.now()).toMillis());
@@ -85,6 +86,7 @@ public final class DefaultHyperscaleDbClient implements HyperscaleDbClient {
     public void upsert(ResourceAddress address, Key key, JsonNode document, OperationOptions options) {
         Instant start = Instant.now();
         try {
+            DocumentSizeValidator.validate(document, OperationNames.UPSERT);
             providerClient.upsert(address, key, document, options);
             LOG.debug("upsert completed: address={}, key={}, duration={}ms",
                     address, key, Duration.between(start, Instant.now()).toMillis());
