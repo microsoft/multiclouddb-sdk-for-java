@@ -214,8 +214,27 @@ Portability is the default mode of the SDK.
 - Where providers cannot behave identically, the SDK MUST either:
 	- normalize behavior into a consistent portable outcome, or
 	- clearly flag the behavior difference and require explicit user choice to proceed in a non-portable way.
-- Provider-specific features and provider-specific behaviors MUST be exposed only through **explicit opt-in** (extensions/hooks/escape hatch) so that “happy path” usage remains seamless and portable by default.
-- Opting into provider-specific behavior MUST be visible in code or configuration (no hidden automatic upgrades to provider-specific semantics).
+- Provider-specific features and provider-specific behaviors MUST be exposed only through **explicit opt-in via SDK configuration**. Code-level escape hatches (e.g., accessing the underlying native client, hooking into query execution, injecting async callbacks) are not supported.
+- Diagnostics and tracing opt-ins MUST be expressed through SDK configuration only, not through code-level hooks or callbacks.
+- Opting into provider-specific behavior MUST be visible in configuration (no hidden automatic upgrades to provider-specific semantics).
+
+## API Scope
+
+### Synchronous APIs Only (v1)
+
+The initial SDK version exposes **synchronous (blocking) APIs only**.
+
+- All operations (`read`, `upsert`, `delete`, `query`, `ensureDatabase`, `ensureContainer`, `provisionSchema`) return results synchronously.
+- **Async APIs are explicitly out of scope for v1.** Reactive or non-blocking variants introduce cross-provider incompatibilities (e.g., Reactor vs. CompletableFuture vs. ListenableFuture) that cannot be abstracted without leaking provider-specific execution models.
+- Applications that require async behavior may wrap SDK calls using their own executor or async framework.
+
+### Escape Hatch Policy
+
+The SDK enforces a strict no-code-escape-hatch policy to preserve portability:
+
+- **No code-level escape hatches.** The SDK does not expose the underlying native provider client, provider-specific query hooks, async callbacks, or low-level execution interceptors via its public API.
+- **Diagnostics and tracing via configuration only.** Observability features (correlation IDs, cost metrics, DEBUG-level log output) are configured at the SDK level; they cannot be injected or overridden through code-level hooks.
+- Unrestricted code-driven escape hatches undermine portability because they encourage application code to depend on provider-specific types, execution models, or behaviors, making it impossible to switch providers without modifying application code.
 
 ## Requirements *(mandatory)*
 
@@ -235,12 +254,12 @@ Portability is the default mode of the SDK.
 - **FR-012**: The SDK MUST expose diagnostic metadata for each operation (at minimum: provider identifier, operation name, duration, and a correlation/request identifier when available).
 - **FR-013**: The SDK MUST provide a standardized, provider-neutral error model that categorizes failures and includes a “retryable” signal.
 - **FR-014**: Errors MUST preserve relevant provider details (e.g., provider error codes and request identifiers) in a sanitized form suitable for logging and troubleshooting.
-- **FR-015**: The SDK MUST provide an escape hatch that allows advanced users to access the underlying native provider client when needed.
+- **FR-015**: The SDK MUST NOT expose the underlying native provider client via its public API. All provider-specific behaviors are accessed through explicit capability-gated SDK features or SDK configuration. Code-level access to provider internals is not supported in v1.
 - **FR-016**: Each provider integration MUST be implemented as a provider adapter that conforms to the same contract and can be validated via the shared conformance tests.
 - **FR-017**: The SDK MUST provide a conformance test suite that can be executed against each supported provider to verify portability of the minimum contract.
 - **FR-018**: The SDK MUST document a compatibility and support policy that states which providers are supported and what “portable” means within the SDK’s guarantees.
 - **FR-019**: The SDK MUST define the “portable contract” as the default behavior for all provider-neutral APIs, and it MUST NOT require provider-specific code for the portable contract.
-- **FR-020**: Provider-specific features/behaviors MUST be available only via explicit opt-in (extensions/hooks/escape hatch) and MUST NOT change default portable behavior unless the user explicitly enables them.
+- **FR-020**: Provider-specific features/behaviors MUST be available only via explicit opt-in through SDK configuration and MUST NOT change default portable behavior unless the user explicitly enables them. Code-level escape hatches (hooks, interceptors, direct native client access) are not part of the public API.
 - **FR-021**: When a provider-specific feature/behavior is enabled, the SDK MUST make it obvious to the user that portability may be reduced (e.g., via metadata, documentation, and/or structured warnings).
 
 #### Portable Resource Provisioning Requirements
@@ -261,8 +280,9 @@ Portability is the default mode of the SDK.
 #### Cloud Authentication Requirements
 
 - **FR-046**: The Cosmos DB provider MUST support `DefaultAzureCredential` as a fallback when no account key is provided, enabling Managed Identity, Azure CLI, environment variable, and other credential types in the DefaultAzureCredential chain.
-- **FR-047**: When using `DefaultAzureCredential` (RBAC mode), the Cosmos DB provider MUST use the Azure Resource Manager SDK (`azure-resourcemanager-cosmos`) for database creation, because Cosmos data-plane RBAC does not support control-plane operations.
-- **FR-048**: The management SDK configuration (`subscriptionId`, `resourceGroupName`) MUST be optional; when absent, provisioning falls back to data-plane calls with a warning log.
+- **FR-047**: The SDK MUST NOT introduce a required dependency on management or ARM SDKs (e.g., `azure-resourcemanager-cosmos`). Database and container creation is performed through each provider's standard data-plane SDK and is subject to the caller's runtime permissions (e.g., RBAC role assignments).
+- **FR-047a**: When `ensureDatabase` or `ensureContainer` is called and the caller lacks sufficient permissions to create the resource, the SDK MUST fail with a clear, structured authorization error. The operation MUST NOT silently succeed or perform a no-op when the resource does not exist and cannot be created.
+- **FR-048**: Advanced provisioning support (e.g., custom throughput, indexing policies, ARM-based control-plane operations) is a **future consideration** and is not part of v1. Applications requiring advanced provisioning should use provider SDKs or infrastructure-as-code tools directly.
 
 #### Partition-Key-Scoped Query Requirements
 
@@ -365,7 +385,7 @@ The following operators and functions form the portable query subset, available 
 - **Expression Parameters**: A map of named parameter values (`@paramName` → value) that are bound to the expression before execution.
 - **Expression Translator**: A component within each provider adapter that converts a portable expression into the provider's native query format.
 - **Native Expression**: A text string using provider-specific syntax, passed through without translation. Tagged to prevent cross-provider misuse.
-- **Resource Provisioning**: The ability to create database and collection resources portably. `ensureDatabase` creates a database/namespace; `ensureContainer` creates a collection/container/table with the SDK's standard schema. `provisionSchema` bulk-creates multiple databases and containers in parallel via a single call.
+- **Resource Provisioning**: The ability to create database and collection resources portably using the provider's data-plane SDK. `ensureDatabase` creates a database/namespace; `ensureContainer` creates a collection/container/table with the SDK's standard schema. `provisionSchema` bulk-creates multiple databases and containers in parallel via a single call. All operations are subject to the caller's runtime permissions; insufficient permissions result in a clear authorization failure. The SDK does not depend on management or ARM SDKs for provisioning.
 - **Query Page**: A single page of results and an optional continuation token.
 - **Capability**: A named feature/behavior that can be supported or unsupported by a provider.
 - **Error**: A provider-neutral categorization of failures with retryability and provider details.
@@ -391,7 +411,7 @@ The following operators and functions form the portable query subset, available 
 - **SC-011**: A developer can provision database and collection resources using `ensureDatabase` and `ensureContainer` without any provider-specific code, and the same provisioning code works across all providers by changing configuration only.
 - **SC-012**: Calling `ensureDatabase` and `ensureContainer` on resources that already exist succeeds idempotently without error on all providers.
 - **SC-015**: `provisionSchema` creates all specified databases and containers in parallel, equivalent to individual `ensureDatabase`/`ensureContainer` calls, on all supported providers.
-- **SC-016**: The Cosmos DB provider authenticates via `DefaultAzureCredential` when no account key is provided, and uses the Azure Resource Manager SDK for database creation in RBAC mode.
+- **SC-016**: The Cosmos DB provider authenticates via `DefaultAzureCredential` when no account key is provided. When the caller holds sufficient RBAC permissions for control-plane operations, `ensureDatabase` succeeds; when permissions are insufficient, the SDK returns a clear, structured authorization failure rather than silently succeeding or hanging.
 - **SC-013**: A query with `partitionKey` set returns only items within that partition on all supported providers.
 - **SC-014**: A query with both `partitionKey` and a filter expression correctly scopes to the partition first, then applies the filter, on all supported providers.
 - **SC-017**: All operation name strings used in diagnostics, error context, and log lines across all provider adapters are sourced from `OperationNames` in `hyperscaledb-api`. No provider adapter re-declares a shared operation name string locally; duplicates that would cause log-correlation ambiguity are caught by `OperationNamesTest` at compile/test time.
@@ -414,9 +434,9 @@ The following operators and functions form the portable query subset, available 
 - The portable query subset targets WHERE-clause filtering only. Projections (SELECT specific fields), aggregations (COUNT, SUM, etc.), and joins are outside the current scope.
 - `field_exists` maps to `IS_DEFINED` on Cosmos DB, `IS NOT MISSING` on DynamoDB PartiQL, and `IS NOT NULL` on Spanner. This is a semantic approximation: on Spanner, a column always exists in the schema, so the check tests for non-null values.
 - Queries MUST support partition-key-scoped execution. When a partition key value is specified on a query request, the SDK MUST use each provider's native efficient mechanism to scope the query to that partition only (e.g., Cosmos DB `setPartitionKey()` on query options, DynamoDB PartiQL WHERE condition on the partition key column). Queries without a partition key scope may still result in cross-partition scans. Applications SHOULD use `Key.of(partitionKey, sortKey)` to co-locate related documents and then scope queries by partition key for efficient retrieval.
-- `ensureDatabase`, `ensureContainer`, and `provisionSchema` are convenience methods for development and startup scenarios. They create resources with the SDK's standard schema defaults and are not intended for advanced provisioning (e.g., custom throughput, indexing policies, TTL settings). For production provisioning with fine-grained control, developers should use provider SDKs directly or infrastructure-as-code tools.
-- The Cosmos DB provider uses the Azure Resource Manager management SDK (`azure-resourcemanager-cosmos`) for database creation when operating in RBAC/`DefaultAzureCredential` mode, because Cosmos data-plane RBAC does not have permissions for control-plane operations like creating databases. Key-based authentication continues to use data-plane calls.
-- **SDK versions (current)**: Azure Cosmos DB SDK 4.78.0, AWS SDK v2 2.34.0, Azure Resource Manager Cosmos 2.54.1, Azure Identity 1.18.2, Azure Core Management 1.19.3. Minimum Java version is 17. These versions represent the latest stable releases validated against this SDK; newer versions may be adopted as long as the portable contract is preserved.
+- `ensureDatabase`, `ensureContainer`, and `provisionSchema` are convenience methods for development and startup scenarios. They create resources with the SDK's standard schema defaults using the provider's data-plane SDK, and are subject to the caller's runtime permissions (e.g., RBAC role assignments). They are not intended for advanced provisioning (e.g., custom throughput, indexing policies, ARM-based control-plane operations). For production provisioning with fine-grained control, developers should use provider SDKs or infrastructure-as-code tools directly. Advanced provisioning support is a future consideration outside v1 scope.
+- The SDK does not introduce a dependency on management or ARM SDKs (e.g., `azure-resourcemanager-cosmos`). Provisioning operations (`ensureDatabase`, `ensureContainer`) use the provider's standard data-plane SDK and succeed only when the caller holds sufficient runtime permissions. When operating in RBAC/`DefaultAzureCredential` mode, `ensureDatabase` requires the caller to hold an appropriate control-plane role (e.g., Cosmos DB Operator). If the required role is not assigned, the SDK returns a clear authorization failure. Advanced provisioning requiring ARM access is a future consideration outside v1 scope.
+- **SDK versions (current)**: Azure Cosmos DB SDK 4.78.0, AWS SDK v2 2.34.0, Azure Identity 1.18.2. Minimum Java version is 17. These versions represent the latest stable releases validated against this SDK; newer versions may be adopted as long as the portable contract is preserved. Management and ARM SDK dependencies (e.g., `azure-resourcemanager-cosmos`, `azure-core-management`) are not part of the SDK's required dependency set.
 - **Dependency security**: Transitive dependency versions are managed in the root `pom.xml` `dependencyManagement` section and explicit overrides in child poms to resolve known CVEs: `jackson-core` ≥ 2.18.6 (GHSA-72hv-8253-57qq), `logback-classic`/`logback-core` ≥ 1.5.25 (CVE-2024-12798, CVE-2024-12801, CVE-2025-11226, CVE-2026-1225), `netty-codec-http` ≥ 4.2.8.Final (CVE-2025-67735). IDE CVE scanner (Mend.io) warnings that persist after overrides are documented as false positives in `.mend/mend.yml`; the actual resolved versions are confirmed safe via `mvn dependency:tree`.
 - **Test infrastructure**: Mockito's Byte Buddy instrumentation engine does not officially support Java versions beyond 22. Provider test modules that mock SDK exception classes (e.g., `CosmosException`, `DynamoDbException`) MUST configure `maven-surefire-plugin` with `-Dnet.bytebuddy.experimental=true` in `argLine` to enable mocking on Java 23+. This is set in the `hyperscaledb-provider-cosmos` and `hyperscaledb-provider-dynamo` poms.
 - **Operation name constants**: The `OperationNames` class in `hyperscaledb-api` is the canonical source for all shared operation name strings. It is on the classpath of every provider via the `providers → hyperscaledb-spi → hyperscaledb-api` dependency chain. IDE "unused field" warnings on constants classes are suppressed via `@SuppressWarnings("unused")` because single-file IDE analysis cannot see cross-file usages.
@@ -504,9 +524,11 @@ This checklist is used to accept the feature as “done” at the spec level.
 - [ ] When a provider-specific quota limit is reached, the SDK surfaces a provider-neutral error with clear categorization and actionable guidance.
 - [ ] Quota-related errors are consistent in format across all providers.
 
-### Escape Hatch
+### Escape Hatch Policy
 
-- [ ] Advanced users can access the underlying provider-native client when required, without breaking the portable surface.
+- [ ] The SDK does not expose the underlying native provider client or any code-level hooks via its public API.
+- [ ] Diagnostics and tracing configurations are exposed through SDK configuration only and do not require code-level hooks.
+- [ ] Provider-specific opt-in behaviors are accessible only through SDK configuration, not through code injection or native client access.
 
 ### Resource Provisioning
 
@@ -519,8 +541,8 @@ This checklist is used to accept the feature as “done” at the spec level.
 ### Cloud Authentication
 
 - [ ] The Cosmos DB provider authenticates via `DefaultAzureCredential` when no account key is configured, supporting Managed Identity, Azure CLI, and environment variable credentials.
-- [ ] In RBAC mode, the Cosmos DB provider uses the Azure Resource Manager SDK for database creation (data-plane RBAC cannot create databases).
-- [ ] Management SDK config (`subscriptionId`, `resourceGroupName`) is optional; when absent, provisioning falls back to data-plane calls with a warning.
+- [ ] The SDK does not depend on management or ARM SDKs. Provisioning operations are executed through the provider's standard data-plane SDK.
+- [ ] When `ensureDatabase` or `ensureContainer` is called and the caller lacks sufficient RBAC permissions, the SDK returns a clear, structured authorization failure error.
 
 ### Code Quality & Developer Experience
 

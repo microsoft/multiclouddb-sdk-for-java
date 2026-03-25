@@ -141,11 +141,6 @@ public interface HyperscaleDbProviderClient extends AutoCloseable {
     CapabilitySet capabilities();
 
     /**
-     * Return the native provider client (for escape hatch), or null.
-     */
-    <T> T nativeClient(Class<T> clientType);
-
-    /**
      * Return the provider id.
      */
     ProviderId providerId();

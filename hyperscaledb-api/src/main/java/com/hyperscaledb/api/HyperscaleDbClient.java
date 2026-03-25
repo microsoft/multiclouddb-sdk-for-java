@@ -9,12 +9,12 @@ import java.util.Map;
  * Portable client interface for CRUD + query operations across cloud database
  * providers.
  * <p>
- * All operations use a provider-neutral synchronous contract. Provider
- * selection is configuration-only — no code changes are required to switch
- * providers.
+ * All operations use a provider-neutral <strong>synchronous</strong> contract.
+ * Provider selection is configuration-only — no code changes are required to
+ * switch providers. Async APIs are out of scope for v1.
  * <p>
- * For async / reactive access use {@link #nativeClient(Class)} to obtain the
- * provider's native async client directly.
+ * There are no code-level escape hatches. Diagnostics and provider-specific
+ * opt-ins are controlled via {@link HyperscaleDbClientConfig} only.
  */
 public interface HyperscaleDbClient extends AutoCloseable {
 
@@ -140,15 +140,18 @@ public interface HyperscaleDbClient extends AutoCloseable {
      * For providers without a native database concept (e.g., DynamoDB), this is a
      * no-op.
      * <p>
-     * <b>Cosmos DB + RBAC note:</b> data-plane RBAC does not permit control-plane
-     * operations. If your identity only has the
-     * <em>Cosmos DB Built-in Data Contributor</em> role you must create databases
-     * via the Azure Portal, CLI, or Bicep/Terraform before calling this method.
-     * Key-based auth works without restriction.
+     * <b>Permission note:</b> this operation uses each provider's standard
+     * data-plane SDK and is subject to the caller's runtime permissions. When
+     * the caller lacks sufficient permissions (e.g., Cosmos DB data-plane RBAC
+     * without a control-plane role), the SDK throws a
+     * {@link HyperscaleDbException} with category {@code PERMISSION_DENIED}.
+     * Provision the database out-of-band (portal, CLI, IaC) if needed.
      *
      * @param database the logical database name to create if absent
-     * @throws HyperscaleDbException if the creation fails for a reason other than
-     *                               the resource already existing
+     * @throws HyperscaleDbException with category {@code PERMISSION_DENIED} when
+     *                               the caller lacks permissions, or
+     *                               {@code CONFLICT} / {@code INTERNAL_ERROR} for
+     *                               other failures
      */
     void ensureDatabase(String database);
 
@@ -185,36 +188,6 @@ public interface HyperscaleDbClient extends AutoCloseable {
      * @throws HyperscaleDbException if any database or container creation fails
      */
     void provisionSchema(java.util.Map<String, java.util.List<String>> schema);
-
-    /**
-     * Access the underlying native provider client for escape-hatch scenarios.
-     * <p>
-     * Returns {@code null} if {@code clientType} does not match the provider's
-     * native client type.
-     * <p>
-     * <b>Common uses:</b>
-     * <ul>
-     *   <li>Provider-specific operations not covered by the portable API.</li>
-     *   <li>Async / reactive access — the portable API is intentionally
-     *       synchronous. Each provider exposes a separate async client type:
-     *       <ul>
-     *         <li>Cosmos DB: {@code com.azure.cosmos.CosmosAsyncClient} (Reactor)</li>
-     *         <li>DynamoDB: {@code software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient}
-     *             ({@code CompletableFuture})</li>
-     *         <li>Spanner: {@code com.google.cloud.spanner.Spanner} (ApiFuture / gRPC)</li>
-     *       </ul>
-     *       These async client types are provider-specific — requesting them breaks
-     *       portability but gives full access to the provider's native async model.
-     *   </li>
-     * </ul>
-     * <p>
-     * <b>Warning:</b> using the native client breaks portability. The SDK logs an
-     * INFO message when this method is called.
-     *
-     * @param clientType the expected native client class
-     * @return the native client instance, or {@code null} if the type does not match
-     */
-    <T> T nativeClient(Class<T> clientType);
 
     /**
      * Get the provider ID for this client.

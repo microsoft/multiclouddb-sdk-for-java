@@ -228,12 +228,6 @@ public final class DefaultHyperscaleDbClient implements HyperscaleDbClient {
     }
 
     @Override
-    public <T> T nativeClient(Class<T> clientType) {
-        LOG.info("Escape hatch accessed: requesting native client of type {}", clientType.getName());
-        return providerClient.nativeClient(clientType);
-    }
-
-    @Override
     public ProviderId providerId() {
         return config.provider();
     }

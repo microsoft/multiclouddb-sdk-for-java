@@ -651,15 +651,6 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
-    public <T> T nativeClient(Class<T> clientType) {
-        if (clientType.isInstance(dynamoClient)) {
-            return (T) dynamoClient;
-        }
-        return null;
-    }
-
-    @Override
     public ProviderId providerId() {
         return ProviderId.DYNAMO;
     }

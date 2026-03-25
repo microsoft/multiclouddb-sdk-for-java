@@ -454,15 +454,6 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
-    public <T> T nativeClient(Class<T> clientType) {
-        if (clientType.isInstance(spanner)) {
-            return (T) spanner;
-        }
-        return null;
-    }
-
-    @Override
     public ProviderId providerId() {
         return ProviderId.SPANNER;
     }

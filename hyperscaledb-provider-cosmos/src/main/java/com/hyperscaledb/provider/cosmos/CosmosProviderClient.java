@@ -416,15 +416,6 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
-    public <T> T nativeClient(Class<T> clientType) {
-        if (clientType.isInstance(cosmosClient)) {
-            return (T) cosmosClient;
-        }
-        return null;
-    }
-
-    @Override
     public ProviderId providerId() {
         return ProviderId.COSMOS;
     }
@@ -439,18 +430,21 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
     /**
      * Creates the Cosmos DB database if it does not already exist (idempotent).
      * <p>
-     * Uses the data-plane {@code createDatabaseIfNotExists} call.
+     * Uses the data-plane {@code createDatabaseIfNotExists} call. No management
+     * or ARM SDK dependency is required.
      * <p>
-     * <b>RBAC limitation:</b> Cosmos DB data-plane RBAC (the
-     * <em>Built-in Data Contributor</em> role) does not permit control-plane
-     * operations such as creating databases. If your identity only has a
-     * data-plane RBAC role this call will fail with 403 Forbidden. In that case
-     * create the database via the Azure Portal, Azure CLI, or Bicep/Terraform
-     * before starting the application, and skip this call.
-     * Key-based authentication works without restriction.
+     * <b>Permission requirement:</b> The caller must hold a role that permits
+     * control-plane database creation (e.g., <em>Cosmos DB Operator</em> or
+     * key-based authentication). When operating under a data-plane-only RBAC role
+     * (e.g., <em>Cosmos DB Built-in Data Contributor</em>), this call will fail
+     * with a {@code PERMISSION_DENIED} error. In that case provision the database
+     * out-of-band (Azure Portal, CLI, or Bicep/Terraform) and do not call this
+     * method.
      *
      * @param database the logical database name to create if absent
-     * @throws HyperscaleDbException if creation fails
+     * @throws HyperscaleDbException with category {@code PERMISSION_DENIED} when the
+     *                               caller lacks control-plane permissions, or
+     *                               category {@code INTERNAL_ERROR} for other failures
      */
     @Override
     public void ensureDatabase(String database) {
