@@ -54,3 +54,8 @@ desktop.ini
 *-output.txt
 test-output*.txt
 mvn-test-output*.txt
+build-out*.txt
+epom.xml
+
+# ── Build staging ──────────────────────────────────────
+staging/

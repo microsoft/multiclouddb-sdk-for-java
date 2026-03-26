@@ -47,6 +47,10 @@
         <!-- Transitive Netty version override: fixes CVE-2025-67735 (CRLF Injection
              in HttpRequestEncoder) pulled in by the AWS SDK. Minimum safe: 4.2.8. -->
         <netty.version>4.2.8.Final</netty.version>
+
+        <!-- Test tag filtering: set via profiles or -D on command line -->
+        <test.includedGroups/>
+        <test.excludedGroups/>
     </properties>
 
     <dependencyManagement>
@@ -131,17 +135,16 @@
                 <version>${aws-sdk.version}</version>
             </dependency>
 
-            <!-- Netty version override: pins the transitive Netty dependency pulled
-                 in by the AWS SDK to a version that resolves CVE-2025-67735. -->
+            <!-- Netty BOM: pins ALL transitive Netty modules to the same version.
+                 Fixes CVE-2025-67735 (CRLF Injection in HttpRequestEncoder) and
+                 prevents split-version ClassNotFoundErrors (e.g. LeakPresenceDetector)
+                 when different SDKs pull in different Netty versions. -->
             <dependency>
                 <groupId>io.netty</groupId>
-                <artifactId>netty-codec-http</artifactId>
+                <artifactId>netty-bom</artifactId>
                 <version>${netty.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.netty</groupId>
-                <artifactId>netty-codec-http2</artifactId>
-                <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
 
             <!-- Google Cloud Spanner -->
@@ -196,6 +199,35 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>3.2.5</version>
+                    <configuration>
+                        <groups>${test.includedGroups}</groups>
+                        <excludedGroups>${test.excludedGroups}</excludedGroups>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-source-plugin</artifactId>
+                    <version>3.3.0</version>
+                    <executions>
+                        <execution>
+                            <id>attach-sources</id>
+                            <goals><goal>jar-no-fork</goal></goals>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-javadoc-plugin</artifactId>
+                    <version>3.6.3</version>
+                    <configuration>
+                        <doclint>none</doclint>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <id>attach-javadocs</id>
+                            <goals><goal>jar</goal></goals>
+                        </execution>
+                    </executions>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -222,6 +254,35 @@
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>unit</id>
+            <properties>
+                <test.excludedGroups>cosmos,dynamo,spanner,emulator</test.excludedGroups>
+            </properties>
+        </profile>
+        <profile>
+            <id>emulator-cosmos</id>
+            <properties>
+                <test.includedGroups>cosmos</test.includedGroups>
+            </properties>
+        </profile>
+        <profile>
+            <id>emulator-dynamo</id>
+            <properties>
+                <test.includedGroups>dynamo</test.includedGroups>
+            </properties>
+        </profile>
+    </profiles>
 </project>

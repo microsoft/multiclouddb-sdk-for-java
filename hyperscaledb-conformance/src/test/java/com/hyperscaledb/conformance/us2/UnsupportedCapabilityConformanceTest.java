@@ -3,15 +3,19 @@ package com.hyperscaledb.conformance.us2;
 import com.hyperscaledb.api.*;
 import com.hyperscaledb.conformance.ConformanceConfig;
 import com.hyperscaledb.conformance.ConformanceHarness;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Conformance test verifying that unsupported capabilities produce structured
  * errors. Uses DynamoDB as a reference since it has the most unsupported
  * query DSL capabilities.
  */
+@Tag("dynamo")
+@Tag("emulator")
 public class UnsupportedCapabilityConformanceTest {
 
     @Test
@@ -73,7 +77,13 @@ public class UnsupportedCapabilityConformanceTest {
                 assertFalse(caps.isSupported(Capability.LIKE_OPERATOR));
             }
 
-            // Cosmos and Spanner support LIKE
+            // Cosmos and Spanner support LIKE (skip if Cosmos emulator is not available)
+            boolean cosmosAvailable = false;
+            try (var socket = new java.net.Socket()) {
+                socket.connect(new java.net.InetSocketAddress("localhost", 8081), 1000);
+                cosmosAvailable = true;
+            } catch (Exception ignored) { }
+            assumeTrue(cosmosAvailable, "Cosmos emulator not available, skipping cross-provider assertion");
             try (HyperscaleDbClient cosmosClient = ConformanceHarness.createClient(ProviderId.COSMOS)) {
                 assertTrue(cosmosClient.capabilities().isSupported(Capability.LIKE_OPERATOR));
             }
