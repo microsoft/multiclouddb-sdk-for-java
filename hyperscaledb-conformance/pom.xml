@@ -71,12 +71,6 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <!-- Use local truststore with Cosmos emulator cert -->
-                    <argLine>
-                        -Djavax.net.ssl.trustStore=${project.basedir}/../.tools/cacerts-local
-                        -Djavax.net.ssl.trustStorePassword=changeit
-                        -Dio.netty.handler.ssl.noOpenSsl=true
-                    </argLine>
                     <!-- Force emulator endpoints so env vars don't override -->
                     <systemPropertyVariables>
                         <cosmos.endpoint>https://localhost:8081</cosmos.endpoint>

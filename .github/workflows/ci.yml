@@ -103,30 +103,11 @@ jobs:
           Start-CosmosDbEmulator -NoUI -Key "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw=="
           Write-Host "Cosmos DB Emulator is running"
 
-      - name: Import emulator cert into Java truststore
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path .tools | Out-Null
-          Copy-Item "$env:JAVA_HOME\lib\security\cacerts" .tools\cacerts-local
-          # Export the emulator's self-signed cert from the Windows cert store
-          $cert = Get-ChildItem Cert:\LocalMachine\My |
-                  Where-Object { $_.FriendlyName -like '*Cosmos*' -or $_.Subject -match 'localhost' } |
-                  Select-Object -First 1
-          if (-not $cert) {
-            Write-Error "Cosmos DB Emulator certificate not found in cert store"
-            exit 1
-          }
-          $certPath = ".tools\cosmos_emulator.cer"
-          [System.IO.File]::WriteAllBytes($certPath, $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
-          Write-Host "Exported certificate: $($cert.Subject)"
-          & "$env:JAVA_HOME\bin\keytool" -importcert -noprompt -alias cosmosEmulatorCert `
-            -file $certPath `
-            -keystore .tools\cacerts-local `
-            -storepass changeit
-
       - name: Run Cosmos DB integration tests
         shell: bash
-        run: mvn verify -Pemulator-cosmos -pl hyperscaledb-conformance -am
+        run: |
+          mvn verify -Pemulator-cosmos -pl hyperscaledb-conformance -am \
+            -DCOSMOS.EMULATOR_SERVER_CERTIFICATE_VALIDATION_DISABLED=true
 
       - name: Upload test reports
         if: always()
