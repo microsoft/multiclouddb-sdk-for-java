@@ -277,6 +277,28 @@
             <properties>
                 <test.includedGroups>cosmos</test.includedGroups>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <!--
+                            The Cosmos DB Emulator uses a SHA1withRSA self-signed certificate.
+                            Java 17 disables SHA1 in jdk.tls.disabledAlgorithms and
+                            jdk.certpath.disabledAlgorithms by default, causing every TLS
+                            handshake to silently fail and the SDK to retry until the test
+                            timeout fires.  We clear both properties here so the test JVM
+                            trusts the imported emulator Root CA.
+                        -->
+                        <configuration>
+                            <argLine>
+                                -Djdk.tls.disabledAlgorithms=""
+                                -Djdk.certpath.disabledAlgorithms=""
+                            </argLine>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
         <profile>
             <id>emulator-dynamo</id>
