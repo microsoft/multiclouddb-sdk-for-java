@@ -66,8 +66,10 @@ public final class OperationDiagnostics {
         this.itemCount = builder.itemCount;
     }
 
-    /** @deprecated Use {@link #builder(ProviderId, String, Duration)} instead. */
-    @Deprecated
+    /**
+     * Convenience constructor for simple diagnostics (failure paths and tests).
+     * Use {@link #builder(ProviderId, String, Duration)} when richer fields are available.
+     */
     public OperationDiagnostics(ProviderId provider, String operation, Duration duration, String requestId) {
         this.provider = provider;
         this.operation = operation;
@@ -121,6 +123,17 @@ public final class OperationDiagnostics {
                 + ", itemCount=" + itemCount + "}";
     }
 
+    /**
+     * Builder for constructing enriched {@link OperationDiagnostics} objects.
+     * <p>
+     * This class is {@code public} because provider adapter implementations in
+     * separate modules (e.g. {@code hyperscaledb-provider-cosmos}) must be able to
+     * construct diagnostics objects. Application code should treat
+     * {@code OperationDiagnostics} as a <em>read-only result type</em> — there is
+     * no supported use-case for applications constructing diagnostics directly.
+     * Module-level visibility constraints (tracked in PR #21) will formalize this
+     * boundary once the module graph is in place.
+     */
     public static final class Builder {
         private final ProviderId provider;
         private final String operation;
