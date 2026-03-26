@@ -107,43 +107,47 @@ jobs:
       - name: Import Cosmos DB Emulator certificate into JDK truststore
         shell: pwsh
         run: |
-          # The emulator installs its self-signed certificate into the Windows
-          # certificate store (Cert:\LocalMachine\My), not a file path.
-          # (The bind-mount path only exists when running the emulator in Docker.)
-          # Export it from the store, then import into the JDK cacerts keystore.
-          $certFile = "$env:TEMP\cosmos-emulator.cer"
+          # The Cosmos DB Emulator uses a two-cert chain:
+          #   Root CA  → stored in Cert:\LocalMachine\Root (FriendlyName: DocumentDbEmulatorCertificate)
+          #   Leaf cert → stored in Cert:\LocalMachine\My  (Subject: CN=localhost), signed by Root CA
+          # Java must trust the ROOT CA, not the leaf cert.
+          # Importing only the leaf cert causes "signature check failed" because the
+          # leaf is not self-signed — its issuer (the Root CA) is not in the truststore.
+          $certFile = "$env:TEMP\cosmos-emulator-root.cer"
           $keystore  = "$env:JAVA_HOME\lib\security\cacerts"
           $keytool   = "$env:JAVA_HOME\bin\keytool.exe"
 
-          Write-Host "Waiting for emulator certificate in Windows certificate store..."
+          Write-Host "Waiting for emulator Root CA in Cert:\LocalMachine\Root ..."
           $deadline = (Get-Date).AddSeconds(60)
           $cert = $null
           while (-not $cert -and (Get-Date) -lt $deadline) {
-              $cert = Get-ChildItem Cert:\LocalMachine\My | Where-Object {
+              $cert = Get-ChildItem Cert:\LocalMachine\Root | Where-Object {
                   $_.FriendlyName -like "*DocumentDb*" -or
                   $_.FriendlyName -like "*CosmosDb*"   -or
-                  ($_.Subject -like "*localhost*" -and $_.Issuer -like "*localhost*")
+                  $_.Subject       -like "*DocumentDb*"
               } | Select-Object -First 1
               if (-not $cert) { Start-Sleep -Seconds 3 }
           }
 
           if (-not $cert) {
-              Write-Host "Certificates in LocalMachine\My:"
-              Get-ChildItem Cert:\LocalMachine\My | Select-Object Subject, FriendlyName | Format-Table
-              Write-Error "Cosmos DB emulator certificate not found after 60 s"
+              Write-Host "Root store contents:"
+              Get-ChildItem Cert:\LocalMachine\Root | Select-Object Subject, FriendlyName | Format-Table
+              Write-Host "My store contents:"
+              Get-ChildItem Cert:\LocalMachine\My   | Select-Object Subject, FriendlyName | Format-Table
+              Write-Error "Cosmos DB emulator Root CA not found after 60 s"
               exit 1
           }
 
-          Write-Host "Found certificate: Subject=$($cert.Subject) FriendlyName=$($cert.FriendlyName)"
+          Write-Host "Found Root CA: Subject=$($cert.Subject) FriendlyName=$($cert.FriendlyName)"
           Export-Certificate -Cert $cert -FilePath $certFile -Type CERT
           Write-Host "Exported to $certFile"
 
           & $keytool -importcert -noprompt -trustcacerts `
-              -alias CosmosDbEmulator `
+              -alias CosmosDbEmulatorRootCA `
               -file $certFile `
               -keystore $keystore `
               -storepass changeit
-          Write-Host "Certificate imported into JDK truststore successfully"
+          Write-Host "Root CA imported into JDK truststore successfully"
 
       - name: Create test database and container
         shell: pwsh
