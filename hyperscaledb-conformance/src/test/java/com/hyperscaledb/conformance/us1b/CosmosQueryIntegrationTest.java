@@ -20,8 +20,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>
  * Prerequisites: Cosmos DB Emulator running on https://localhost:8081
  * with database "todoapp" and container "todos" (partition key: /partitionKey).
- */
-@DisplayName("Cosmos DB — Portable Query Integration")
+ */@Tag("cosmos")
+@Tag("emulator")@DisplayName("Cosmos DB — Portable Query Integration")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class CosmosQueryIntegrationTest {

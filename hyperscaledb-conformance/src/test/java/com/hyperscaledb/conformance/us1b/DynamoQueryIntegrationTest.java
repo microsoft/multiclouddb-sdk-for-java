@@ -36,6 +36,8 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("DynamoDB — Portable Query Integration")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("dynamo")
+@Tag("emulator")
 class DynamoQueryIntegrationTest {
 
     private static final String ENDPOINT = System.getProperty("dynamo.endpoint", "http://localhost:8000");

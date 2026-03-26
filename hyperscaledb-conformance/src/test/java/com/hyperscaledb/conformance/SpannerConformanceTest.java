@@ -6,6 +6,7 @@ package com.hyperscaledb.conformance;
 import com.hyperscaledb.api.*;
 import com.google.cloud.spanner.*;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -22,6 +23,8 @@ import java.util.concurrent.ExecutionException;
  * The test auto-creates the instance, database, and table in
  * {@code @BeforeAll}.
  */
+@Tag("spanner")
+@Tag("emulator")
 class SpannerConformanceTest extends CrudConformanceTests {
 
     private static final String EMULATOR_HOST = System.getProperty(

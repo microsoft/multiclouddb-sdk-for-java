@@ -35,6 +35,8 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("Spanner — Portable Query Integration")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("spanner")
+@Tag("emulator")
 class SpannerQueryIntegrationTest {
 
     private static final String EMULATOR_HOST = System.getProperty("spanner.emulatorHost", "localhost:9010");
