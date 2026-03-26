@@ -3,6 +3,7 @@ package com.hyperscaledb.conformance.us2;
 import com.hyperscaledb.api.*;
 import com.hyperscaledb.conformance.ConformanceConfig;
 import com.hyperscaledb.conformance.ConformanceHarness;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -12,6 +13,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * errors. Uses DynamoDB as a reference since it has the most unsupported
  * query DSL capabilities.
  */
+@Tag("dynamo")
+@Tag("emulator")
 public class UnsupportedCapabilityConformanceTest {
 
     @Test

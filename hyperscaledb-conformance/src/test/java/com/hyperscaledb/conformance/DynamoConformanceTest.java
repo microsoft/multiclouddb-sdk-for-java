@@ -2,6 +2,7 @@ package com.hyperscaledb.conformance;
 
 import com.hyperscaledb.api.*;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
@@ -20,6 +21,8 @@ import java.net.URI;
  * to the physical table name {@code "local__todos"} because DynamoDB has
  * no native database concept.
  */
+@Tag("dynamo")
+@Tag("emulator")
 class DynamoConformanceTest extends CrudConformanceTests {
 
         private static final String DATABASE = "local";

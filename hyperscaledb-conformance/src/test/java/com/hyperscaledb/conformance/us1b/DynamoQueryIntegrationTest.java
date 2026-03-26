@@ -38,6 +38,8 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("DynamoDB — Portable Query Integration")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("dynamo")
+@Tag("emulator")
 class DynamoQueryIntegrationTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
