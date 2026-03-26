@@ -2,6 +2,7 @@ package com.hyperscaledb.conformance.us2;
 
 import com.hyperscaledb.api.Capability;
 import com.hyperscaledb.api.ProviderId;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -10,6 +11,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * DynamoDB capability conformance test — verifies unsupported capabilities
  * are correctly declared.
  */
+@Tag("dynamo")
+@Tag("emulator")
 public class DynamoCapabilitiesTest extends CapabilitiesConformanceTest {
     @Override
     protected ProviderId provider() {

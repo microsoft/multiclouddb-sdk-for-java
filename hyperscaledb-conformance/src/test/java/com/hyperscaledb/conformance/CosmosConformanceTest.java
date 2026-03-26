@@ -1,6 +1,7 @@
 package com.hyperscaledb.conformance;
 
 import com.hyperscaledb.api.*;
+import org.junit.jupiter.api.Tag;
 
 /**
  * Cosmos DB conformance test running against the Cosmos DB Emulator.
@@ -15,6 +16,8 @@ import com.hyperscaledb.api.*;
  * To skip when emulator is unavailable, run with:
  * {@code -DskipCosmosTests=true}
  */
+@Tag("cosmos")
+@Tag("emulator")
 class CosmosConformanceTest extends CrudConformanceTests {
 
     private static final String ENDPOINT = System.getProperty(
