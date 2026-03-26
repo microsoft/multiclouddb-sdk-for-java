@@ -1,5 +1,7 @@
 # Hyperscale DB SDK for Java
 
+[![CI](https://github.com/microsoft/hyperscale-db-sdk-for-java/actions/workflows/ci.yml/badge.svg)](https://github.com/microsoft/hyperscale-db-sdk-for-java/actions/workflows/ci.yml)
+
 A **portable database SDK** that lets you write CRUD and query logic once and run it
 against **Azure Cosmos DB**, **Amazon DynamoDB**, or **Google Cloud Spanner** -
 switch providers by changing a single properties file, with zero code changes.
