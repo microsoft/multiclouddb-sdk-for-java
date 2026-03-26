@@ -48,6 +48,12 @@ public final class DynamoErrorMapper {
 
         // Map by error code first for precision
         return switch (errorCode) {
+            // ConditionalCheckFailedException has two semantics depending on which operation raised it:
+            //   CREATE  → attribute_not_exists() guard failed → item already exists → HTTP 409 equivalent → CONFLICT
+            //   UPDATE  → condition expression on an existing item failed → HTTP 412 equivalent → CONFLICT
+            // Both map to CONFLICT today because the portable API does not expose ETag-based conditional
+            // updates; if/when that is added, the UPDATE path should return a dedicated PRECONDITION_FAILED
+            // category. The operation parameter is preserved here to make that split straightforward.
             case "ConditionalCheckFailedException" -> HyperscaleDbErrorCategory.CONFLICT;
             case "ResourceNotFoundException" -> HyperscaleDbErrorCategory.NOT_FOUND;
             case "ValidationException" -> HyperscaleDbErrorCategory.INVALID_REQUEST;

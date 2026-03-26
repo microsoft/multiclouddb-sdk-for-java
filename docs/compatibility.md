@@ -79,12 +79,18 @@ The raw HTTP or gRPC status code is also available via `error.statusCode()`.
 | `AUTHENTICATION_FAILED`  | HTTP 401  | UnrecognizedClientException, HTTP 401/403  | UNAUTHENTICATED  |
 | `AUTHORIZATION_FAILED`  | HTTP 403  | AccessDeniedException  | PERMISSION_DENIED  |
 | `NOT_FOUND`  | HTTP 404  | ResourceNotFoundException, HTTP 404  | NOT_FOUND  |
-| `CONFLICT`  | HTTP 409, 412  | ConditionalCheckFailedException  | ALREADY_EXISTS, ABORTED  |
+| `CONFLICT` (409 — duplicate key)  | HTTP 409  | `ConditionalCheckFailedException` from `create()` — `attribute_not_exists` guard fails when the item already exists  | ALREADY_EXISTS  |
+| `CONFLICT` (412 — precondition)  | HTTP 412  | `ConditionalCheckFailedException` from `update()`/`upsert()` with a condition expression¹  | ABORTED  |
 | `THROTTLED`  | HTTP 429  | ProvisionedThroughputExceededException, ThrottlingException  | RESOURCE_EXHAUSTED  |
 | `TRANSIENT_FAILURE`  | HTTP 449, 500, 502, 503  | HTTP 500–5xx  | UNAVAILABLE  |
 | `PERMANENT_FAILURE`  | —  | ItemCollectionSizeLimitExceededException  | —  |
 | `UNSUPPORTED_CAPABILITY`  | —  | —  | UNIMPLEMENTED  |
 | `PROVIDER_ERROR`  | Other  | Other  | INTERNAL, Other  |
+
+> ¹ DynamoDB uses `ConditionalCheckFailedException` for both the 409 (duplicate-key on `create`) and 412
+> (precondition failure on conditional `update`/`upsert`) cases — both currently map to `CONFLICT`.
+> The portable API does not yet expose ETag-based conditional updates; when it does, the 412-equivalent
+> path will be split into a dedicated `PRECONDITION_FAILED` category (tracked in issue #29).
 
 ## Native Client Escape Hatch
 
