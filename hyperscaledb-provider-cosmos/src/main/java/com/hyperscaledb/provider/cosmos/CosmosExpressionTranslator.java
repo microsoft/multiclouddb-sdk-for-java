@@ -3,7 +3,18 @@
 
 package com.hyperscaledb.provider.cosmos;
 
-import com.hyperscaledb.api.query.*;
+import com.hyperscaledb.api.query.BetweenExpression;
+import com.hyperscaledb.api.query.ComparisonExpression;
+import com.hyperscaledb.api.query.Expression;
+import com.hyperscaledb.api.query.ExpressionTranslator;
+import com.hyperscaledb.api.query.FieldRef;
+import com.hyperscaledb.api.query.FunctionCallExpression;
+import com.hyperscaledb.api.query.InExpression;
+import com.hyperscaledb.api.query.Literal;
+import com.hyperscaledb.api.query.LogicalExpression;
+import com.hyperscaledb.api.query.NotExpression;
+import com.hyperscaledb.api.query.Parameter;
+import com.hyperscaledb.api.query.TranslatedQuery;
 
 import java.util.LinkedHashMap;
 import java.util.Map;

@@ -3,7 +3,13 @@
 
 package com.hyperscaledb.samples.riskplatform;
 
-import com.hyperscaledb.api.*;
+import com.hyperscaledb.api.Capability;
+import com.hyperscaledb.api.HyperscaleDbClient;
+import com.hyperscaledb.api.HyperscaleDbClientConfig;
+import com.hyperscaledb.api.HyperscaleDbClientFactory;
+import com.hyperscaledb.api.HyperscaleDbKey;
+import com.hyperscaledb.api.ProviderId;
+import com.hyperscaledb.api.QueryRequest;
 import com.hyperscaledb.samples.riskplatform.data.DemoDataSeeder;
 import com.hyperscaledb.samples.riskplatform.infra.ResourceProvisioner;
 import com.hyperscaledb.samples.riskplatform.tenant.TenantManager;

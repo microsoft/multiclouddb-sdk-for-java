@@ -4,7 +4,10 @@
 package com.hyperscaledb.provider.cosmos;
 
 import com.azure.cosmos.CosmosException;
-import com.hyperscaledb.api.*;
+import com.hyperscaledb.api.HyperscaleDbError;
+import com.hyperscaledb.api.HyperscaleDbErrorCategory;
+import com.hyperscaledb.api.HyperscaleDbException;
+import com.hyperscaledb.api.ProviderId;
 
 import java.util.LinkedHashMap;
 import java.util.Map;

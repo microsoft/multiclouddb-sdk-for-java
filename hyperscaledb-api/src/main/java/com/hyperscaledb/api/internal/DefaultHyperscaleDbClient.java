@@ -3,8 +3,29 @@
 
 package com.hyperscaledb.api.internal;
 
-import com.hyperscaledb.api.*;
-import com.hyperscaledb.api.query.*;
+import com.hyperscaledb.api.Capability;
+import com.hyperscaledb.api.CapabilitySet;
+import com.hyperscaledb.api.HyperscaleDbClient;
+import com.hyperscaledb.api.HyperscaleDbClientConfig;
+import com.hyperscaledb.api.HyperscaleDbError;
+import com.hyperscaledb.api.HyperscaleDbErrorCategory;
+import com.hyperscaledb.api.HyperscaleDbException;
+import com.hyperscaledb.api.HyperscaleDbKey;
+import com.hyperscaledb.api.OperationDiagnostics;
+import com.hyperscaledb.api.OperationOptions;
+import com.hyperscaledb.api.ProviderId;
+import com.hyperscaledb.api.QueryPage;
+import com.hyperscaledb.api.QueryRequest;
+import com.hyperscaledb.api.ResourceAddress;
+import com.hyperscaledb.api.query.Expression;
+import com.hyperscaledb.api.query.ExpressionParseException;
+import com.hyperscaledb.api.query.ExpressionParser;
+import com.hyperscaledb.api.query.ExpressionTranslator;
+import com.hyperscaledb.api.query.ExpressionValidationException;
+import com.hyperscaledb.api.query.ExpressionValidator;
+import com.hyperscaledb.api.query.LogicalExpression;
+import com.hyperscaledb.api.query.NotExpression;
+import com.hyperscaledb.api.query.TranslatedQuery;
 import com.hyperscaledb.spi.HyperscaleDbProviderClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

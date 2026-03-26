@@ -3,7 +3,10 @@
 
 package com.hyperscaledb.provider.dynamo;
 
-import com.hyperscaledb.api.*;
+import com.hyperscaledb.api.HyperscaleDbError;
+import com.hyperscaledb.api.HyperscaleDbErrorCategory;
+import com.hyperscaledb.api.HyperscaleDbException;
+import com.hyperscaledb.api.ProviderId;
 import software.amazon.awssdk.services.dynamodb.model.DynamoDbException;
 
 import java.util.LinkedHashMap;

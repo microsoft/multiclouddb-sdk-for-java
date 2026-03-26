@@ -3,7 +3,11 @@
 
 package com.hyperscaledb.samples.riskplatform.tenant;
 
-import com.hyperscaledb.api.*;
+import com.hyperscaledb.api.HyperscaleDbClient;
+import com.hyperscaledb.api.HyperscaleDbKey;
+import com.hyperscaledb.api.QueryPage;
+import com.hyperscaledb.api.QueryRequest;
+import com.hyperscaledb.api.ResourceAddress;
 import com.hyperscaledb.samples.riskplatform.model.Models;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -128,7 +132,7 @@ public class TenantManager {
      * @param key        the document key
      * @param document   the document payload as a Jackson node (converted to Map internally)
      */
-    public void upsert(String tenantId, String collection, HyperscaleDbKey key, com.fasterxml.jackson.databind.JsonNode document) {
+    public void upsert(String tenantId, String collection, HyperscaleDbKey key, JsonNode document) {
         client.upsert(addressFor(tenantId, collection), key, MAPPER.convertValue(document, MAP_TYPE));
     }
 

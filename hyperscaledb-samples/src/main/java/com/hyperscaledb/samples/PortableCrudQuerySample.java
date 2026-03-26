@@ -3,7 +3,15 @@
 
 package com.hyperscaledb.samples;
 
-import com.hyperscaledb.api.*;
+import com.hyperscaledb.api.Capability;
+import com.hyperscaledb.api.CapabilitySet;
+import com.hyperscaledb.api.HyperscaleDbClient;
+import com.hyperscaledb.api.HyperscaleDbClientFactory;
+import com.hyperscaledb.api.HyperscaleDbKey;
+import com.hyperscaledb.api.ProviderId;
+import com.hyperscaledb.api.QueryPage;
+import com.hyperscaledb.api.QueryRequest;
+import com.hyperscaledb.api.ResourceAddress;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 

@@ -53,8 +53,7 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
      *       DefaultAzureCredential chain.</li>
      * </ul>
      *
-     * @param config client configuration carrying connection, auth, options, and
-     *               feature flags
+     * @param config client configuration carrying connection, auth, and options
      * @throws IllegalArgumentException if {@code connection.endpoint} is missing or blank
      */
     public CosmosProviderClient(HyperscaleDbClientConfig config) {

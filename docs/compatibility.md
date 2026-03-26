@@ -92,29 +92,13 @@ The raw HTTP or gRPC status code is also available via `error.statusCode()`.
 > The portable API does not yet expose ETag-based conditional updates; when it does, the 412-equivalent
 > path will be split into a dedicated `PRECONDITION_FAILED` category (tracked in issue #29).
 
-## Native Client Escape Hatch
+## Escape Hatch Policy
 
-When portable abstractions are insufficient, access the provider's native client
-directly via `nativeClient(Class<T>)`. This is also the correct path for
-**async / reactive access** — the portable API is synchronous by design; each
-provider exposes its own async client type:
+The SDK does not expose a `nativeClient()` method. Direct access to the
+underlying provider client is intentionally omitted to enforce portability
+guarantees — code written against the SDK must remain switchable between
+providers by configuration alone.
 
-```java
-// Cosmos DB — sync
-CosmosClient cosmosClient = client.nativeClient(CosmosClient.class);
-// Cosmos DB — async (Reactor Mono/Flux)
-CosmosAsyncClient cosmosAsync = client.nativeClient(CosmosAsyncClient.class);
-
-// DynamoDB — sync
-DynamoDbClient dynamoClient = client.nativeClient(DynamoDbClient.class);
-// DynamoDB — async (CompletableFuture)
-DynamoDbAsyncClient dynamoAsync = client.nativeClient(DynamoDbAsyncClient.class);
-
-// Spanner — sync/async (ApiFuture / gRPC streaming)
-Spanner spannerClient = client.nativeClient(Spanner.class);
-```
-
-> **Warning**: Native client access breaks portability. The SDK logs an INFO
-> message when the escape hatch is used. The async client types listed above
-> are provider-specific — code using them cannot be switched to another
-> provider by configuration alone.
+For provider-specific features not covered by the portable API, file a feature
+request or implement the operation using the provider's own SDK alongside
+(not through) the `HyperscaleDbClient`.

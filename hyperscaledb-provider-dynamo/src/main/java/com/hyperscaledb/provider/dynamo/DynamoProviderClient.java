@@ -5,6 +5,9 @@ package com.hyperscaledb.provider.dynamo;
 
 import com.hyperscaledb.api.CapabilitySet;
 import com.hyperscaledb.api.HyperscaleDbClientConfig;
+import com.hyperscaledb.api.HyperscaleDbError;
+import com.hyperscaledb.api.HyperscaleDbErrorCategory;
+import com.hyperscaledb.api.HyperscaleDbException;
 import com.hyperscaledb.api.HyperscaleDbKey;
 import com.hyperscaledb.api.OperationNames;
 import com.hyperscaledb.api.OperationOptions;
@@ -24,6 +27,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClientBuilder;
 import software.amazon.awssdk.services.dynamodb.model.AttributeDefinition;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.ConsumedCapacity;
+import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 import software.amazon.awssdk.services.dynamodb.model.CreateTableRequest;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemResponse;
@@ -85,8 +89,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
      * If {@code connection.endpoint} is set, it overrides the AWS regional endpoint —
      * use this to point at DynamoDB Local ({@code http://localhost:8000}).
      *
-     * @param config client configuration carrying connection, auth, options, and
-     *               feature flags
+     * @param config client configuration carrying connection, auth, and options
      */
     public DynamoProviderClient(HyperscaleDbClientConfig config) {
 
@@ -215,7 +218,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
      * @param key      the document key identifying the item to replace
      * @param document the new document payload; replaces all attributes of the stored item
      * @param options  operation options (currently unused by this provider)
-     * @throws com.hyperscaledb.api.HyperscaleDbException category {@code CONFLICT} if the
+     * @throws com.hyperscaledb.api.HyperscaleDbException category {@code NOT_FOUND} if the
      *         item does not exist
      */
     @Override
@@ -236,6 +239,21 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
             PutItemResponse response = dynamoClient.putItem(request);
             logItemDiagnostics(OperationNames.UPDATE, address, response.responseMetadata().requestId(),
                     response.consumedCapacity());
+        } catch (ConditionalCheckFailedException e) {
+            // attribute_exists() guard failed — item does not exist; map to NOT_FOUND
+            // to match the contract and the behaviour of Cosmos (HTTP 404) and Spanner (NOT_FOUND).
+            Map<String, String> details = new java.util.LinkedHashMap<>();
+            if (e.awsErrorDetails() != null) {
+                details.put("errorCode", e.awsErrorDetails().errorCode());
+            }
+            throw new HyperscaleDbException(new HyperscaleDbError(
+                    HyperscaleDbErrorCategory.NOT_FOUND,
+                    "Item not found for update: " + e.getMessage(),
+                    ProviderId.DYNAMO,
+                    OperationNames.UPDATE,
+                    false,
+                    e.statusCode(),
+                    details), e);
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.UPDATE);
         }

@@ -3,7 +3,14 @@
 
 package com.hyperscaledb.spi;
 
-import com.hyperscaledb.api.*;
+import com.hyperscaledb.api.CapabilitySet;
+import com.hyperscaledb.api.HyperscaleDbException;
+import com.hyperscaledb.api.HyperscaleDbKey;
+import com.hyperscaledb.api.OperationOptions;
+import com.hyperscaledb.api.ProviderId;
+import com.hyperscaledb.api.QueryPage;
+import com.hyperscaledb.api.QueryRequest;
+import com.hyperscaledb.api.ResourceAddress;
 import com.hyperscaledb.api.query.TranslatedQuery;
 
 import java.util.ArrayList;

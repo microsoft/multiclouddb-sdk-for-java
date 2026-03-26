@@ -3,7 +3,10 @@
 
 package com.hyperscaledb.provider.spanner;
 
-import com.hyperscaledb.api.*;
+import com.hyperscaledb.api.HyperscaleDbError;
+import com.hyperscaledb.api.HyperscaleDbErrorCategory;
+import com.hyperscaledb.api.HyperscaleDbException;
+import com.hyperscaledb.api.ProviderId;
 import com.google.cloud.spanner.ErrorCode;
 import com.google.cloud.spanner.SpannerException;
 

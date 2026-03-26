@@ -3,7 +3,18 @@
 
 package com.hyperscaledb.samples.todo;
 
-import com.hyperscaledb.api.*;
+import com.hyperscaledb.api.Capability;
+import com.hyperscaledb.api.CapabilitySet;
+import com.hyperscaledb.api.HyperscaleDbClient;
+import com.hyperscaledb.api.HyperscaleDbClientConfig;
+import com.hyperscaledb.api.HyperscaleDbClientFactory;
+import com.hyperscaledb.api.HyperscaleDbException;
+import com.hyperscaledb.api.HyperscaleDbKey;
+import com.hyperscaledb.api.ProviderId;
+import com.hyperscaledb.api.QueryPage;
+import com.hyperscaledb.api.QueryRequest;
+import com.hyperscaledb.api.ResourceAddress;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -38,9 +49,7 @@ import java.util.Properties;
 public class TodoApp {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    @SuppressWarnings("unchecked")
-    private static final com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>> MAP_TYPE =
-            new com.fasterxml.jackson.core.type.TypeReference<>() {};
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
     private static final String DATABASE = "todoapp";
     private static final String COLLECTION = "todos";
     private static final int DEFAULT_PORT = 8080;

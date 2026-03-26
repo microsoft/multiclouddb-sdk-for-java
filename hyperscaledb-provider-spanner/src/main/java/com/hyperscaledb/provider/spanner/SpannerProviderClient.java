@@ -68,8 +68,7 @@ public class SpannerProviderClient implements HyperscaleDbProviderClient {
      * Application Default Credentials are used when connecting to the live service;
      * no explicit credential config is needed when running on GCP with a service account.
      *
-     * @param config client configuration carrying connection, auth, options, and
-     *               feature flags
+     * @param config client configuration carrying connection, auth, and options
      * @throws IllegalArgumentException if {@code connection.instanceId} or
      *         {@code connection.databaseId} is missing or blank
      */
