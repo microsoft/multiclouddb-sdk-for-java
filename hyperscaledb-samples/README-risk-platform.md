@@ -417,7 +417,7 @@ mkdir -p .tools
 **Windows (PowerShell):**
 
 ```powershell
-openssl s_client -connect localhost:8081 2>$null |
+"" | openssl s_client -connect localhost:8081 2>$null |
   openssl x509 -out .tools/cosmos-emulator.cer
 ```
 
