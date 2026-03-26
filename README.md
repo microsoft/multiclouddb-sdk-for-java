@@ -672,10 +672,44 @@ hyperscaledb-sdk-java/
 | Document | Description |
 |----------|-------------|
 | [Developer Guide](docs/guide.md) | Comprehensive reference - partition keys, CRUD semantics, query DSL, multi-tenant patterns |
-| [Provider Compatibility](docs/compatibility.md) | Capability matrix, feature flags, error mapping, native escape hatch |
+| [Provider Compatibility](docs/compatibility.md) | Capability matrix, error mapping, native escape hatch, async guidance |
+
+---
+
+## Contributing
+
+We welcome contributions! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for
+guidelines on reporting issues, requesting features, setting up a development
+environment, and submitting pull requests.
+
+---
+
+## Code of Conduct
+
+This project has adopted the
+[Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
+See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for details.
+
+---
+
+## CLA
+
+Contributions require a signed
+[Microsoft Contributor License Agreement](https://cla.opensource.microsoft.com).
+The CLA bot will guide you through the process when you open a pull request.
+See [CLA.md](CLA.md) for more information.
+
+---
+
+## Security
+
+Please see [SECURITY.md](SECURITY.md) for reporting security vulnerabilities.
 
 ---
 
 ## License
 
-This project is currently unlicensed (private development).
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE)
+file for details.
+
+Copyright © Microsoft Corporation. All rights reserved.
