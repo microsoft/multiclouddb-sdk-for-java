@@ -1,0 +1,166 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build, Unit Tests & Artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'maven'
+
+      - name: Run unit tests
+        run: mvn verify -Punit
+
+      - name: Stage release artifacts
+        run: |
+          mvn deploy -DskipTests \
+            -DaltDeploymentRepository=local::default::file://${{ github.workspace }}/staging
+
+      - name: Verify required artifacts
+        run: |
+          # Modules that produce .pom + .jar + -sources.jar + -javadoc.jar
+          FULL_MODULES="hyperscaledb-api hyperscaledb-provider-cosmos hyperscaledb-provider-dynamo hyperscaledb-provider-spanner"
+          # Modules that only produce .pom + .jar (no sources)
+          MINIMAL_MODULES="hyperscaledb-spi"
+          ERRORS=0
+
+          check_artifact() {
+            local module=$1 type=$2 path=$3
+            if [ -z "$path" ]; then
+              echo "::error::Missing ${module} ${type} artifact"
+              ERRORS=$((ERRORS + 1))
+            else
+              echo "  ✓ ${type}: $(basename "$path")"
+            fi
+          }
+
+          for module in $FULL_MODULES; do
+            echo "--- Checking $module (full) ---"
+            check_artifact "$module" pom    "$(find staging -path "*/${module}/*.pom" 2>/dev/null | head -1)"
+            check_artifact "$module" jar    "$(find staging -path "*/${module}/*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" 2>/dev/null | head -1)"
+            check_artifact "$module" sources "$(find staging -path "*/${module}/*-sources.jar" 2>/dev/null | head -1)"
+            check_artifact "$module" javadoc "$(find staging -path "*/${module}/*-javadoc.jar" 2>/dev/null | head -1)"
+          done
+
+          for module in $MINIMAL_MODULES; do
+            echo "--- Checking $module (minimal) ---"
+            check_artifact "$module" pom "$(find staging -path "*/${module}/*.pom" 2>/dev/null | head -1)"
+            check_artifact "$module" jar "$(find staging -path "*/${module}/*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" 2>/dev/null | head -1)"
+          done
+
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "::error::${ERRORS} required artifact(s) missing"
+            exit 1
+          fi
+          echo ""
+          echo "All required artifacts verified successfully"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: staging/
+          retention-days: 30
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: '**/surefire-reports/**'
+          retention-days: 7
+
+  emulator-cosmos:
+    name: Cosmos DB Emulator Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'maven'
+
+      - name: Start Cosmos DB Emulator
+        run: |
+          docker run -d --name cosmos-emulator \
+            -p 8081:8081 -p 10250-10255:10250-10255 \
+            --memory 3g --cpus=2.0 \
+            -e AZURE_COSMOS_EMULATOR_PARTITION_COUNT=10 \
+            -e AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE=false \
+            mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
+
+      - name: Wait for Cosmos DB Emulator
+        run: |
+          echo "Waiting for Cosmos DB Emulator to be ready..."
+          timeout 180 bash -c '
+            until curl -sk https://localhost:8081/_explorer/emulator.pem > /dev/null 2>&1; do
+              echo "  Not ready yet, retrying in 5s..."
+              sleep 5
+            done
+          '
+          echo "Cosmos DB Emulator is ready"
+
+      - name: Setup Emulator Certificate
+        run: |
+          mkdir -p .tools
+          cp "$JAVA_HOME/lib/security/cacerts" .tools/cacerts-local
+          curl -sk https://localhost:8081/_explorer/emulator.pem -o .tools/cosmos_emulator.pem
+          keytool -importcert -noprompt -alias cosmosEmulatorCert \
+            -file .tools/cosmos_emulator.pem \
+            -keystore .tools/cacerts-local \
+            -storepass changeit
+
+      - name: Run Cosmos DB integration tests
+        run: mvn verify -Pemulator-cosmos -pl hyperscaledb-conformance -am
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosmos-test-reports
+          path: '**/surefire-reports/**'
+          retention-days: 7
+
+  emulator-dynamo:
+    name: DynamoDB Local Tests
+    runs-on: ubuntu-latest
+    services:
+      dynamodb-local:
+        image: amazon/dynamodb-local:latest
+        ports:
+          - 8000:8000
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'maven'
+
+      - name: Run DynamoDB integration tests
+        run: mvn verify -Pemulator-dynamo -pl hyperscaledb-conformance -am
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynamo-test-reports
+          path: '**/surefire-reports/**'
+          retention-days: 7
