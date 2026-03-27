@@ -31,7 +31,7 @@ jobs:
       - name: Verify required artifacts
         run: |
           # Modules that produce .pom + .jar + -sources.jar + -javadoc.jar
-          FULL_MODULES="hyperscaledb-api hyperscaledb-provider-cosmos hyperscaledb-provider-dynamo hyperscaledb-provider-spanner"
+          FULL_MODULES="hyperscaledb-api hyperscaledb-provider-cosmos hyperscaledb-provider-dynamo hyperscaledb-provider-spanner hyperscaledb-conformance hyperscaledb-samples"
           ERRORS=0
 
           check_artifact() {
