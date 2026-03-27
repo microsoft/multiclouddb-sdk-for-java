@@ -473,6 +473,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
                 stmtBuilder.nextToken(query.continuationToken());
             }
 
+            java.time.Instant queryStart = java.time.Instant.now();
             ExecuteStatementResponse response = dynamoClient.executeStatement(stmtBuilder.build());
 
             List<Map<String, Object>> items = new ArrayList<>();
@@ -483,7 +484,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
             OperationDiagnostics diag = buildQueryDiagnostics(OperationNames.QUERY_WITH_TRANSLATION, address,
                     response.responseMetadata().requestId(),
                     response.consumedCapacity(), items.size(), response.nextToken(),
-                    java.time.Duration.ZERO, response.sdkHttpResponse());
+                    java.time.Duration.between(queryStart, java.time.Instant.now()), response.sdkHttpResponse());
 
             return new QueryPage(items, response.nextToken(), diag);
         } catch (DynamoDbException e) {
@@ -522,6 +523,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
         if (!params.isEmpty()) stmtBuilder.parameters(params);
         if (nextToken != null && !nextToken.isBlank()) stmtBuilder.nextToken(nextToken);
 
+        java.time.Instant partiqlStart = java.time.Instant.now();
         ExecuteStatementResponse response = dynamoClient.executeStatement(stmtBuilder.build());
 
         List<Map<String, Object>> items = new ArrayList<>();
@@ -532,7 +534,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
         OperationDiagnostics partiqlDiag = buildQueryDiagnostics(DynamoConstants.OP_QUERY_PARTIQL, null,
                 response.responseMetadata().requestId(),
                 response.consumedCapacity(), items.size(), response.nextToken(),
-                java.time.Duration.ZERO, response.sdkHttpResponse());
+                java.time.Duration.between(partiqlStart, java.time.Instant.now()), response.sdkHttpResponse());
 
         return new QueryPage(items, response.nextToken(), partiqlDiag);
     }
@@ -560,6 +562,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
 
         if (exclusiveStartKey != null) scanBuilder.exclusiveStartKey(exclusiveStartKey);
 
+        java.time.Instant scanStart = java.time.Instant.now();
         ScanResponse response = dynamoClient.scan(scanBuilder.build());
         List<Map<String, Object>> items = new ArrayList<>();
         for (Map<String, AttributeValue> item : response.items()) {
@@ -574,7 +577,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
         OperationDiagnostics scanDiag = buildQueryDiagnostics(DynamoConstants.OP_QUERY_SCAN, null,
                 response.sdkHttpResponse().firstMatchingHeader(DynamoConstants.HEADER_REQUEST_ID).orElse(null),
                 response.consumedCapacity(), items.size(), continuationToken,
-                java.time.Duration.ZERO, response.sdkHttpResponse());
+                java.time.Duration.between(scanStart, java.time.Instant.now()), response.sdkHttpResponse());
 
         return new QueryPage(items, continuationToken, scanDiag);
     }
@@ -618,6 +621,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
         if (!expressionValues.isEmpty()) scanBuilder.expressionAttributeValues(expressionValues);
         if (exclusiveStartKey != null) scanBuilder.exclusiveStartKey(exclusiveStartKey);
 
+        java.time.Instant filterScanStart = java.time.Instant.now();
         ScanResponse response = dynamoClient.scan(scanBuilder.build());
         List<Map<String, Object>> items = new ArrayList<>();
         for (Map<String, AttributeValue> item : response.items()) {
@@ -632,7 +636,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
         OperationDiagnostics filterDiag = buildQueryDiagnostics(DynamoConstants.OP_QUERY_SCAN_FILTER, null,
                 response.sdkHttpResponse().firstMatchingHeader(DynamoConstants.HEADER_REQUEST_ID).orElse(null),
                 response.consumedCapacity(), items.size(), continuationToken,
-                java.time.Duration.ZERO, response.sdkHttpResponse());
+                java.time.Duration.between(filterScanStart, java.time.Instant.now()), response.sdkHttpResponse());
 
         return new QueryPage(items, continuationToken, filterDiag);
     }
