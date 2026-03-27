@@ -1,11 +1,15 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.samples.riskplatform.data;
 
-import com.hyperscaledb.api.Key;
+import com.hyperscaledb.api.HyperscaleDbKey;
 import com.hyperscaledb.samples.riskplatform.model.Models;
 import com.hyperscaledb.samples.riskplatform.tenant.TenantManager;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -184,11 +188,13 @@ public class DemoDataSeeder {
         }
 
         // ── Helper methods ──────────────────────────────────────────────────────
+        private static final ObjectMapper MAPPER = new ObjectMapper();
+        private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
         private void putPortfolio(String tenant, String id, String name, String type,
                         String currency, String benchmark) {
                 ObjectNode doc = Models.portfolio(id, name, type, currency, benchmark);
-                tenantManager.upsert(tenant, "portfolios", Key.of(id, id), doc);
+                tenantManager.upsert(tenant, "portfolios", HyperscaleDbKey.of(id, id), MAPPER.convertValue(doc, MAP_TYPE));
         }
 
         private void putPosition(String tenant, String id, String portfolioId,
@@ -196,7 +202,7 @@ public class DemoDataSeeder {
                         double avgCost, double price, String sector) {
                 ObjectNode doc = Models.position(id, portfolioId, symbol, assetClass,
                                 qty, avgCost, price, sector);
-                tenantManager.upsert(tenant, "positions", Key.of(portfolioId, id), doc);
+                tenantManager.upsert(tenant, "positions", HyperscaleDbKey.of(portfolioId, id), MAPPER.convertValue(doc, MAP_TYPE));
         }
 
         private void putRiskMetrics(String tenant, String id, String portfolioId,
@@ -204,19 +210,19 @@ public class DemoDataSeeder {
                         double beta, double maxDD, double vol) {
                 ObjectNode doc = Models.riskMetrics(id, portfolioId, var95, var99,
                                 sharpe, beta, maxDD, vol);
-                tenantManager.upsert(tenant, "risk_metrics", Key.of(portfolioId, id), doc);
+                tenantManager.upsert(tenant, "risk_metrics", HyperscaleDbKey.of(portfolioId, id), MAPPER.convertValue(doc, MAP_TYPE));
         }
 
         private void putAlert(String tenant, String id, String portfolioId,
                         String severity, String type, String message) {
                 ObjectNode doc = Models.alert(id, portfolioId, severity, type, message);
-                tenantManager.upsert(tenant, "alerts", Key.of(portfolioId, id), doc);
+                tenantManager.upsert(tenant, "alerts", HyperscaleDbKey.of(portfolioId, id), MAPPER.convertValue(doc, MAP_TYPE));
         }
 
         private void putMarket(String symbol, double price, double change,
                         double changePct, double high, double low, long volume) {
                 ObjectNode doc = Models.marketData(symbol, price, change, changePct, high, low, volume);
                 var addr = tenantManager.addressFor("_shared", "market_data");
-                tenantManager.getClient().upsert(addr, Key.of(symbol, symbol), doc);
+                tenantManager.getClient().upsert(addr, HyperscaleDbKey.of(symbol, symbol), MAPPER.convertValue(doc, MAP_TYPE));
         }
 }

@@ -1,7 +1,13 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.provider.cosmos;
 
 import com.azure.cosmos.CosmosException;
-import com.hyperscaledb.api.*;
+import com.hyperscaledb.api.HyperscaleDbError;
+import com.hyperscaledb.api.HyperscaleDbErrorCategory;
+import com.hyperscaledb.api.HyperscaleDbException;
+import com.hyperscaledb.api.ProviderId;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -16,11 +22,11 @@ public final class CosmosErrorMapper {
     }
 
     public static HyperscaleDbException map(CosmosException e, String operation) {
-        HyperscaleDbErrorCategory category = mapCategory(e.getStatusCode(), e.getSubStatusCode());
-        boolean retryable = isRetryable(e.getStatusCode());
+        int httpStatus = e.getStatusCode();
+        HyperscaleDbErrorCategory category = mapCategory(httpStatus, e.getSubStatusCode());
+        boolean retryable = isRetryable(httpStatus);
 
         Map<String, String> details = new LinkedHashMap<>();
-        details.put("statusCode", String.valueOf(e.getStatusCode()));
         details.put("subStatusCode", String.valueOf(e.getSubStatusCode()));
         if (e.getActivityId() != null) {
             details.put("requestId", e.getActivityId());
@@ -33,6 +39,7 @@ public final class CosmosErrorMapper {
                 ProviderId.COSMOS,
                 operation,
                 retryable,
+                httpStatus,
                 details);
         return new HyperscaleDbException(error, e);
     }

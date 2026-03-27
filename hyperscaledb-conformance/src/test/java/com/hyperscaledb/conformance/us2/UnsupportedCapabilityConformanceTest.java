@@ -1,7 +1,9 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.conformance.us2;
 
 import com.hyperscaledb.api.*;
-import com.hyperscaledb.conformance.ConformanceConfig;
 import com.hyperscaledb.conformance.ConformanceHarness;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -32,7 +34,7 @@ public class UnsupportedCapabilityConformanceTest {
             QueryRequest likeQuery = QueryRequest.builder()
                     .expression("name LIKE @pattern")
                     .parameters(java.util.Map.of("pattern", "%test%"))
-                    .pageSize(10)
+                    .maxPageSize(10)
                     .build();
 
             HyperscaleDbException ex = assertThrows(HyperscaleDbException.class,
@@ -56,7 +58,7 @@ public class UnsupportedCapabilityConformanceTest {
             QueryRequest endsWithQuery = QueryRequest.builder()
                     .expression("ends_with(name, @suffix)")
                     .parameters(java.util.Map.of("suffix", "test"))
-                    .pageSize(10)
+                    .maxPageSize(10)
                     .build();
 
             assertThrows(HyperscaleDbException.class,

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.provider.dynamo;
 
 import com.hyperscaledb.api.HyperscaleDbErrorCategory;
@@ -36,7 +39,7 @@ class DynamoErrorMappingTest {
         DynamoDbException ex = mockDynamoException(400, errorCode);
         HyperscaleDbException result = DynamoErrorMapper.map(ex, OperationNames.READ);
 
-        assertEquals(HyperscaleDbErrorCategory.valueOf(expectedCategory), result.error().category());
+        assertEquals(HyperscaleDbErrorCategory.fromString(expectedCategory), result.error().category());
         assertEquals("dynamo", result.error().provider().id());
         assertEquals(OperationNames.READ, result.error().operation());
     }
@@ -57,7 +60,18 @@ class DynamoErrorMappingTest {
         DynamoDbException ex = mockDynamoException(statusCode, "UnknownError");
         HyperscaleDbException result = DynamoErrorMapper.map(ex, OperationNames.QUERY);
 
-        assertEquals(HyperscaleDbErrorCategory.valueOf(expectedCategory), result.error().category());
+        assertEquals(HyperscaleDbErrorCategory.fromString(expectedCategory), result.error().category());
+    }
+
+    @Test
+    @DisplayName("statusCode() field carries the HTTP status code")
+    void statusCodeFieldSet() {
+        DynamoDbException ex = mockDynamoException(400, "ValidationException");
+        HyperscaleDbException result = DynamoErrorMapper.map(ex, OperationNames.UPSERT);
+
+        assertEquals(400, result.error().statusCode());
+        assertFalse(result.error().providerDetails().containsKey("statusCode"),
+                "statusCode must not be duplicated in providerDetails");
     }
 
     @Test
@@ -70,7 +84,6 @@ class DynamoErrorMappingTest {
 
         assertEquals("ValidationException", result.error().providerDetails().get("errorCode"));
         assertEquals("req-abc-123", result.error().providerDetails().get("requestId"));
-        assertEquals("400", result.error().providerDetails().get("statusCode"));
     }
 
     @Test

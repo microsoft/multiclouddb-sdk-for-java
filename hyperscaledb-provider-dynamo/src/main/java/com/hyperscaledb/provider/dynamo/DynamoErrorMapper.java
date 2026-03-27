@@ -1,6 +1,12 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.provider.dynamo;
 
-import com.hyperscaledb.api.*;
+import com.hyperscaledb.api.HyperscaleDbError;
+import com.hyperscaledb.api.HyperscaleDbErrorCategory;
+import com.hyperscaledb.api.HyperscaleDbException;
+import com.hyperscaledb.api.ProviderId;
 import software.amazon.awssdk.services.dynamodb.model.DynamoDbException;
 
 import java.util.LinkedHashMap;
@@ -15,11 +21,11 @@ public final class DynamoErrorMapper {
     }
 
     public static HyperscaleDbException map(DynamoDbException e, String operation) {
+        int httpStatus = e.statusCode();
         HyperscaleDbErrorCategory category = mapCategory(e);
         boolean retryable = isRetryable(e);
 
         Map<String, String> details = new LinkedHashMap<>();
-        details.put("statusCode", String.valueOf(e.statusCode()));
         if (e.awsErrorDetails() != null) {
             details.put("errorCode", e.awsErrorDetails().errorCode());
             details.put("serviceName", e.awsErrorDetails().serviceName());
@@ -34,6 +40,7 @@ public final class DynamoErrorMapper {
                 ProviderId.DYNAMO,
                 operation,
                 retryable,
+                httpStatus,
                 details);
         return new HyperscaleDbException(error, e);
     }
@@ -44,6 +51,12 @@ public final class DynamoErrorMapper {
 
         // Map by error code first for precision
         return switch (errorCode) {
+            // ConditionalCheckFailedException has two semantics depending on which operation raised it:
+            //   CREATE  → attribute_not_exists() guard failed → item already exists → HTTP 409 equivalent → CONFLICT
+            //   UPDATE  → condition expression on an existing item failed → HTTP 412 equivalent → CONFLICT
+            // Both map to CONFLICT today because the portable API does not expose ETag-based conditional
+            // updates; if/when that is added, the UPDATE path should return a dedicated PRECONDITION_FAILED
+            // category. The operation parameter is preserved here to make that split straightforward.
             case "ConditionalCheckFailedException" -> HyperscaleDbErrorCategory.CONFLICT;
             case "ResourceNotFoundException" -> HyperscaleDbErrorCategory.NOT_FOUND;
             case "ValidationException" -> HyperscaleDbErrorCategory.INVALID_REQUEST;

@@ -1,8 +1,17 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.spi;
 
-import com.hyperscaledb.api.*;
+import com.hyperscaledb.api.CapabilitySet;
+import com.hyperscaledb.api.HyperscaleDbException;
+import com.hyperscaledb.api.HyperscaleDbKey;
+import com.hyperscaledb.api.OperationOptions;
+import com.hyperscaledb.api.ProviderId;
+import com.hyperscaledb.api.QueryPage;
+import com.hyperscaledb.api.QueryRequest;
+import com.hyperscaledb.api.ResourceAddress;
 import com.hyperscaledb.api.query.TranslatedQuery;
-import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -25,31 +34,31 @@ public interface HyperscaleDbProviderClient extends AutoCloseable {
      *
      * @throws HyperscaleDbException with category CONFLICT if the key already exists
      */
-    void create(ResourceAddress address, Key key, JsonNode document, OperationOptions options);
+    void create(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Read a document by key.
      *
-     * @return the document, or null if not found
+     * @return the document as a map, or null if not found
      */
-    JsonNode read(ResourceAddress address, Key key, OperationOptions options);
+    Map<String, Object> read(ResourceAddress address, HyperscaleDbKey key, OperationOptions options);
 
     /**
      * Update an existing document. Fails if the key does not exist.
      *
      * @throws HyperscaleDbException with category NOT_FOUND if the key does not exist
      */
-    void update(ResourceAddress address, Key key, JsonNode document, OperationOptions options);
+    void update(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Upsert (create or replace) a document.
      */
-    void upsert(ResourceAddress address, Key key, JsonNode document, OperationOptions options);
+    void upsert(ResourceAddress address, HyperscaleDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Delete a document by key.
      */
-    void delete(ResourceAddress address, Key key, OperationOptions options);
+    void delete(ResourceAddress address, HyperscaleDbKey key, OperationOptions options);
 
     /**
      * Execute a query and return a single page of results.
@@ -75,16 +84,10 @@ public interface HyperscaleDbProviderClient extends AutoCloseable {
     }
 
     /**
-     * Ensure a logical database exists.
+     * Ensure a logical database exists, creating it if absent.
      * <p>
-     * Provider semantics:
-     * <ul>
-     * <li><b>Cosmos DB</b>: creates the Cosmos database if it does not exist</li>
-     * <li><b>DynamoDB</b>: no-op (DynamoDB has no native database concept; the
-     * database dimension is encoded in table names)</li>
-     * <li><b>Spanner</b>: no-op (the database is set at client construction
-     * time)</li>
-     * </ul>
+     * Default is a no-op — providers that have a native database concept override
+     * this method.
      *
      * @param database the logical database name
      */
@@ -93,20 +96,10 @@ public interface HyperscaleDbProviderClient extends AutoCloseable {
     }
 
     /**
-     * Ensure a container (or table) exists within the given database.
+     * Ensure a container (or table) exists within the given database, creating it
+     * if absent.
      * <p>
-     * Provider semantics:
-     * <ul>
-     * <li><b>Cosmos DB</b>: creates a container with partition key path
-     * {@code /partitionKey}</li>
-     * <li><b>DynamoDB</b>: creates a table named
-     * {@code database__collection} with hash key {@code partitionKey} and sort key
-     * {@code sortKey}</li>
-     * <li><b>Spanner</b>: creates a table with columns
-     * {@code partitionKey STRING(MAX)}
-     * and {@code sortKey STRING(MAX)} as the primary key, plus a {@code data}
-     * column for the JSON document</li>
-     * </ul>
+     * Default is a no-op — providers override with their creation logic.
      *
      * @param address the database + collection identifying the container
      */
@@ -115,11 +108,12 @@ public interface HyperscaleDbProviderClient extends AutoCloseable {
     }
 
     /**
-     * Provision a full schema of databases and containers/tables in parallel.
+     * Provision a full schema of databases and containers in parallel.
      * <p>
-     * Default implementation creates all databases concurrently, waits for
-     * completion, then creates all containers concurrently. Providers may
-     * override for provider-specific optimisations.
+     * Default implementation creates all databases concurrently (Phase 1),
+     * waits for completion, then creates all containers concurrently (Phase 2),
+     * using a bounded thread pool (max 10 threads). Providers may override for
+     * provider-specific optimisations.
      *
      * @param schema map of database name → list of collection/table names
      */
@@ -236,11 +230,6 @@ public interface HyperscaleDbProviderClient extends AutoCloseable {
      * Return the set of capabilities supported by this provider.
      */
     CapabilitySet capabilities();
-
-    /**
-     * Return the native provider client (for escape hatch), or null.
-     */
-    <T> T nativeClient(Class<T> clientType);
 
     /**
      * Return the provider id.

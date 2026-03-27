@@ -1,8 +1,9 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.conformance.us1;
 
 import com.hyperscaledb.api.*;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -18,10 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public abstract class KeyValidationConformanceTest {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-
     protected abstract HyperscaleDbClient createClient();
-
     protected abstract ResourceAddress getAddress();
 
     private HyperscaleDbClient client;
@@ -41,9 +39,8 @@ public abstract class KeyValidationConformanceTest {
     @Test
     @DisplayName("upsert with null key throws exception")
     void upsertNullKey() {
-        ObjectNode doc = MAPPER.createObjectNode().put("title", "test");
         assertThrows(NullPointerException.class,
-                () -> client.upsert(getAddress(), null, doc));
+                () -> client.upsert(getAddress(), null, java.util.Map.of("title", "test")));
     }
 
     @Test
@@ -63,48 +60,34 @@ public abstract class KeyValidationConformanceTest {
     @Test
     @DisplayName("Key.of rejects null partitionKey")
     void keyOfNullPartitionKey() {
-        assertThrows(Exception.class, () -> Key.of(null));
+        assertThrows(Exception.class, () -> HyperscaleDbKey.of(null));
     }
 
     @Test
     @DisplayName("Key.of rejects empty partitionKey")
     void keyOfEmptyPartitionKey() {
-        assertThrows(Exception.class, () -> Key.of(""));
+        assertThrows(Exception.class, () -> HyperscaleDbKey.of(""));
     }
 
     @Test
     @DisplayName("Key.of rejects blank partitionKey")
     void keyOfBlankPartitionKey() {
-        assertThrows(Exception.class, () -> Key.of("   "));
+        assertThrows(Exception.class, () -> HyperscaleDbKey.of("   "));
     }
 
     @Test
     @DisplayName("valid key with partition and sort key succeeds")
     void validKeyWithPartitionAndSortKey() {
-        Key key = Key.of("partition-1", "valid-key-test");
-        ObjectNode doc = MAPPER.createObjectNode().put("title", "valid");
-        assertDoesNotThrow(() -> client.upsert(getAddress(), key, doc));
-
-        // Cleanup
-        try {
-            client.delete(getAddress(), key);
-        } catch (Exception ignored) {
-        }
+        HyperscaleDbKey key = HyperscaleDbKey.of("partition-1", "valid-key-test");
+        assertDoesNotThrow(() -> client.upsert(getAddress(), key, java.util.Map.of("title", "valid")));
+        try { client.delete(getAddress(), key); } catch (Exception ignored) {}
     }
 
     @Test
     @DisplayName("valid key without sort key succeeds")
     void validKeyWithoutSortKey() {
-        Key key = Key.of("valid-key-no-part");
-        ObjectNode doc = MAPPER.createObjectNode().put("title", "valid");
-        // Key.of(partitionKey) uses partitionKey as both partitionKey and sortKey in
-        // most providers
-        assertDoesNotThrow(() -> client.upsert(getAddress(), key, doc));
-
-        // Cleanup
-        try {
-            client.delete(getAddress(), Key.of("valid-key-no-part", "valid-key-no-part"));
-        } catch (Exception ignored) {
-        }
+        HyperscaleDbKey key = HyperscaleDbKey.of("valid-key-no-part");
+        assertDoesNotThrow(() -> client.upsert(getAddress(), key, java.util.Map.of("title", "valid")));
+        try { client.delete(getAddress(), HyperscaleDbKey.of("valid-key-no-part", "valid-key-no-part")); } catch (Exception ignored) {}
     }
 }

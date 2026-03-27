@@ -19,11 +19,30 @@ This document resolves key design choices for the Hyperscale DB SDK and records 
   - Non-official community clients: higher operational risk and weaker long-term support.
 
 ## Decision 3: API style (sync vs async)
-- Decision: Provide a **sync-first** portable contract for the MVP, with an optional future async surface using `CompletableFuture`.
-- Rationale: A sync contract minimizes the portable surface area and makes conformance testing simpler. Where a provider SDK is async/reactive internally, the adapter should encapsulate that complexity.
-- Alternatives considered:
-  - Async-first: forces a lowest-common-denominator async model and complicates cancellation semantics.
-  - Dual sync+async from day one: doubles the public surface and test burden while the contract is still evolving.
+- **Decision:** Sync-first portable contract. No portable async surface in the current version.
+- **Rationale:** The three provider SDKs use fundamentally incompatible async models:
+  | Provider | Async model | Type |
+  |---|---|---|
+  | Cosmos DB | Reactor (`Mono`/`Flux`) | `CosmosAsyncClient` |
+  | DynamoDB | `CompletableFuture` | `DynamoDbAsyncClient` |
+  | Spanner | Guava `ApiFuture` / gRPC | `Spanner` |
+
+  A portable async surface would either:
+  1. Force a heavy reactive dependency (Reactor) onto all callers regardless of provider, or
+  2. Reduce to `CompletableFuture` as the LCD, requiring Cosmos to block-then-wrap from Reactor, and adding thread-pool management to every adapter.
+
+  Neither is acceptable at this stage. The sync contract is sufficient for all currently demonstrated use cases and the conformance test suite.
+
+- **How async is handled today:** `nativeClient(Class<T>)` gives direct access to the provider's own async client — `CosmosAsyncClient`, `DynamoDbAsyncClient`, `Spanner` — without any wrapping overhead. This breaks portability by definition but gives full fidelity to the provider's native async model.
+
+- **When to revisit:** Add a portable async surface when:
+  1. A concrete customer use case cannot be satisfied by the sync API + `nativeClient()` escape hatch, **and**
+  2. The sync API design is stable enough that async methods can mirror it 1:1 without rework.
+  The natural choice at that point is `CompletableFuture<T>` (standard Java, no extra deps) with each adapter wrapping its own model.
+
+- **Alternatives considered:**
+  - Async-first: complicates cancellation semantics and forces a lowest-common-denominator model onto all callers from day one.
+  - Dual sync+async from day one: doubles the public surface and test burden while the sync contract is still evolving.
 
 ## Decision 4: Portable data representation
 - Decision: Portable document payload is JSON-like: objects, arrays, strings, numbers, booleans, null.
@@ -52,11 +71,12 @@ This document resolves key design choices for the Hyperscale DB SDK and records 
 - Alternatives considered:
   - Offset-based paging: non-portable and often inefficient.
 
-## Decision 7: Capabilities + portability warnings
-- Decision: Capabilities are first-class and discoverable; non-portable behaviors require explicit opt-in and MUST emit a portability warning signal.
-- Rationale: Prevents “it worked on Cosmos” surprises and preserves trust.
-- Alternatives considered:
+## Decision 7: Capabilities — discoverable, not assumed
+- **Decision:** Capabilities are first-class and discoverable at runtime via `client.capabilities()`. The API exposes only the portable common denominator by default. Provider-specific opt-ins and non-portable features are not exposed until there is demonstrated customer need.
+- **Rationale:** Prevents "it worked on Cosmos" surprises. Discoverable capabilities let callers make informed decisions (check before use, not fail at runtime). Exposing only the common denominator keeps the contract credible and testable.
+- **Alternatives considered:**
   - Best-effort behavior with docs only: too easy to miss and too risky.
+  - Feature flags + portability warnings from day 0: adds surface area to the public API, SPI, and all three provider adapters for zero demonstrated customer value. Re-evaluate if real evidence of need emerges.
 
 ## Decision 8: Configuration-only portability
 - Decision: Provider selection and environment differences are configuration-only for the portable contract. Provider-specific opt-ins SHOULD be config-driven when possible.

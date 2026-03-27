@@ -565,13 +565,15 @@ RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use sing
 
 ### Implementation — Azure Resource Manager SDK for Provisioning
 
-- [x] Task T133: Add `azure-resourcemanager-cosmos` 2.51.0 + `azure-core-management` 1.17.0
-  dependencies to `hyperscaledb-provider-cosmos/pom.xml` and version properties to parent `pom.xml`.
+- [~] Task T133: ~~Add `azure-resourcemanager-cosmos` 2.51.0 + `azure-core-management` 1.17.0~~
+  **SUPERSEDED by spec decision** (see Phase 14): SDK must NOT depend on ARM/management SDKs.
+  These dependencies were never introduced; the spec has now been updated to explicitly prohibit them.
   `hyperscaledb-provider-cosmos/pom.xml`, `pom.xml`
 
-- [x] Task T134: Update `CosmosProviderClient.ensureDatabase()` to use `CosmosManager` ARM SDK
-  for database creation in RBAC mode (when `cosmosManager` is initialized), falling back to
-  data-plane `createDatabaseIfNotExists` for key-based auth or when management config is incomplete.
+- [~] Task T134: ~~Update `CosmosProviderClient.ensureDatabase()` to use `CosmosManager` ARM SDK~~
+  **SUPERSEDED by spec decision** (see Phase 14): provisioning stays data-plane-only; ARM/management
+  SDK integration is a future consideration outside v1 scope. `ensureDatabase` Javadoc updated to
+  document permission requirements and failure semantics.
   `hyperscaledb-provider-cosmos/src/main/java/com/hyperscaledb/provider/cosmos/CosmosProviderClient.java`
 
 ### Integration — Sample App Simplification
@@ -580,3 +582,51 @@ RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use sing
   instead of manually iterating databases/containers. Cloud and emulator properties files created.
   `hyperscaledb-samples/src/main/java/com/hyperscaledb/samples/riskplatform/infra/ResourceProvisioner.java`
 
+---
+
+## Phase 14 — Sync-Only API, Escape Hatch Removal & Provisioning Constraints (T136–T143)
+
+Enforces the v1 design decisions recorded in the updated spec (API Scope and Escape Hatch Policy
+sections): sync-only public API, no code-level escape hatches, diagnostics via configuration only,
+and no management/ARM SDK dependency for provisioning. Also clarifies failure semantics when
+provisioning is attempted without sufficient permissions.
+
+### Spec & Design Changes Applied
+
+- [x] Task T136: Update `spec.md` — add `## API Scope` section (Synchronous APIs Only + Escape Hatch
+  Policy), update Portability Defaults, FR-015, FR-020, FR-047, FR-048, SC-016, Key Entities,
+  Assumptions, and Acceptance Checklist to reflect sync-only + no-code-escape-hatch policy.
+  `specs/001-clouddb-sdk/spec.md`
+
+### API / SPI Changes
+
+- [x] Task T137: Remove `nativeClient(Class<T>)` from the public `HyperscaleDbClient` interface and
+  update class Javadoc to declare sync-only contract and no escape hatch policy.
+  `hyperscaledb-api/src/main/java/com/hyperscaledb/api/HyperscaleDbClient.java`
+
+- [x] Task T138: Remove `nativeClient(Class<T>)` from the `HyperscaleDbProviderClient` SPI interface.
+  `hyperscaledb-api/src/main/java/com/hyperscaledb/spi/HyperscaleDbProviderClient.java`
+
+- [x] Task T139: Remove `nativeClient()` delegation and escape-hatch log message from
+  `DefaultHyperscaleDbClient`.
+  `hyperscaledb-api/src/main/java/com/hyperscaledb/api/internal/DefaultHyperscaleDbClient.java`
+
+### Provider Changes
+
+- [x] Task T140: Remove `nativeClient()` implementation from `CosmosProviderClient`. Update
+  `ensureDatabase` Javadoc to document data-plane-only behaviour, permission requirements, and
+  `PERMISSION_DENIED` failure semantics (no ARM SDK fallback).
+  `hyperscaledb-provider-cosmos/src/main/java/com/hyperscaledb/provider/cosmos/CosmosProviderClient.java`
+
+- [x] Task T141: Remove `nativeClient()` implementation from `DynamoProviderClient`.
+  `hyperscaledb-provider-dynamo/src/main/java/com/hyperscaledb/provider/dynamo/DynamoProviderClient.java`
+
+- [x] Task T142: Remove `nativeClient()` implementation from `SpannerProviderClient`.
+  `hyperscaledb-provider-spanner/src/main/java/com/hyperscaledb/provider/spanner/SpannerProviderClient.java`
+
+### Test Changes
+
+- [x] Task T143: Remove conformance test files that tested the now-removed native client escape hatch:
+  `NativeClientAccessConformanceTest`, `CosmosNativeClientAccessTest`, `DynamoNativeClientAccessTest`,
+  `SpannerNativeClientAccessTest`. These tests verified a feature that is explicitly out of scope in v1.
+  `hyperscaledb-conformance/src/test/java/com/hyperscaledb/conformance/us2/`

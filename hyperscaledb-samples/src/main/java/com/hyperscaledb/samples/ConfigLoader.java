@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.samples;
 
 import com.hyperscaledb.api.HyperscaleDbClientConfig;
@@ -106,11 +109,6 @@ public final class ConfigLoader {
             if (key.startsWith("hyperscaledb.auth.")) {
                 builder.auth(
                         key.substring("hyperscaledb.auth.".length()),
-                        props.getProperty(key));
-            }
-            if (key.startsWith("hyperscaledb.feature.")) {
-                builder.featureFlag(
-                        key.substring("hyperscaledb.feature.".length()),
                         props.getProperty(key));
             }
         }

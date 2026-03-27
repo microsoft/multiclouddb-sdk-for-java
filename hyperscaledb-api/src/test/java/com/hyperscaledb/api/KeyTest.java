@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.api;
 
 import org.junit.jupiter.api.Test;
@@ -7,7 +10,7 @@ class KeyTest {
 
     @Test
     void ofPartitionKeyOnly() {
-        Key key = Key.of("pk1");
+        HyperscaleDbKey key = HyperscaleDbKey.of("pk1");
         assertEquals("pk1", key.partitionKey());
         assertNull(key.sortKey());
         assertTrue(key.components().isEmpty());
@@ -15,28 +18,28 @@ class KeyTest {
 
     @Test
     void ofPartitionKeyAndSortKey() {
-        Key key = Key.of("pk1", "abc");
+        HyperscaleDbKey key = HyperscaleDbKey.of("pk1", "abc");
         assertEquals("pk1", key.partitionKey());
         assertEquals("abc", key.sortKey());
     }
 
     @Test
     void nullPartitionKeyThrows() {
-        assertThrows(IllegalArgumentException.class, () -> Key.of(null));
+        assertThrows(IllegalArgumentException.class, () -> HyperscaleDbKey.of(null));
     }
 
     @Test
     void equalKeys() {
-        Key k1 = Key.of("a", "b");
-        Key k2 = Key.of("a", "b");
+        HyperscaleDbKey k1 = HyperscaleDbKey.of("a", "b");
+        HyperscaleDbKey k2 = HyperscaleDbKey.of("a", "b");
         assertEquals(k1, k2);
         assertEquals(k1.hashCode(), k2.hashCode());
     }
 
     @Test
     void differentKeysNotEqual() {
-        Key k1 = Key.of("a", "b");
-        Key k2 = Key.of("a", "c");
+        HyperscaleDbKey k1 = HyperscaleDbKey.of("a", "b");
+        HyperscaleDbKey k2 = HyperscaleDbKey.of("a", "c");
         assertNotEquals(k1, k2);
     }
 }

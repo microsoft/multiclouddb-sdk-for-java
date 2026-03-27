@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.conformance;
 
 import com.hyperscaledb.api.*;
@@ -48,11 +51,11 @@ public final class ConformanceHarness {
      * Uses the same value for both id and partition key.
      *
      * @param prefix a human-readable prefix for the key
-     * @return a unique {@link Key}
+     * @return a unique {@link HyperscaleDbKey}
      */
-    public static Key uniqueKey(String prefix) {
+    public static HyperscaleDbKey uniqueKey(String prefix) {
         String id = prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
-        return Key.of(id, id);
+        return HyperscaleDbKey.of(id, id);
     }
 
     /**
@@ -72,7 +75,7 @@ public final class ConformanceHarness {
      * @param address the resource address
      * @param key     the key to delete
      */
-    public static void safeDelete(HyperscaleDbClient client, ResourceAddress address, Key key) {
+    public static void safeDelete(HyperscaleDbClient client, ResourceAddress address, HyperscaleDbKey key) {
         try {
             client.delete(address, key);
         } catch (Exception ignored) {
