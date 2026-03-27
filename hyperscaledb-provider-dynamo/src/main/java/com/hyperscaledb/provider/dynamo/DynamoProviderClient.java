@@ -125,6 +125,9 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
     /** Package-private constructor for testing — injects a pre-configured {@link DynamoDbClient}. */
     DynamoProviderClient(DynamoDbClient dynamoClient) {
         this.dynamoClient = dynamoClient;
+        this.config = HyperscaleDbClientConfig.builder()
+                .provider(com.hyperscaledb.api.ProviderId.DYNAMO)
+                .build();
     }
 
     /**
@@ -597,6 +600,7 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
             queryBuilder.exclusiveStartKey(exclusiveStartKey);
         }
 
+        java.time.Instant keyQueryStart = java.time.Instant.now();
         QueryResponse response = dynamoClient.query(queryBuilder.build());
         List<Map<String, Object>> items = new ArrayList<>();
         for (Map<String, AttributeValue> item : response.items()) {
@@ -608,11 +612,12 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
             continuationToken = DynamoContinuationToken.encode(response.lastEvaluatedKey());
         }
 
-        logQueryDiagnostics(DynamoConstants.OP_QUERY_KEY_CONDITION, address,
+        OperationDiagnostics keyCondDiag = buildQueryDiagnostics(DynamoConstants.OP_QUERY_KEY_CONDITION, address,
                 response.sdkHttpResponse().firstMatchingHeader(DynamoConstants.HEADER_REQUEST_ID).orElse(null),
-                response.consumedCapacity(), items.size(), continuationToken);
+                response.consumedCapacity(), items.size(), continuationToken,
+                java.time.Duration.between(keyQueryStart, java.time.Instant.now()), response.sdkHttpResponse());
 
-        return new QueryPage(items, continuationToken);
+        return new QueryPage(items, continuationToken, keyCondDiag);
     }
 
     /**
