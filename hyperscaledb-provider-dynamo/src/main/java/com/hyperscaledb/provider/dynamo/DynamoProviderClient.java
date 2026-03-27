@@ -5,7 +5,10 @@ package com.hyperscaledb.provider.dynamo;
 
 import com.hyperscaledb.api.CapabilitySet;
 import com.hyperscaledb.api.HyperscaleDbClientConfig;
-import com.hyperscaledb.api.Key;
+import com.hyperscaledb.api.HyperscaleDbError;
+import com.hyperscaledb.api.HyperscaleDbErrorCategory;
+import com.hyperscaledb.api.HyperscaleDbException;
+import com.hyperscaledb.api.HyperscaleDbKey;
 import com.hyperscaledb.api.OperationNames;
 import com.hyperscaledb.api.OperationOptions;
 import com.hyperscaledb.api.ProviderId;
@@ -14,7 +17,6 @@ import com.hyperscaledb.api.QueryRequest;
 import com.hyperscaledb.api.ResourceAddress;
 import com.hyperscaledb.api.query.TranslatedQuery;
 import com.hyperscaledb.spi.HyperscaleDbProviderClient;
-import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -25,6 +27,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClientBuilder;
 import software.amazon.awssdk.services.dynamodb.model.AttributeDefinition;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.ConsumedCapacity;
+import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 import software.amazon.awssdk.services.dynamodb.model.CreateTableRequest;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemResponse;
@@ -588,9 +591,9 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
         }
 
         QueryResponse response = dynamoClient.query(queryBuilder.build());
-        List<JsonNode> items = new ArrayList<>();
+        List<Map<String, Object>> items = new ArrayList<>();
         for (Map<String, AttributeValue> item : response.items()) {
-            items.add(DynamoItemMapper.attributeMapToJsonNode(item));
+            items.add(DynamoItemMapper.attributeMapToMap(item));
         }
 
         String continuationToken = null;
