@@ -31,14 +31,13 @@ class ProvisionSchemaTest {
             ThrowingRunnable onEnsureContainer) {
 
         return new HyperscaleDbProviderClient() {
-            @Override public void create(ResourceAddress a, Key k, com.fasterxml.jackson.databind.JsonNode d, OperationOptions o) {}
-            @Override public com.fasterxml.jackson.databind.JsonNode read(ResourceAddress a, Key k, OperationOptions o) { return null; }
-            @Override public void update(ResourceAddress a, Key k, com.fasterxml.jackson.databind.JsonNode d, OperationOptions o) {}
-            @Override public void upsert(ResourceAddress a, Key k, com.fasterxml.jackson.databind.JsonNode d, OperationOptions o) {}
-            @Override public void delete(ResourceAddress a, Key k, OperationOptions o) {}
+            @Override public void create(ResourceAddress a, HyperscaleDbKey k, Map<String, Object> d, OperationOptions o) {}
+            @Override public Map<String, Object> read(ResourceAddress a, HyperscaleDbKey k, OperationOptions o) { return null; }
+            @Override public void update(ResourceAddress a, HyperscaleDbKey k, Map<String, Object> d, OperationOptions o) {}
+            @Override public void upsert(ResourceAddress a, HyperscaleDbKey k, Map<String, Object> d, OperationOptions o) {}
+            @Override public void delete(ResourceAddress a, HyperscaleDbKey k, OperationOptions o) {}
             @Override public QueryPage query(ResourceAddress a, QueryRequest q, OperationOptions o) { return null; }
             @Override public CapabilitySet capabilities() { return null; }
-            @Override public <T> T nativeClient(Class<T> c) { return null; }
             @Override public ProviderId providerId() { return null; }
             @Override public void close() {}
 
@@ -191,14 +190,13 @@ class ProvisionSchemaTest {
         //
         // For this test, verify that a two-level chain thrown directly retains category.
         HyperscaleDbProviderClient client = new HyperscaleDbProviderClient() {
-            @Override public void create(ResourceAddress a, Key k, com.fasterxml.jackson.databind.JsonNode d, OperationOptions o) {}
-            @Override public com.fasterxml.jackson.databind.JsonNode read(ResourceAddress a, Key k, OperationOptions o) { return null; }
-            @Override public void update(ResourceAddress a, Key k, com.fasterxml.jackson.databind.JsonNode d, OperationOptions o) {}
-            @Override public void upsert(ResourceAddress a, Key k, com.fasterxml.jackson.databind.JsonNode d, OperationOptions o) {}
-            @Override public void delete(ResourceAddress a, Key k, OperationOptions o) {}
+            @Override public void create(ResourceAddress a, HyperscaleDbKey k, Map<String, Object> d, OperationOptions o) {}
+            @Override public Map<String, Object> read(ResourceAddress a, HyperscaleDbKey k, OperationOptions o) { return null; }
+            @Override public void update(ResourceAddress a, HyperscaleDbKey k, Map<String, Object> d, OperationOptions o) {}
+            @Override public void upsert(ResourceAddress a, HyperscaleDbKey k, Map<String, Object> d, OperationOptions o) {}
+            @Override public void delete(ResourceAddress a, HyperscaleDbKey k, OperationOptions o) {}
             @Override public QueryPage query(ResourceAddress a, QueryRequest q, OperationOptions o) { return null; }
             @Override public CapabilitySet capabilities() { return null; }
-            @Override public <T> T nativeClient(Class<T> c) { return null; }
             @Override public ProviderId providerId() { return null; }
             @Override public void close() {}
 

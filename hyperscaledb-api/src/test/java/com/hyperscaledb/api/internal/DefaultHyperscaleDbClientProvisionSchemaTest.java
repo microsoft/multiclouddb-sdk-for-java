@@ -2,7 +2,6 @@ package com.hyperscaledb.api.internal;
 
 import com.hyperscaledb.api.*;
 import com.hyperscaledb.spi.HyperscaleDbProviderClient;
-import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -40,14 +39,13 @@ class DefaultHyperscaleDbClientProvisionSchemaTest {
     /** Provider whose {@code provisionSchema} throws the given exception. */
     private static HyperscaleDbProviderClient providerThrowing(RuntimeException ex) {
         return new HyperscaleDbProviderClient() {
-            @Override public void create(ResourceAddress a, Key k, JsonNode d, OperationOptions o) {}
-            @Override public JsonNode read(ResourceAddress a, Key k, OperationOptions o) { return null; }
-            @Override public void update(ResourceAddress a, Key k, JsonNode d, OperationOptions o) {}
-            @Override public void upsert(ResourceAddress a, Key k, JsonNode d, OperationOptions o) {}
-            @Override public void delete(ResourceAddress a, Key k, OperationOptions o) {}
+            @Override public void create(ResourceAddress a, HyperscaleDbKey k, Map<String, Object> d, OperationOptions o) {}
+            @Override public Map<String, Object> read(ResourceAddress a, HyperscaleDbKey k, OperationOptions o) { return null; }
+            @Override public void update(ResourceAddress a, HyperscaleDbKey k, Map<String, Object> d, OperationOptions o) {}
+            @Override public void upsert(ResourceAddress a, HyperscaleDbKey k, Map<String, Object> d, OperationOptions o) {}
+            @Override public void delete(ResourceAddress a, HyperscaleDbKey k, OperationOptions o) {}
             @Override public QueryPage query(ResourceAddress a, QueryRequest q, OperationOptions o) { return null; }
             @Override public CapabilitySet capabilities() { return EMPTY_CAPS; }
-            @Override public <T> T nativeClient(Class<T> c) { return null; }
             @Override public ProviderId providerId() { return ProviderId.COSMOS; }
             @Override public void close() {}
             @Override public void provisionSchema(Map<String, java.util.List<String>> schema) { throw ex; }
@@ -57,14 +55,13 @@ class DefaultHyperscaleDbClientProvisionSchemaTest {
     /** Provider whose {@code provisionSchema} completes normally. */
     private static HyperscaleDbProviderClient providerSucceeding() {
         return new HyperscaleDbProviderClient() {
-            @Override public void create(ResourceAddress a, Key k, JsonNode d, OperationOptions o) {}
-            @Override public JsonNode read(ResourceAddress a, Key k, OperationOptions o) { return null; }
-            @Override public void update(ResourceAddress a, Key k, JsonNode d, OperationOptions o) {}
-            @Override public void upsert(ResourceAddress a, Key k, JsonNode d, OperationOptions o) {}
-            @Override public void delete(ResourceAddress a, Key k, OperationOptions o) {}
+            @Override public void create(ResourceAddress a, HyperscaleDbKey k, Map<String, Object> d, OperationOptions o) {}
+            @Override public Map<String, Object> read(ResourceAddress a, HyperscaleDbKey k, OperationOptions o) { return null; }
+            @Override public void update(ResourceAddress a, HyperscaleDbKey k, Map<String, Object> d, OperationOptions o) {}
+            @Override public void upsert(ResourceAddress a, HyperscaleDbKey k, Map<String, Object> d, OperationOptions o) {}
+            @Override public void delete(ResourceAddress a, HyperscaleDbKey k, OperationOptions o) {}
             @Override public QueryPage query(ResourceAddress a, QueryRequest q, OperationOptions o) { return null; }
             @Override public CapabilitySet capabilities() { return EMPTY_CAPS; }
-            @Override public <T> T nativeClient(Class<T> c) { return null; }
             @Override public ProviderId providerId() { return ProviderId.COSMOS; }
             @Override public void close() {}
         };
