@@ -266,8 +266,7 @@ This is fully transparent - you never see the translated SQL. For direct control
 
 | Module | Artifact | Description |
 |--------|----------|-------------|
-| **hyperscaledb-api** | `com.hyperscaledb:hyperscaledb-api` | Portable client interface, types, error model, factory. The only compile-time dependency your app needs. Also hosts the SPI contracts. |
-| **hyperscaledb-spi** | `com.hyperscaledb:hyperscaledb-spi` | (Reserved) SPI support utilities |
+| **hyperscaledb-api** | `com.hyperscaledb:hyperscaledb-api` | Portable client interface, types, error model, factory, and SPI contracts. The only compile-time dependency your app needs. |
 | **hyperscaledb-provider-cosmos** | `com.hyperscaledb:hyperscaledb-provider-cosmos` | Azure Cosmos DB adapter (Java SDK v4) |
 | **hyperscaledb-provider-dynamo** | `com.hyperscaledb:hyperscaledb-provider-dynamo` | Amazon DynamoDB adapter (AWS SDK v2) |
 | **hyperscaledb-provider-spanner** | `com.hyperscaledb:hyperscaledb-provider-spanner` | Google Cloud Spanner adapter (Google Cloud Spanner 6.62.0) |
@@ -623,7 +622,6 @@ hyperscaledb-sdk-java/
 │       │   ├── internal/            # DefaultHyperscaleDbClient
 │       │   └── query/               # Portable expression AST, parser, validator, translator SPI
 │       └── spi/                     # Provider SPI interfaces
-├── hyperscaledb-spi/                    # SPI support utilities
 ├── hyperscaledb-provider-cosmos/        # Azure Cosmos DB adapter
 │   └── src/main/
 │       ├── java/.../cosmos/         # CosmosProviderClient, error mapper, capabilities
