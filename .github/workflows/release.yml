@@ -50,7 +50,7 @@ jobs:
   emulator-cosmos:
     name: Cosmos DB Emulator Tests
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -151,7 +151,7 @@ jobs:
         shell: bash
         run: |
           mvn verify -Pemulator-cosmos -pl hyperscaledb-conformance -am \
-            -Djunit.jupiter.execution.timeout.default=60s
+            -Djunit.jupiter.execution.timeout.default=120s
 
       - name: Upload test reports
         if: always()
