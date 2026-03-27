@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.provider.cosmos;
 
 import com.azure.cosmos.ConsistencyLevel;
@@ -35,17 +38,6 @@ class CosmosConstantsTest {
         assertEquals("tenantId", CosmosConstants.CONFIG_TENANT_ID);
     }
 
-    @Test
-    @DisplayName("CONFIG_SUBSCRIPTION_ID key value")
-    void configSubscriptionIdKey() {
-        assertEquals("subscriptionId", CosmosConstants.CONFIG_SUBSCRIPTION_ID);
-    }
-
-    @Test
-    @DisplayName("CONFIG_RESOURCE_GROUP key value")
-    void configResourceGroupKey() {
-        assertEquals("resourceGroupName", CosmosConstants.CONFIG_RESOURCE_GROUP);
-    }
 
     @Test
     @DisplayName("CONFIG_CONNECTION_MODE key value")
@@ -131,6 +123,38 @@ class CosmosConstantsTest {
         assertNotNull(CosmosConstants.ERR_ENDPOINT_REQUIRED);
         assertTrue(CosmosConstants.ERR_ENDPOINT_REQUIRED.toLowerCase().contains("endpoint"),
                 "Error message should mention 'endpoint' so callers understand what is missing");
+    }
+
+    // ── Diagnostic thresholds ─────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("DIAG_THRESHOLD_POINT_MS is 10 ms")
+    void diagThresholdPointMs() {
+        assertEquals(10L, CosmosConstants.DIAG_THRESHOLD_POINT_MS);
+    }
+
+    @Test
+    @DisplayName("DIAG_THRESHOLD_QUERY_MS is 100 ms")
+    void diagThresholdQueryMs() {
+        assertEquals(100L, CosmosConstants.DIAG_THRESHOLD_QUERY_MS);
+    }
+
+    @Test
+    @DisplayName("DIAG_THRESHOLD_QUERY_ERROR_MS is 1000 ms")
+    void diagThresholdQueryErrorMs() {
+        assertEquals(1000L, CosmosConstants.DIAG_THRESHOLD_QUERY_ERROR_MS);
+    }
+
+    @Test
+    @DisplayName("DIAG_THRESHOLD_POINT_RU is 10.0")
+    void diagThresholdPointRu() {
+        assertEquals(10.0, CosmosConstants.DIAG_THRESHOLD_POINT_RU);
+    }
+
+    @Test
+    @DisplayName("DIAG_THRESHOLD_QUERY_RU is 100.0")
+    void diagThresholdQueryRu() {
+        assertEquals(100.0, CosmosConstants.DIAG_THRESHOLD_QUERY_RU);
     }
 }
 

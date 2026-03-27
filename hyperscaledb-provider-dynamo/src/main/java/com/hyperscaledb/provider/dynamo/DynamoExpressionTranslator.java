@@ -1,6 +1,20 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.provider.dynamo;
 
-import com.hyperscaledb.api.query.*;
+import com.hyperscaledb.api.query.BetweenExpression;
+import com.hyperscaledb.api.query.ComparisonExpression;
+import com.hyperscaledb.api.query.Expression;
+import com.hyperscaledb.api.query.ExpressionTranslator;
+import com.hyperscaledb.api.query.FieldRef;
+import com.hyperscaledb.api.query.FunctionCallExpression;
+import com.hyperscaledb.api.query.InExpression;
+import com.hyperscaledb.api.query.Literal;
+import com.hyperscaledb.api.query.LogicalExpression;
+import com.hyperscaledb.api.query.NotExpression;
+import com.hyperscaledb.api.query.Parameter;
+import com.hyperscaledb.api.query.TranslatedQuery;
 
 import java.util.ArrayList;
 import java.util.List;

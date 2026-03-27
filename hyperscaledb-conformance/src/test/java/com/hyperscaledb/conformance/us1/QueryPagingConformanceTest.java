@@ -1,13 +1,15 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.conformance.us1;
 
 import com.hyperscaledb.api.*;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.*;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -23,7 +25,6 @@ import static org.junit.jupiter.api.Assertions.*;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public abstract class QueryPagingConformanceTest {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final int TOTAL_ITEMS = 7;
     private static final int PAGE_SIZE = 3;
     private static final String KEY_PREFIX = "paging-test-";
@@ -51,11 +52,9 @@ public abstract class QueryPagingConformanceTest {
     @DisplayName("setup: insert test items for paging")
     void setupItems() {
         for (int i = 1; i <= TOTAL_ITEMS; i++) {
-            Key key = Key.of(KEY_PREFIX + i, KEY_PREFIX + i);
-            ObjectNode doc = MAPPER.createObjectNode();
-            doc.put("title", "Paging Item " + i);
-            doc.put("batch", "paging-conformance");
-            client.upsert(getAddress(), key, doc);
+            HyperscaleDbKey key = HyperscaleDbKey.of(KEY_PREFIX + i, KEY_PREFIX + i);
+            client.upsert(getAddress(), key,
+                    Map.of("title", "Paging Item " + i, "batch", "paging-conformance"));
         }
     }
 
@@ -65,7 +64,7 @@ public abstract class QueryPagingConformanceTest {
     void firstPageRespectsPageSize() {
         QueryRequest query = QueryRequest.builder()
                 .expression("SELECT * FROM c")
-                .pageSize(PAGE_SIZE)
+                .maxPageSize(PAGE_SIZE)
                 .build();
 
         QueryPage page = client.query(getAddress(), query);
@@ -86,7 +85,7 @@ public abstract class QueryPagingConformanceTest {
         do {
             QueryRequest.Builder qb = QueryRequest.builder()
                     .expression("SELECT * FROM c")
-                    .pageSize(PAGE_SIZE);
+                    .maxPageSize(PAGE_SIZE);
             if (continuationToken != null) {
                 qb.continuationToken(continuationToken);
             }
@@ -96,11 +95,10 @@ public abstract class QueryPagingConformanceTest {
 
             for (var item : page.items()) {
                 // sortKey field for DynamoDB/Spanner, id field for Cosmos
-                if (item.has("sortKey")) {
-                    allIds.add(item.get("sortKey").asText());
-                } else if (item.has("id")) {
-                    allIds.add(item.get("id").asText());
-                }
+                Object sk = item.get("sortKey");
+                Object id = item.get("id");
+                if (sk != null) allIds.add(sk.toString());
+                else if (id != null) allIds.add(id.toString());
             }
 
             continuationToken = page.continuationToken();
@@ -127,7 +125,7 @@ public abstract class QueryPagingConformanceTest {
         // Query with a very large page size to get all items at once
         QueryRequest query = QueryRequest.builder()
                 .expression("SELECT * FROM c")
-                .pageSize(1000)
+                .maxPageSize(1000)
                 .build();
 
         QueryPage page = client.query(getAddress(), query);
@@ -142,7 +140,7 @@ public abstract class QueryPagingConformanceTest {
     void pageSizeOne() {
         QueryRequest query = QueryRequest.builder()
                 .expression("SELECT * FROM c")
-                .pageSize(1)
+                .maxPageSize(1)
                 .build();
 
         QueryPage page = client.query(getAddress(), query);
@@ -157,7 +155,7 @@ public abstract class QueryPagingConformanceTest {
     void cleanup() {
         for (int i = 1; i <= TOTAL_ITEMS; i++) {
             try {
-                client.delete(getAddress(), Key.of(KEY_PREFIX + i, KEY_PREFIX + i));
+                client.delete(getAddress(), HyperscaleDbKey.of(KEY_PREFIX + i, KEY_PREFIX + i));
             } catch (Exception ignored) {
             }
         }

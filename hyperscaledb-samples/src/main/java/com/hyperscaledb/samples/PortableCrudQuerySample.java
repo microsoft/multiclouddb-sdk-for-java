@@ -1,9 +1,19 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.samples;
 
-import com.hyperscaledb.api.*;
+import com.hyperscaledb.api.Capability;
+import com.hyperscaledb.api.CapabilitySet;
+import com.hyperscaledb.api.HyperscaleDbClient;
+import com.hyperscaledb.api.HyperscaleDbClientFactory;
+import com.hyperscaledb.api.HyperscaleDbKey;
+import com.hyperscaledb.api.ProviderId;
+import com.hyperscaledb.api.QueryPage;
+import com.hyperscaledb.api.QueryRequest;
+import com.hyperscaledb.api.ResourceAddress;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.Map;
 
@@ -53,11 +63,11 @@ public class PortableCrudQuerySample {
             // === 1. UPSERT: Create documents ===
             System.out.println("--- UPSERT: Creating documents ---");
             for (int i = 1; i <= 5; i++) {
-                Key key = Key.of("sample-" + i, "sample-" + i);
-                ObjectNode doc = MAPPER.createObjectNode();
-                doc.put("title", "Task " + i);
-                doc.put("status", i <= 3 ? "active" : "completed");
-                doc.put("priority", i);
+                HyperscaleDbKey key = HyperscaleDbKey.of("sample-" + i, "sample-" + i);
+                Map<String, Object> doc = Map.of(
+                        "title", "Task " + i,
+                        "status", i <= 3 ? "active" : "completed",
+                        "priority", i);
                 client.upsert(address, key, doc);
                 System.out.println("  Created: sample-" + i + " (status=" + (i <= 3 ? "active" : "completed") + ")");
             }
@@ -65,19 +75,20 @@ public class PortableCrudQuerySample {
 
             // === 2. READ: Retrieve a document ===
             System.out.println("--- READ: Retrieve document ---");
-            Key getKey = Key.of("sample-1", "sample-1");
-            JsonNode retrieved = client.read(address, getKey);
+            HyperscaleDbKey getKey = HyperscaleDbKey.of("sample-1", "sample-1");
+            Map<String, Object> retrieved = client.read(address, getKey);
             if (retrieved != null) {
-                System.out.println("  Retrieved: " + retrieved.toPrettyString());
+                JsonNode prettyNode = MAPPER.valueToTree(retrieved);
+                System.out.println("  Retrieved: " + prettyNode.toPrettyString());
             }
             System.out.println();
 
             // === 3. UPSERT: Update a document ===
             System.out.println("--- UPSERT: Update document ---");
-            ObjectNode updated = MAPPER.createObjectNode();
-            updated.put("title", "Task 1 (Updated)");
-            updated.put("status", "completed");
-            updated.put("priority", 1);
+            Map<String, Object> updated = Map.of(
+                    "title", "Task 1 (Updated)",
+                    "status", "completed",
+                    "priority", 1);
             client.upsert(address, getKey, updated);
             System.out.println("  Updated sample-1 status to 'completed'");
             System.out.println();
@@ -88,17 +99,17 @@ public class PortableCrudQuerySample {
             // 4a. Full scan with paging
             System.out.println("  [Full scan, pageSize=2]");
             QueryRequest fullScan = QueryRequest.builder()
-                    .pageSize(2)
+                    .maxPageSize(2)
                     .build();
             QueryPage page = client.query(address, fullScan);
-            System.out.println("    Page 1: " + page.items().size() + " items, hasMore=" + page.hasMore());
+            System.out.println("    Page 1: " + page.items().size() + " items, hasMore=" + (page.continuationToken() != null));
 
             // 4b. Portable filter: status = @status
             System.out.println("  [Filter: status = @status]");
             QueryRequest statusQuery = QueryRequest.builder()
                     .expression("status = @status")
                     .parameters(Map.of("status", "active"))
-                    .pageSize(50)
+                    .maxPageSize(50)
                     .build();
             QueryPage activePage = client.query(address, statusQuery);
             System.out.println("    Found " + activePage.items().size() + " active items");
@@ -108,7 +119,7 @@ public class PortableCrudQuerySample {
             QueryRequest prefixQuery = QueryRequest.builder()
                     .expression("starts_with(title, @prefix)")
                     .parameters(Map.of("prefix", "Task"))
-                    .pageSize(50)
+                    .maxPageSize(50)
                     .build();
             QueryPage prefixPage = client.query(address, prefixQuery);
             System.out.println("    Found " + prefixPage.items().size() + " items starting with 'Task'");
@@ -118,7 +129,7 @@ public class PortableCrudQuerySample {
             QueryRequest combinedQuery = QueryRequest.builder()
                     .expression("status = @status AND priority > @minP")
                     .parameters(Map.of("status", "active", "minP", 1))
-                    .pageSize(50)
+                    .maxPageSize(50)
                     .build();
             QueryPage combinedPage = client.query(address, combinedQuery);
             System.out.println("    Found " + combinedPage.items().size() + " active items with priority > 1");
@@ -147,7 +158,7 @@ public class PortableCrudQuerySample {
             if (nativeExpr != null) {
                 QueryRequest nativeQuery = QueryRequest.builder()
                         .nativeExpression(nativeExpr)
-                        .pageSize(50)
+                        .maxPageSize(50)
                         .build();
                 QueryPage nativePage = client.query(address, nativeQuery);
                 System.out
@@ -158,7 +169,7 @@ public class PortableCrudQuerySample {
             // === 7. DELETE: Clean up ===
             System.out.println("--- DELETE: Cleaning up ---");
             for (int i = 1; i <= 5; i++) {
-                client.delete(address, Key.of("sample-" + i, "sample-" + i));
+                client.delete(address, HyperscaleDbKey.of("sample-" + i, "sample-" + i));
                 System.out.println("  Deleted: sample-" + i);
             }
             System.out.println();

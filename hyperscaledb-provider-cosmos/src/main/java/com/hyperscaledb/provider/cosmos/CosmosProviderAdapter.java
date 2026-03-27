@@ -1,13 +1,13 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.provider.cosmos;
 
 import com.hyperscaledb.api.HyperscaleDbClientConfig;
-import com.hyperscaledb.api.PortabilityWarning;
 import com.hyperscaledb.api.ProviderId;
 import com.hyperscaledb.api.query.ExpressionTranslator;
 import com.hyperscaledb.spi.HyperscaleDbProviderAdapter;
 import com.hyperscaledb.spi.HyperscaleDbProviderClient;
-
-import java.util.List;
 
 /**
  * ServiceLoader-discovered adapter for Azure Cosmos DB.
@@ -27,10 +27,5 @@ public class CosmosProviderAdapter implements HyperscaleDbProviderAdapter {
     @Override
     public ExpressionTranslator createExpressionTranslator() {
         return new CosmosExpressionTranslator();
-    }
-
-    @Override
-    public List<PortabilityWarning> checkFeatureFlags(HyperscaleDbClientConfig config) {
-        return CosmosExtensions.checkFeatureFlags(config);
     }
 }

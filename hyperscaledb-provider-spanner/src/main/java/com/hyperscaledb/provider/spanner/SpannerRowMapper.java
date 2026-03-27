@@ -1,10 +1,16 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.provider.spanner;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.cloud.spanner.ResultSet;
 import com.google.cloud.spanner.Type;
+
+import java.util.Map;
 
 /**
  * Maps Spanner {@link ResultSet} rows to Jackson {@link JsonNode} documents.
@@ -15,6 +21,7 @@ import com.google.cloud.spanner.Type;
 public final class SpannerRowMapper {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private SpannerRowMapper() {
     }
@@ -61,5 +68,19 @@ public final class SpannerRowMapper {
         }
 
         return node;
+    }
+
+    /**
+     * Convert the current row of a {@link ResultSet} into a plain
+     * {@code Map<String, Object>}.
+     * The cursor must already be positioned on a valid row (i.e., after
+     * {@code rs.next()} returned true).
+     *
+     * @param rs the result set positioned on a row
+     * @return a map of column name to Java value
+     */
+    public static Map<String, Object> toMap(ResultSet rs) {
+        JsonNode node = toJsonNode(rs);
+        return MAPPER.convertValue(node, MAP_TYPE);
     }
 }

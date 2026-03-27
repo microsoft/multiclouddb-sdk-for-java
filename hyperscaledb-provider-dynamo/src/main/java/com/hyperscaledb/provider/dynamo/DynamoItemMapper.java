@@ -1,6 +1,10 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package com.hyperscaledb.provider.dynamo;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.*;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -14,6 +18,7 @@ import java.util.*;
 public final class DynamoItemMapper {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private DynamoItemMapper() {
     }
@@ -144,5 +149,24 @@ public final class DynamoItemMapper {
             return AttributeValue.fromBool(b);
         }
         return AttributeValue.fromS(value.toString());
+    }
+
+    /**
+     * Convert a caller-supplied {@code Map<String, Object>} document into a
+     * DynamoDB attribute map. Uses Jackson internally to handle nested structures.
+     */
+    public static Map<String, AttributeValue> mapToAttributeMap(Map<String, Object> document) {
+        if (document == null) return new LinkedHashMap<>();
+        JsonNode node = MAPPER.valueToTree(document);
+        return jsonNodeToAttributeMap(node);
+    }
+
+    /**
+     * Convert a DynamoDB attribute map to a plain {@code Map<String, Object>}.
+     * Uses Jackson internally to handle nested structures.
+     */
+    public static Map<String, Object> attributeMapToMap(Map<String, AttributeValue> item) {
+        JsonNode node = attributeMapToJsonNode(item);
+        return MAPPER.convertValue(node, MAP_TYPE);
     }
 }
