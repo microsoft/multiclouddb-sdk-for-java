@@ -113,19 +113,4 @@ Initial public beta of the portable API and SPI layer.
   two-phase implementation using bounded thread pool), capabilities, provider
   identity, and `AutoCloseable` lifecycle
 
-### Changed
-
-- SPI contracts consolidated from the former `hyperscaledb-spi` module (which
-  contained zero source files) directly into `hyperscaledb-api` — no package
-  renames or import changes required ([#39])
-- All public value types (`HyperscaleDbClientConfig`, `HyperscaleDbError`,
-  `HyperscaleDbKey`, `QueryRequest`) enforce immutability contracts with
-  unmodifiable map accessors and defensive-copy builder setters
-- `ProviderId` changed from enum to extensible value-object to support
-  third-party provider registration
-- `HyperscaleDbErrorCategory` changed from enum to extensible string-based
-  type for forward compatibility
-- Public API surface uses `Map<String, Object>` instead of Jackson `JsonNode`
-  to avoid leaking serialization-library types
-
 [#39]: https://github.com/microsoft/hyperscaledb-sdk-for-java/pull/39
