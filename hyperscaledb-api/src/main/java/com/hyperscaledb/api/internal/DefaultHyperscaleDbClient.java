@@ -271,9 +271,11 @@ public final class DefaultHyperscaleDbClient implements HyperscaleDbClient {
 
     private HyperscaleDbException enrichException(HyperscaleDbException e, String operation, Instant start) {
         Duration duration = Duration.between(start, Instant.now());
-        OperationDiagnostics diag = new OperationDiagnostics(
-                config.provider(), operation, duration,
-                e.error().providerDetails().get("requestId"));
+        OperationDiagnostics diag = OperationDiagnostics
+                .builder(config.provider(), operation, duration)
+                .requestId(e.error().providerDetails().get("requestId"))
+
+                .build();
         return e.withDiagnostics(diag);
     }
 
@@ -286,8 +288,9 @@ public final class DefaultHyperscaleDbClient implements HyperscaleDbClient {
                 operation,
                 false,
                 Map.of("exceptionType", e.getClass().getName()));
-        OperationDiagnostics diag = new OperationDiagnostics(
-                config.provider(), operation, duration, null);
+        OperationDiagnostics diag = OperationDiagnostics
+                .builder(config.provider(), operation, duration)
+                .build();
         return new HyperscaleDbException(error, e).withDiagnostics(diag);
     }
 

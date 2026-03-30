@@ -25,11 +25,20 @@ public final class HyperscaleDbClientConfig {
     private final Map<String, String> auth;
     private final OperationOptions defaultOptions;
 
+    /**
+     * When true, providers log the full native diagnostics object on every
+     * operation (e.g., {@code CosmosDiagnostics} for Cosmos DB).
+     * Disabled by default to avoid the per-call string-serialisation overhead.
+     * Enable via {@link Builder#nativeDiagnosticsEnabled(boolean)}.
+     */
+    private final boolean nativeDiagnosticsEnabled;
+
     private HyperscaleDbClientConfig(Builder builder) {
         this.provider = Objects.requireNonNull(builder.provider, "provider is required");
         this.connection = builder.connection != null ? Map.copyOf(builder.connection) : Collections.emptyMap();
         this.auth = builder.auth != null ? Map.copyOf(builder.auth) : Collections.emptyMap();
         this.defaultOptions = builder.defaultOptions != null ? builder.defaultOptions : OperationOptions.defaults();
+        this.nativeDiagnosticsEnabled = builder.nativeDiagnosticsEnabled;
     }
 
     /** The target provider. */
@@ -62,6 +71,15 @@ public final class HyperscaleDbClientConfig {
         return defaultOptions;
     }
 
+    /**
+     * Whether the full native diagnostics object is logged on every operation.
+     * Disabled by default; enable via {@link Builder#nativeDiagnosticsEnabled(boolean)}.
+     */
+    public boolean nativeDiagnosticsEnabled() {
+        return nativeDiagnosticsEnabled;
+    }
+
+
     public static Builder builder() {
         return new Builder();
     }
@@ -77,6 +95,7 @@ public final class HyperscaleDbClientConfig {
         private Map<String, String> connection;
         private Map<String, String> auth;
         private OperationOptions defaultOptions;
+        private boolean nativeDiagnosticsEnabled = false;
 
         /** Set the target provider. */
         public Builder provider(ProviderId provider) {
@@ -124,7 +143,21 @@ public final class HyperscaleDbClientConfig {
             return this;
         }
 
+        /**
+         * When set to true, providers log the full native diagnostics string on every
+         * operation (e.g., Cosmos {@code CosmosDiagnostics.toString()}).
+         * This is an opt-in due to the per-call string-serialisation cost.
+         * Portability is preserved — the portable API is unaffected; diagnostics are
+         * captured and logged internally without leaking provider types into application
+         * code.
+         */
+        public Builder nativeDiagnosticsEnabled(boolean enabled) {
+            this.nativeDiagnosticsEnabled = enabled;
+            return this;
+        }
+
         /** Build and return an immutable {@link HyperscaleDbClientConfig}. */
+
         public HyperscaleDbClientConfig build() {
             return new HyperscaleDbClientConfig(this);
         }

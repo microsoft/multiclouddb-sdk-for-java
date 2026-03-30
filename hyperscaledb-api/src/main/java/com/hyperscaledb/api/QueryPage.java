@@ -3,25 +3,38 @@
 
 package com.hyperscaledb.api;
 
+
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
 /**
- * A single page of query results.
+ * A single page of query results with optional diagnostics metadata.
  */
 public final class QueryPage {
 
     private final List<Map<String, Object>> items;
     private final String continuationToken;
 
+    /**
+     * Diagnostics for this query page; null when diagnostics are not available.
+     */
+    private final OperationDiagnostics diagnostics;
+
     public QueryPage(List<Map<String, Object>> items, String continuationToken) {
+        this(items, continuationToken, null);
+    }
+
+    public QueryPage(List<Map<String, Object>> items, String continuationToken,
+                     OperationDiagnostics diagnostics) {
         this.items = items != null
                 ? items.stream().map(Map::copyOf).collect(java.util.stream.Collectors.toUnmodifiableList())
                 : Collections.emptyList();
         this.continuationToken = (continuationToken != null && !continuationToken.isEmpty())
                 ? continuationToken : null;
+        this.diagnostics = diagnostics;
     }
+
 
     /**
      * Items in this page, each represented as an <em>unmodifiable</em> map of
@@ -44,4 +57,17 @@ public final class QueryPage {
     public String continuationToken() {
         return continuationToken;
     }
+
+    /**
+     * Diagnostics for this query page (duration, requestCharge, itemCount, etc.),
+     * or null if diagnostics are not available.
+     */
+    public OperationDiagnostics diagnostics() {
+        return diagnostics;
+    }
+
+    public boolean hasMore() {
+        return continuationToken != null && !continuationToken.isEmpty();
+    }
+
 }
