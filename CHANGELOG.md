@@ -44,12 +44,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - CI: improve emulator setup reliability with retry logic ([#32], [#33])
 - Restored MIT LICENSE file lost during merge ([#26])
 
-[#19]: https://github.com/microsoft/hyperscale-db-sdk-for-java/pull/19
-[#26]: https://github.com/microsoft/hyperscale-db-sdk-for-java/pull/26
-[#28]: https://github.com/microsoft/hyperscale-db-sdk-for-java/pull/28
-[#30]: https://github.com/microsoft/hyperscale-db-sdk-for-java/pull/30
-[#32]: https://github.com/microsoft/hyperscale-db-sdk-for-java/pull/32
-[#33]: https://github.com/microsoft/hyperscale-db-sdk-for-java/pull/33
-[#34]: https://github.com/microsoft/hyperscale-db-sdk-for-java/pull/34
-[#36]: https://github.com/microsoft/hyperscale-db-sdk-for-java/pull/36
-[#39]: https://github.com/microsoft/hyperscale-db-sdk-for-java/pull/39
+[#19]: https://github.com/microsoft/hyperscaledb-sdk-for-java/pull/19
+[#26]: https://github.com/microsoft/hyperscaledb-sdk-for-java/pull/26
+[#28]: https://github.com/microsoft/hyperscaledb-sdk-for-java/pull/28
+[#30]: https://github.com/microsoft/hyperscaledb-sdk-for-java/pull/30
+[#32]: https://github.com/microsoft/hyperscaledb-sdk-for-java/pull/32
+[#33]: https://github.com/microsoft/hyperscaledb-sdk-for-java/pull/33
+[#34]: https://github.com/microsoft/hyperscaledb-sdk-for-java/pull/34
+[#36]: https://github.com/microsoft/hyperscaledb-sdk-for-java/pull/36
+[#39]: https://github.com/microsoft/hyperscaledb-sdk-for-java/pull/39
