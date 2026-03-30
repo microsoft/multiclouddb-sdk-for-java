@@ -57,14 +57,12 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>${logback.version}</version>
         </dependency>
 
         <!-- Bridge commons-logging (used by AWS/Cosmos SDKs) to SLF4J -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>jcl-over-slf4j</artifactId>
-            <version>2.0.12</version>
             <scope>runtime</scope>
         </dependency>
     </dependencies>
