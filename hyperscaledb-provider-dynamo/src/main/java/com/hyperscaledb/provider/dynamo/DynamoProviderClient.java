@@ -232,9 +232,13 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
 
             DocumentMetadata metadata = null;
             if (options != null && options.includeMetadata()) {
-                // DynamoDB does not expose per-item write timestamps via GetItem;
-                // return empty metadata shell to signal the call was honoured.
-                metadata = DocumentMetadata.builder().build();
+                DocumentMetadata.Builder metaBuilder = DocumentMetadata.builder();
+                // Extract TTL expiry if the attribute is present on the item.
+                JsonNode ttlNode = doc.get(DynamoConstants.ATTR_TTL_EXPIRY);
+                if (ttlNode != null && ttlNode.isNumber()) {
+                    metaBuilder.ttlExpiry(Instant.ofEpochSecond(ttlNode.longValue()));
+                }
+                metadata = metaBuilder.build();
             }
             return new DocumentResult(doc, metadata);
         } catch (DynamoDbException e) {
@@ -264,6 +268,10 @@ public class DynamoProviderClient implements HyperscaleDbProviderClient {
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
             item.put(DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(
                     key.sortKey() != null ? key.sortKey() : key.partitionKey()));
+            if (options != null && options.ttlSeconds() != null) {
+                long expiryEpoch = Instant.now().getEpochSecond() + options.ttlSeconds();
+                item.put(DynamoConstants.ATTR_TTL_EXPIRY, AttributeValue.fromN(String.valueOf(expiryEpoch)));
+            }
 
             PutItemRequest request = PutItemRequest.builder()
                     .tableName(resolveTableName(address))

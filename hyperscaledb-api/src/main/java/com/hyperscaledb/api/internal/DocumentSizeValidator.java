@@ -21,11 +21,17 @@ import java.util.Map;
  * </ul>
  * By enforcing the lowest common denominator at the SDK layer, documents remain
  * portable across all providers without surprise failures on write.
+ * <p>
+ * A 1 KB safety margin is subtracted from the raw DynamoDB limit to account for
+ * system fields injected by providers before writing ({@code partitionKey},
+ * {@code sortKey}, {@code id}, {@code ttlExpiry}, etc.).  DynamoDB's 400 KB cap
+ * is measured against its internal wire format, which can be slightly larger than
+ * the raw JSON.  The effective validated limit is therefore 399 KB.
  */
 public final class DocumentSizeValidator {
 
-    /** Maximum document size in bytes — DynamoDB hard limit (400 KB). */
-    public static final int MAX_BYTES = 400 * 1024; // 400 KB
+    /** Maximum document size in bytes — DynamoDB hard limit minus 1 KB safety margin. */
+    public static final int MAX_BYTES = 400 * 1024 - 1024; // 399 KB
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -51,7 +57,7 @@ public final class DocumentSizeValidator {
                 throw new HyperscaleDbException(new HyperscaleDbError(
                         HyperscaleDbErrorCategory.INVALID_REQUEST,
                         "Document size " + bytes.length + " bytes exceeds the maximum of "
-                                + MAX_BYTES + " bytes (400 KB). Reduce the document size to "
+                                + MAX_BYTES + " bytes (399 KB). Reduce the document size to "
                                 + "maintain portability across all providers.",
                         null,
                         operation,

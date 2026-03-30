@@ -4,6 +4,7 @@
 package com.hyperscaledb.provider.cosmos;
 
 import com.azure.cosmos.ConsistencyLevel;
+import java.util.Set;
 
 /**
  * All hardcoded string keys, values, and numeric constants used by the
@@ -64,8 +65,12 @@ public final class CosmosConstants {
      * the document after that many seconds, provided the container has TTL enabled
      * (container default TTL must be set to {@code -1} or a positive value in the portal/ARM).
      * Setting to {@code -1} disables TTL on a per-document basis.
+     * <p>
+     * Note: this is {@code "ttl"} (no underscore), not {@code "_ttl"}.
+     * {@code _ts}, {@code _etag}, {@code _rid} use underscores because they are
+     * read-only system properties; {@code ttl} is user-settable and has no underscore prefix.
      */
-    public static final String FIELD_TTL = "_ttl";
+    public static final String FIELD_TTL = "ttl";
 
     // ── Partition key ─────────────────────────────────────────────────────────
 
@@ -84,6 +89,24 @@ public final class CosmosConstants {
 
     /** Prefix for named query parameters in Cosmos SQL. */
     public static final String QUERY_PARAM_PREFIX = "@";
+
+    // ── System-property field names (read-only, injected by Cosmos DB) ────────
+
+    /** Unix epoch timestamp of the last write ({@code _ts}). Used to populate {@code lastModified}. */
+    public static final String SYS_TIMESTAMP = "_ts";
+    /** ETag / session token ({@code _etag}). Used to populate {@code version}. */
+    public static final String SYS_ETAG = "_etag";
+    /** Resource ID ({@code _rid}). */
+    public static final String SYS_RID = "_rid";
+    /** Self-link ({@code _self}). */
+    public static final String SYS_SELF = "_self";
+    /** Attachments link ({@code _attachments}). */
+    public static final String SYS_ATTACHMENTS = "_attachments";
+
+    /** All system-property field names that must be stripped before returning a portable document. */
+    public static final Set<String> SYSTEM_FIELDS = Set.of(
+            SYS_TIMESTAMP, SYS_ETAG, SYS_RID, SYS_SELF, SYS_ATTACHMENTS,
+            FIELD_ID, FIELD_PARTITION_KEY);
 
     // ── Error / validation messages ───────────────────────────────────────────
 

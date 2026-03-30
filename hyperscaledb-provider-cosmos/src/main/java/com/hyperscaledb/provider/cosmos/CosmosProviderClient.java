@@ -18,6 +18,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URI;
+import java.time.Instant;
 import java.util.*;
 
 /**
@@ -159,15 +161,25 @@ public class CosmosProviderClient implements HyperscaleDbProviderClient {
             String cosmosId = key.sortKey() != null ? key.sortKey() : key.partitionKey();
             CosmosItemResponse<ObjectNode> response = container.readItem(cosmosId, pk, ObjectNode.class);
             logItemDiagnostics(OperationNames.READ, address, response);
-            ObjectNode item = response.getItem();
-            if (item == null) return null;
+            ObjectNode raw = response.getItem();
+            if (raw == null) return null;
+
+            // Strip Cosmos system properties so the returned document is portable
+            // across providers (Cosmos-only fields like _rid, _self, _ts, etc. must
+            // not appear in a DocumentResult that callers compare across providers).
+            ObjectNode item = raw.deepCopy();
+            CosmosConstants.SYSTEM_FIELDS.forEach(item::remove);
 
             DocumentMetadata metadata = null;
             if (options != null && options.includeMetadata()) {
                 DocumentMetadata.Builder metaBuilder = DocumentMetadata.builder();
-                // Cosmos exposes ETag as version
                 if (response.getETag() != null) {
                     metaBuilder.version(response.getETag());
+                }
+                // _ts is a Unix epoch second — expose as lastModified
+                JsonNode tsNode = raw.get(CosmosConstants.SYS_TIMESTAMP);
+                if (tsNode != null && tsNode.isNumber()) {
+                    metaBuilder.lastModified(Instant.ofEpochSecond(tsNode.longValue()));
                 }
                 metadata = metaBuilder.build();
             }
