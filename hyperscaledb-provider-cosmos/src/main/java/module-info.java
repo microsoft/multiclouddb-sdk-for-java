@@ -8,11 +8,6 @@ module com.hyperscaledb.provider.cosmos {
     requires com.hyperscaledb.api;
     requires com.azure.cosmos;
     requires com.azure.identity;
-    // Management-plane dependencies: CosmosProviderClient imports AzureProfile and
-    // AzureEnvironment from com.azure.core.management, and CosmosManager /
-    // SqlDatabaseResource etc. from com.azure.resourcemanager.cosmos.
-    requires com.azure.core.management;
-    requires com.azure.resourcemanager.cosmos;
     requires com.fasterxml.jackson.databind;
     requires org.slf4j;
     // ServiceLoader registration
