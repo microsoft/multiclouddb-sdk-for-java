@@ -6,7 +6,7 @@
 
     <parent>
         <groupId>com.hyperscaledb</groupId>
-        <artifactId>hyperscaledb-sdk-java</artifactId>
+        <artifactId>hyperscaledb-sdk-java-parent</artifactId>
         <version>1-SNAPSHOT</version>
     </parent>
 
