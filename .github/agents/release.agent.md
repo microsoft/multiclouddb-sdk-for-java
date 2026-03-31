@@ -75,8 +75,9 @@ If any check fails, stop and help the user fix the issue. Common fixes:
 ### Step 3: Update Changelog
 
 Changelogs follow the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
-format. The changelog is NOT bundled in the shipped JAR artifacts, so it is safe
-to update it before tagging.
+format. The changelog IS bundled in the shipped JAR (under `META-INF/`), so it
+must be updated before tagging to ensure the release artifact contains the
+correct version entry.
 
 For each module, update the changelog:
 
