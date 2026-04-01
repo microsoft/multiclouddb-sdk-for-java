@@ -5,7 +5,9 @@ All notable changes to the `hyperscaledb-api` module will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0-beta.1] — Unreleased
+## [Unreleased]
+
+## [0.1.0-beta.1] — 2026-04-01
 
 Initial public beta of the portable API and SPI layer.
 
