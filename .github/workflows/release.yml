@@ -3,8 +3,8 @@ name: Release
 on:
   push:
     tags:
-      - 'hyperscaledb-*-v[0-9]+.[0-9]+.[0-9]+'           # stable: hyperscaledb-api-v1.2.3
-      - 'hyperscaledb-*-v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+' # beta: hyperscaledb-api-v1.2.3-beta.1
+      - 'hyperscaledb-*-v[0-9]*.[0-9]*.[0-9]*'              # stable: hyperscaledb-api-v1.2.3
+      - 'hyperscaledb-*-v[0-9]*.[0-9]*.[0-9]*-beta.[0-9]*'  # beta:   hyperscaledb-api-v1.2.3-beta.1
 
 # Only one release at a time
 concurrency:
