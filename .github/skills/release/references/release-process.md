@@ -52,9 +52,16 @@ Tags that will NOT trigger the release pipeline:
 
 ### Bumping a Version
 
-1. Update the property in root `pom.xml` (e.g., `hyperscaledb-api.version`)
-2. The module POM picks it up automatically via `${hyperscaledb-api.version}`
-3. Commit, merge to `main`, then tag
+1. Create a release branch from `main`:
+   ```bash
+   git checkout -b release/<version>
+   ```
+2. Update the property in root `pom.xml` (e.g., `hyperscaledb-api.version`)
+3. The module POM picks it up automatically via `${hyperscaledb-api.version}`
+4. Update changelogs: stamp `[Unreleased]` with version and date
+5. Commit and push to origin (fork)
+6. Create a PR against `upstream/main` — the release PR
+7. After PR merge, create and push release tags to upstream
 
 ### Versioning Policy (Semantic Versioning)
 
@@ -84,13 +91,42 @@ Initial release.
 The `[Unreleased]` section is renamed to the version being released with the
 release date appended.
 
-## Release Pipeline
+## Release Workflow
+
+### Step 1: Prepare release PR
+
+All version and changelog changes go through a PR against `upstream/main`:
+
+1. Create a `release/<version>` branch on your fork
+2. Update POM version properties in root `pom.xml`
+3. Stamp changelogs with the release version and date
+4. Push to fork and create a PR against `upstream/main`
+5. Wait for CI to pass and PR to be reviewed and merged
+
+**Never push version/changelog changes directly to `main`.**
+
+### Step 2: Create release tags
+
+After the release PR is merged:
+
+1. Sync local main with upstream: `git fetch upstream && git rebase upstream/main`
+2. Create and push tags **one at a time** to upstream:
+   ```bash
+   git tag -a "<module>-v<version>" -m "Release <module> v<version>"
+   git push upstream "<module>-v<version>"
+   ```
+3. Wait for the workflow run to appear before pushing the next tag
+
+**Critical:** Push each tag individually. Batched tag pushes silently fail to
+trigger GitHub Actions workflows.
+
+### Step 3: Release pipeline
 
 The `release.yml` workflow is triggered by pushing a matching tag (one tag per
-`git push` — see Troubleshooting) or via `workflow_dispatch`. It:
+`git push`) or via `workflow_dispatch`. It:
 
 1. Parses module name + version from the tag
-2. Runs conditional test gates per module
+2. Runs unit tests
 3. Verifies POM version matches tag
 4. Verifies sibling dependency versions are valid releases
 5. Builds reactor, deploys only the target module

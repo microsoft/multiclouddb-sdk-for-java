@@ -2,11 +2,9 @@
 name: release
 description: >
   Manages releases for hyperscaledb-sdk-for-java modules. Validates release
-  readiness (POM versions, changelog entries, sibling dependency versions, tag
-  uniqueness), updates changelogs, creates and pushes per-module version tags
-  that trigger the automated release pipeline. Use when releasing modules,
-  preparing a release, validating release readiness, creating release tags,
-  or checking release status.
+  readiness, updates POM versions and changelogs, creates a release PR against
+  upstream/main, and after merge creates and pushes per-module version tags
+  that trigger the automated release pipeline.
 allowed-tools: bash git gh read_file edit
 arguments:
   module:
@@ -37,14 +35,14 @@ argument-hints:
     - 0.1.0
     - 1.0.0
   date:
-    - "2026-03-30"
+    - "2026-04-02"
 ---
 
 # Release
 
-Orchestrates the release of a hyperscaledb-sdk-for-java module by validating
-readiness, updating the changelog, and creating/pushing a version tag to trigger
-the automated release pipeline.
+Orchestrates the release of hyperscaledb-sdk-for-java modules through a
+PR-based workflow: prepare a release branch with version bumps and changelog
+updates, merge via PR, then create tags to trigger the release pipeline.
 
 Core scripts are in `<THIS_SKILL_DIRECTORY>/scripts/` for deterministic behavior.
 Reference material is in `<THIS_SKILL_DIRECTORY>/references/release-process.md`.
@@ -54,10 +52,9 @@ file), not the repository root.
 
 ## Prerequisites
 
-- `git` configured with push access to the repository
-- `gh` CLI installed and authenticated (`gh auth status`)
+- `git` configured with push access to the fork (origin) and upstream repository
 - Working directory is the repository root
-- On the `main` branch with a clean working tree
+- On the `main` branch with a clean working tree, up to date with upstream/main
 
 ## Workflow
 
@@ -85,51 +82,76 @@ Run the validation script for the target module:
 If validation fails (non-zero exit), show all failures and stop. Provide the fix
 instructions from the output. Do NOT proceed to Phase 3 until all checks pass.
 
-### Phase 3: Update Changelog
+### Phase 3: Create Release Branch and PR
 
-Edit the module's changelog to prepare for release:
+Create a feature branch on the fork with all release preparation changes:
 
-1. Read `<MODULE>/CHANGELOG.md`
-2. Find the `## [Unreleased]` header line
-3. Replace it with `## [<VERSION>] — <DATE>` (use the provided date or today)
-4. Insert a new `## [Unreleased]` section above the renamed section with an
-   empty line after it
-5. Show the diff to the user for review
-6. Commit with message: `chore(<MODULE>): prepare changelog for <VERSION> release`
-7. Push the commit to `main`:
+1. Create and switch to a new branch:
    ```bash
-   git push origin main
+   git checkout -b release/<VERSION>
    ```
 
-**Important:** Wait for user confirmation before pushing. The commit must be on
-`main` before the tag is created so the tagged commit includes the updated
-changelog.
+2. **Update POM versions** — If the version in root `pom.xml` properties differs
+   from the target release version, update the relevant `<module.version>`
+   property in root `pom.xml`. The module POMs inherit via `${property}`.
 
-### Phase 4: Create and Push Tag
+3. **Update changelogs** — For each module being released:
+   a. Read `<MODULE>/CHANGELOG.md`
+   b. Find the `## [Unreleased]` header line
+   c. Replace it with `## [<VERSION>] — <DATE>` (use the provided date or today)
+   d. Insert a new `## [Unreleased]` section above the renamed section with an
+      empty line after it
 
-After the changelog commit is pushed, create the release tag:
+4. **Commit** all changes with message:
+   `release: prepare <VERSION> — update POM versions and changelogs`
 
-```bash
-<THIS_SKILL_DIRECTORY>/scripts/create-release-tag.sh --module <MODULE> --version <VERSION>
-```
+5. **Push** the branch to origin (fork):
+   ```bash
+   git push origin release/<VERSION>
+   ```
 
-**Important:** Ask for explicit confirmation before running this step. Pushing the
-tag immediately triggers the release pipeline.
+6. **Generate PR description** and copy to clipboard. The user will create the
+   PR manually against `upstream/main`.
+
+7. **Wait for PR merge** — Do NOT proceed to Phase 4 until the user confirms
+   the PR has been merged. The release tags must point to a commit on
+   upstream/main that includes the version and changelog updates.
+
+### Phase 4: Create and Push Tags
+
+After the release PR is merged into upstream/main:
+
+1. Switch to main and sync:
+   ```bash
+   git checkout main && git fetch upstream && git rebase upstream/main
+   ```
+
+2. Create and push tags **one at a time** for each module being released.
+   Push to upstream, not origin:
+   ```bash
+   <THIS_SKILL_DIRECTORY>/scripts/create-release-tag.sh --module <MODULE> --version <VERSION>
+   ```
+   Or manually:
+   ```bash
+   git tag -a "<MODULE>-v<VERSION>" -m "Release <MODULE> v<VERSION>"
+   git push upstream "<MODULE>-v<VERSION>"
+   ```
+
+   **Critical:** Push each tag with a separate `git push` command. Pushing
+   multiple tags in a single command silently fails to trigger GitHub Actions.
+
+3. **Wait** for the workflow run to appear in the Actions tab before pushing
+   the next tag.
 
 ### Phase 5: Monitor and Report
 
-After the tag is pushed:
+After each tag is pushed:
 
-1. Check the release workflow status:
-   ```bash
-   gh run list --workflow=release.yml --limit=3
-   ```
-
-2. Report:
+1. Report:
    - The tag name and commit SHA
-   - The GitHub Actions workflow URL and status
-   - Remind the user that the `production` environment requires manual approval
-     in the GitHub UI: **Actions → Release → (the run) → Review deployments → Approve**
+   - Link to the Actions workflow run
+   - Remind the user that the `production` environment requires manual approval:
+     **Actions → Release → (the run) → Review deployments → Approve**
 
 ## Multi-Module Release
 
@@ -137,7 +159,8 @@ When releasing multiple modules, enforce dependency order:
 
 1. Release `hyperscaledb-api` FIRST if it is in the release set
 2. Then release providers in any order (they are independent of each other)
-3. Run the full workflow (validate → changelog → tag) for each module sequentially
+3. All modules can share a single release branch and PR (Phase 3)
+4. In Phase 4, push tags one at a time in dependency order
 
 **Critical:** Push each tag individually with a separate `git push upstream <tag>`
 command. Pushing multiple tags in a single `git push` silently fails to trigger
@@ -145,7 +168,7 @@ GitHub Actions workflows. Wait for each workflow run to appear in the Actions ta
 before pushing the next tag.
 
 If the API version changed and providers depend on the new version, the provider
-POM properties must be updated and committed to `main` before releasing providers.
+POM properties must be updated in the same release PR before merging.
 
 ## Troubleshooting
 
