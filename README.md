@@ -276,12 +276,12 @@ This is fully transparent - you never see the translated SQL. For direct control
 
 | Module | Artifact | Description |
 |--------|----------|-------------|
-| **hyperscaledb-api** | `com.hyperscaledb:hyperscaledb-api` | Portable client interface, types, error model, factory, and SPI contracts. The only compile-time dependency your app needs. |
-| **hyperscaledb-provider-cosmos** | `com.hyperscaledb:hyperscaledb-provider-cosmos` | Azure Cosmos DB adapter (Java SDK v4) |
-| **hyperscaledb-provider-dynamo** | `com.hyperscaledb:hyperscaledb-provider-dynamo` | Amazon DynamoDB adapter (AWS SDK v2) |
-| **hyperscaledb-provider-spanner** | `com.hyperscaledb:hyperscaledb-provider-spanner` | Google Cloud Spanner adapter (Google Cloud Spanner 6.62.0) |
-| **hyperscaledb-conformance** | `com.hyperscaledb:hyperscaledb-conformance` | Cross-provider integration tests |
-| **hyperscaledb-samples** | `com.hyperscaledb:hyperscaledb-samples` | Sample apps: TODO web app + multi-tenant Risk Analysis Platform |
+| **hyperscaledb-api** | `com.microsoft.hyperscaledb:hyperscaledb-api` | Portable client interface, types, error model, factory, and SPI contracts. The only compile-time dependency your app needs. |
+| **hyperscaledb-provider-cosmos** | `com.microsoft.hyperscaledb:hyperscaledb-provider-cosmos` | Azure Cosmos DB adapter (Java SDK v4) |
+| **hyperscaledb-provider-dynamo** | `com.microsoft.hyperscaledb:hyperscaledb-provider-dynamo` | Amazon DynamoDB adapter (AWS SDK v2) |
+| **hyperscaledb-provider-spanner** | `com.microsoft.hyperscaledb:hyperscaledb-provider-spanner` | Google Cloud Spanner adapter (Google Cloud Spanner 6.62.0) |
+| **hyperscaledb-conformance** | `com.microsoft.hyperscaledb:hyperscaledb-conformance` | Cross-provider integration tests |
+| **hyperscaledb-samples** | `com.microsoft.hyperscaledb:hyperscaledb-samples` | Sample apps: TODO web app + multi-tenant Risk Analysis Platform |
 
 ### API Surface
 

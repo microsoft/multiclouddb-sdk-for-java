@@ -11,7 +11,7 @@ Maven (example coordinates; final artifact names may differ):
 
 ```xml
 <dependency>
-	<groupId>com.hyperscaledb</groupId>
+	<groupId>com.microsoft.hyperscaledb</groupId>
 	<artifactId>hyperscaledb-bundle</artifactId>
 	<version>0.1.0</version>
 </dependency>
@@ -21,7 +21,7 @@ Gradle:
 
 ```gradle
 dependencies {
-	implementation "com.hyperscaledb:hyperscaledb-bundle:0.1.0"
+	implementation "com.microsoft.hyperscaledb:hyperscaledb-bundle:0.1.0"
 }
 ```
 

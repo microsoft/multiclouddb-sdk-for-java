@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.hyperscaledb</groupId>
+    <groupId>com.microsoft.hyperscaledb</groupId>
     <artifactId>hyperscaledb-sdk-java-parent</artifactId>
     <version>1-SNAPSHOT</version>
     <packaging>pom</packaging>
@@ -60,23 +60,23 @@
         <dependencies>
             <!-- Internal modules (independently versioned) -->
             <dependency>
-                <groupId>com.hyperscaledb</groupId>
+                <groupId>com.microsoft.hyperscaledb</groupId>
                 <artifactId>hyperscaledb-api</artifactId>
                 <version>${hyperscaledb-api.version}</version>
             </dependency>
 
             <dependency>
-                <groupId>com.hyperscaledb</groupId>
+                <groupId>com.microsoft.hyperscaledb</groupId>
                 <artifactId>hyperscaledb-provider-cosmos</artifactId>
                 <version>${hyperscaledb-provider-cosmos.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.hyperscaledb</groupId>
+                <groupId>com.microsoft.hyperscaledb</groupId>
                 <artifactId>hyperscaledb-provider-dynamo</artifactId>
                 <version>${hyperscaledb-provider-dynamo.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.hyperscaledb</groupId>
+                <groupId>com.microsoft.hyperscaledb</groupId>
                 <artifactId>hyperscaledb-provider-spanner</artifactId>
                 <version>${hyperscaledb-provider-spanner.version}</version>
             </dependency>
