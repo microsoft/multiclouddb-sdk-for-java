@@ -2,9 +2,9 @@
 name: release
 description: >
   Manages releases for hyperscaledb-sdk-for-java modules. Validates release
-  readiness, updates POM versions and changelogs, creates a release PR against
-  upstream/main, and after merge creates and pushes per-module version tags
-  that trigger the automated release pipeline.
+  readiness, updates POM versions and changelogs, prepares a release branch
+  for a PR against upstream/main, and after merge creates and pushes
+  per-module version tags that trigger the automated release pipeline.
 allowed-tools: bash git gh read_file edit
 arguments:
   module:
@@ -54,7 +54,7 @@ file), not the repository root.
 
 - `git` configured with push access to the fork (origin) and upstream repository
 - Working directory is the repository root
-- On the `main` branch with a clean working tree, up to date with upstream/main
+- On the `main` branch with a clean working tree, up to date with origin/main
 
 ## Workflow
 
@@ -92,8 +92,10 @@ Create a feature branch on the fork with all release preparation changes:
    ```
 
 2. **Update POM versions** — If the version in root `pom.xml` properties differs
-   from the target release version, update the relevant `<module.version>`
-   property in root `pom.xml`. The module POMs inherit via `${property}`.
+   from the target release version, update the module-specific property in root
+   `pom.xml` using the `<module-name>.version` naming scheme (for example,
+   `<hyperscaledb-api.version>` or `<hyperscaledb-provider-cosmos.version>`).
+   The module POMs inherit via `${property}`.
 
 3. **Update changelogs** — For each module being released:
    a. Read `<MODULE>/CHANGELOG.md`

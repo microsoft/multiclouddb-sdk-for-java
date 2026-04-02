@@ -58,7 +58,7 @@ Tags that will NOT trigger the release pipeline:
    ```
 2. Update the property in root `pom.xml` (e.g., `hyperscaledb-api.version`)
 3. The module POM picks it up automatically via `${hyperscaledb-api.version}`
-4. Update changelogs: stamp `[Unreleased]` with version and date
+4. Update changelogs: stamp `[Unreleased]` with version and date, then add a new `## [Unreleased]` section with a blank line above the released section
 5. Commit and push to origin (fork)
 6. Create a PR against `upstream/main` — the release PR
 7. After PR merge, create and push release tags to upstream
