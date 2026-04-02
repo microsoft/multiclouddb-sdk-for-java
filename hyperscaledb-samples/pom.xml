@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.microsoft.hyperscaledb</groupId>
+        <groupId>com.hyperscaledb</groupId>
         <artifactId>hyperscaledb-sdk-java-parent</artifactId>
         <version>1-SNAPSHOT</version>
     </parent>
@@ -16,23 +16,23 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.microsoft.hyperscaledb</groupId>
+            <groupId>com.hyperscaledb</groupId>
             <artifactId>hyperscaledb-api</artifactId>
         </dependency>
 
         <!-- Provider modules (runtime scope for ServiceLoader) -->
         <dependency>
-            <groupId>com.microsoft.hyperscaledb</groupId>
+            <groupId>com.hyperscaledb</groupId>
             <artifactId>hyperscaledb-provider-cosmos</artifactId>
             <scope>runtime</scope>
         </dependency>
         <dependency>
-            <groupId>com.microsoft.hyperscaledb</groupId>
+            <groupId>com.hyperscaledb</groupId>
             <artifactId>hyperscaledb-provider-dynamo</artifactId>
             <scope>runtime</scope>
         </dependency>
         <dependency>
-            <groupId>com.microsoft.hyperscaledb</groupId>
+            <groupId>com.hyperscaledb</groupId>
             <artifactId>hyperscaledb-provider-spanner</artifactId>
             <scope>runtime</scope>
         </dependency>

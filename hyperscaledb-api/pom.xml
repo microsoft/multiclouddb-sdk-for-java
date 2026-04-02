@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.microsoft.hyperscaledb</groupId>
+        <groupId>com.hyperscaledb</groupId>
         <artifactId>hyperscaledb-sdk-java-parent</artifactId>
         <version>1-SNAPSHOT</version>
     </parent>

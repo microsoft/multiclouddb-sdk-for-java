@@ -122,7 +122,7 @@ jobs:
           MODULE="${{ needs.parse-tag.outputs.module }}"
           # Check for any non-release versions (SNAPSHOT or other non-semver) in sibling deps
           INVALID=$(mvn dependency:list -pl "$MODULE" -DincludeScope=compile -q -DoutputFile=/dev/stdout 2>/dev/null \
-            | grep "com.microsoft.hyperscaledb" | grep -v -E ':[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?:' || true)
+            | grep "com.hyperscaledb" | grep -v -E ':[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?:' || true)
 
           if [ -n "$INVALID" ]; then
             echo "::error::Module $MODULE has non-release dependencies on internal modules:"
