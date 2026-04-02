@@ -85,14 +85,14 @@ mvn clean install -DskipTests
 ```xml
 <!-- Portable API (compile scope) -->
 <dependency>
-    <groupId>com.hyperscaledb</groupId>
+    <groupId>com.microsoft.hyperscaledb</groupId>
     <artifactId>hyperscaledb-api</artifactId>
     <version>0.1.0-SNAPSHOT</version>
 </dependency>
 
 <!-- Pick one or more providers (runtime scope - swap without recompiling) -->
 <dependency>
-    <groupId>com.hyperscaledb</groupId>
+    <groupId>com.microsoft.hyperscaledb</groupId>
     <artifactId>hyperscaledb-provider-cosmos</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <scope>runtime</scope>
@@ -103,13 +103,13 @@ mvn clean install -DskipTests
      Include as many as your application needs: -->
 <!--
 <dependency>
-    <groupId>com.hyperscaledb</groupId>
+    <groupId>com.microsoft.hyperscaledb</groupId>
     <artifactId>hyperscaledb-provider-dynamo</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <scope>runtime</scope>
 </dependency>
 <dependency>
-    <groupId>com.hyperscaledb</groupId>
+    <groupId>com.microsoft.hyperscaledb</groupId>
     <artifactId>hyperscaledb-provider-spanner</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <scope>runtime</scope>
