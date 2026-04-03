@@ -11,6 +11,29 @@
 
     <name>Hyperscale DB SDK for Java</name>
     <description>Portable database SDK for Azure Cosmos DB, AWS DynamoDB, and Google Cloud Spanner</description>
+    <url>https://github.com/microsoft/hyperscaledb-sdk-for-java</url>
+
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/licenses/MIT</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <scm>
+        <url>https://github.com/microsoft/hyperscaledb-sdk-for-java</url>
+        <connection>scm:git:https://github.com/microsoft/hyperscaledb-sdk-for-java.git</connection>
+        <developerConnection>scm:git:git@github.com:microsoft/hyperscaledb-sdk-for-java.git</developerConnection>
+    </scm>
+
+    <developers>
+        <developer>
+            <id>microsoft</id>
+            <name>Microsoft Corporation</name>
+            <url>https://github.com/microsoft</url>
+        </developer>
+    </developers>
 
     <modules>
         <module>hyperscaledb-api</module>
