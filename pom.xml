@@ -24,7 +24,7 @@
     <scm>
         <url>https://github.com/microsoft/hyperscaledb-sdk-for-java</url>
         <connection>scm:git:https://github.com/microsoft/hyperscaledb-sdk-for-java.git</connection>
-        <developerConnection>scm:git:git@github.com:microsoft/hyperscaledb-sdk-for-java.git</developerConnection>
+        <developerConnection>scm:git:ssh://git@github.com/microsoft/hyperscaledb-sdk-for-java.git</developerConnection>
     </scm>
 
     <developers>
