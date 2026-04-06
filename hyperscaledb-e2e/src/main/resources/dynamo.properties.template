@@ -1,0 +1,34 @@
+# =============================================================================
+#  Hyperscale DB E2E Test — Amazon DynamoDB
+# =============================================================================
+#
+#  1. Copy this file:
+#       cp dynamo.properties.template dynamo.properties
+#  2. Replace placeholder values with your AWS credentials.
+#  3. Run:
+#       mvn -pl hyperscaledb-e2e exec:java -Dhyperscaledb.config=dynamo.properties
+#
+#  Where to find these values:
+#    AWS Console → IAM → Users → Security credentials → Create access key
+#    Required permissions: dynamodb:* on the target region
+#
+#  Alternatively, omit the auth.* lines entirely to use the AWS default
+#  credential chain (~/.aws/credentials, IAM role, env vars, AWS SSO, etc.)
+# =============================================================================
+
+hyperscaledb.provider=dynamo
+
+# --- Application ---------------------------------------------------------------
+# DynamoDB has no native database concept; the SDK maps
+# ResourceAddress(database, collection) to a physical table "database__collection"
+hyperscaledb.database=e2etest
+hyperscaledb.collection=products
+
+# --- Connection ----------------------------------------------------------------
+hyperscaledb.connection.region=us-east-1
+hyperscaledb.connection.requestTimeoutSeconds=30
+
+# --- Auth (static credentials) -------------------------------------------------
+# Leave these commented out to use the default AWS credential chain instead.
+# hyperscaledb.auth.accessKeyId=<your-access-key-id>
+# hyperscaledb.auth.secretAccessKey=<your-secret-access-key>

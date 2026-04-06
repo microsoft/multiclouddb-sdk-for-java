@@ -42,6 +42,7 @@
         <module>hyperscaledb-provider-spanner</module>
         <module>hyperscaledb-conformance</module>
         <module>hyperscaledb-samples</module>
+        <module>hyperscaledb-e2e</module>
     </modules>
 
     <properties>

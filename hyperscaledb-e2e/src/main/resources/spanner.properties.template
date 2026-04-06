@@ -1,0 +1,30 @@
+# =============================================================================
+#  Hyperscale DB E2E Test — Google Cloud Spanner
+# =============================================================================
+#
+#  1. Copy this file:
+#       cp spanner.properties.template spanner.properties
+#  2. Replace placeholder values with your GCP project details.
+#  3. Authenticate:
+#       gcloud auth application-default login
+#     Or set: GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
+#  4. Run:
+#       mvn -pl hyperscaledb-e2e exec:java -Dhyperscaledb.config=spanner.properties
+#
+#  Prerequisites:
+#    - A Spanner instance and database already created in your GCP project.
+#    - IAM role: roles/spanner.databaseUser (or spanner.admin for schema ops)
+# =============================================================================
+
+hyperscaledb.provider=spanner
+
+# --- Application ---------------------------------------------------------------
+hyperscaledb.database=e2etest
+hyperscaledb.collection=products
+
+# --- Google Cloud Spanner ------------------------------------------------------
+hyperscaledb.connection.projectId=<your-gcp-project-id>
+hyperscaledb.connection.instanceId=<your-spanner-instance-id>
+hyperscaledb.connection.databaseId=<your-spanner-database-id>
+
+# Auth uses Application Default Credentials automatically — no key property needed.
