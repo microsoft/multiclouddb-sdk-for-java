@@ -51,10 +51,10 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- Publishable module versions (independent release cadence) -->
-        <hyperscaledb-api.version>0.1.0-beta.1</hyperscaledb-api.version>
-        <hyperscaledb-provider-cosmos.version>0.1.0-beta.1</hyperscaledb-provider-cosmos.version>
-        <hyperscaledb-provider-dynamo.version>0.1.0-beta.1</hyperscaledb-provider-dynamo.version>
-        <hyperscaledb-provider-spanner.version>0.1.0-beta.1</hyperscaledb-provider-spanner.version>
+        <hyperscaledb-api.version>0.1.0-beta.2</hyperscaledb-api.version>
+        <hyperscaledb-provider-cosmos.version>0.1.0-beta.2</hyperscaledb-provider-cosmos.version>
+        <hyperscaledb-provider-dynamo.version>0.1.0-beta.2</hyperscaledb-provider-dynamo.version>
+        <hyperscaledb-provider-spanner.version>0.1.0-beta.2</hyperscaledb-provider-spanner.version>
 
         <!-- Dependency versions -->
         <jackson.version>2.18.6</jackson.version>
