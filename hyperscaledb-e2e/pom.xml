@@ -55,6 +55,7 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
+            <scope>compile</scope>
         </dependency>
 
         <!-- Bridge commons-logging (used by AWS / Cosmos SDKs) to SLF4J -->
@@ -70,9 +71,12 @@
             <!--
                 Switch providers by passing -Dhyperscaledb.config=<file>:
 
-                  mvn -pl hyperscaledb-e2e exec:java                                          (Cosmos DB — default)
-                  mvn -pl hyperscaledb-e2e exec:java -Dhyperscaledb.config=dynamo.properties
-                  mvn -pl hyperscaledb-e2e exec:java -Dhyperscaledb.config=spanner.properties
+                  mvn -pl hyperscaledb-e2e process-resources exec:java                                          (Cosmos DB — default)
+                  mvn -pl hyperscaledb-e2e process-resources exec:java -Dhyperscaledb.config=dynamo.properties
+                  mvn -pl hyperscaledb-e2e process-resources exec:java -Dhyperscaledb.config=spanner.properties
+
+                Including process-resources ensures *.properties files are copied
+                to target/classes/ before the app runs.
             -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>

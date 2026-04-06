@@ -37,7 +37,9 @@ Then open the copied file and replace the `<placeholder>` values.
 
 ## Running the tests
 
-All commands are run from the **repo root**.
+All commands are run from the **repo root**. The `process-resources` phase
+ensures your local `*.properties` files are copied to `target/classes/` before
+the app starts.
 
 ### Azure Cosmos DB
 
@@ -50,9 +52,9 @@ All commands are run from the **repo root**.
 
 2. Run:
    ```bash
-   mvn -pl hyperscaledb-e2e exec:java
+   mvn -pl hyperscaledb-e2e process-resources exec:java
    # or explicitly:
-   mvn -pl hyperscaledb-e2e exec:java -Dhyperscaledb.config=cosmos.properties
+   mvn -pl hyperscaledb-e2e process-resources exec:java -Dhyperscaledb.config=cosmos.properties
    ```
 
 ### Amazon DynamoDB
@@ -67,7 +69,7 @@ All commands are run from the **repo root**.
 
 2. Run:
    ```bash
-   mvn -pl hyperscaledb-e2e exec:java -Dhyperscaledb.config=dynamo.properties
+   mvn -pl hyperscaledb-e2e process-resources exec:java -Dhyperscaledb.config=dynamo.properties
    ```
 
 ### Google Cloud Spanner
@@ -86,7 +88,7 @@ All commands are run from the **repo root**.
 
 3. Run:
    ```bash
-   mvn -pl hyperscaledb-e2e exec:java -Dhyperscaledb.config=spanner.properties
+   mvn -pl hyperscaledb-e2e process-resources exec:java -Dhyperscaledb.config=spanner.properties
    ```
 
 ---
@@ -126,7 +128,7 @@ You can also override individual properties at the command line without editing
 the file:
 
 ```bash
-mvn -pl hyperscaledb-e2e exec:java \
+mvn -pl hyperscaledb-e2e process-resources exec:java \
   -Dhyperscaledb.config=cosmos.properties \
   -Dhyperscaledb.connection.endpoint=https://myaccount.documents.azure.com:443 \
   -Dhyperscaledb.connection.key=<key>
