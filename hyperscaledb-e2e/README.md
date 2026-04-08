@@ -156,5 +156,6 @@ hyperscaledb-e2e/
         └── logback.xml                  ← Logging configuration
 ```
 
-> ⚠️ **Never commit credentials** — `*.properties` is in `.gitignore`. Only the
-> `*.properties.template` files (with placeholder values) are version-controlled.
+> ⚠️ **Never commit credentials** — `src/main/resources/*.properties` is broadly
+> git-ignored. Only `*.properties.template` files (with placeholder values) are
+> version-controlled. Any new `*.properties` file you add is automatically excluded.

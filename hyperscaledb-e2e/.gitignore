@@ -1,4 +1,2 @@
-# Credentials — never commit these
-src/main/resources/cosmos.properties
-src/main/resources/dynamo.properties
-src/main/resources/spanner.properties
+# Credentials — never commit these (templates are *.properties.template and are tracked)
+src/main/resources/*.properties

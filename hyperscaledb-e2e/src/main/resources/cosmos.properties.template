@@ -6,8 +6,8 @@
 #       cp cosmos.properties.template cosmos.properties
 #  2. Replace placeholder values with your Azure Cosmos DB account details.
 #  3. Run:
-#       mvn -pl hyperscaledb-e2e exec:java
-#       mvn -pl hyperscaledb-e2e exec:java -Dhyperscaledb.config=cosmos.properties
+#       mvn -pl hyperscaledb-e2e process-resources exec:java
+#       mvn -pl hyperscaledb-e2e process-resources exec:java -Dhyperscaledb.config=cosmos.properties
 #
 #  Where to find these values:
 #    Azure Portal → Cosmos DB account → Keys

@@ -46,7 +46,7 @@ public final class ConfigLoader {
     }
 
     /** Load config using the given default file name (classpath resource). */
-    public static AppConfig load(String defaultConfigFile) {
+    public static AppConfig load(String defaultConfigFile) throws IOException {
         String configFile = System.getProperty("hyperscaledb.config",
                 defaultConfigFile != null ? defaultConfigFile : "cosmos.properties");
 
@@ -87,30 +87,28 @@ public final class ConfigLoader {
 
     /**
      * Loads a properties file. Tries absolute/relative file path first,
-     * then falls back to classpath resource.
+     * then falls back to classpath resource. Throws if the file cannot be found
+     * or read and no system-property overrides are present.
      */
-    private static Properties loadProperties(String name) {
+    private static Properties loadProperties(String name) throws IOException {
         Properties props = new Properties();
         Path filePath = Path.of(name);
-        try {
-            if (Files.exists(filePath)) {
-                try (InputStream is = new FileInputStream(filePath.toFile())) {
-                    props.load(is);
-                    System.out.println("[config] Loaded from file: " + filePath.toAbsolutePath());
-                }
-            } else {
-                try (InputStream is = ConfigLoader.class.getClassLoader().getResourceAsStream(name)) {
-                    if (is != null) {
-                        props.load(is);
-                        System.out.println("[config] Loaded from classpath: " + name);
-                    } else {
-                        System.out.println("[config] File not found: " + name
-                                + " — relying on system properties only");
-                    }
-                }
+        if (Files.exists(filePath)) {
+            try (InputStream is = new FileInputStream(filePath.toFile())) {
+                props.load(is);
+                System.out.println("[config] Loaded from file: " + filePath.toAbsolutePath());
             }
-        } catch (IOException e) {
-            System.err.println("[config] Failed to read " + name + ": " + e.getMessage());
+        } else {
+            InputStream is = ConfigLoader.class.getClassLoader().getResourceAsStream(name);
+            if (is == null) {
+                throw new IllegalArgumentException(
+                        "[config] Config file not found: '" + name + "'. " +
+                        "Copy the appropriate *.properties.template to *.properties and fill in your credentials.");
+            }
+            try (is) {
+                props.load(is);
+                System.out.println("[config] Loaded from classpath: " + name);
+            }
         }
         return props;
     }

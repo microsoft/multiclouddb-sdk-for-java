@@ -9,7 +9,7 @@
 #       gcloud auth application-default login
 #     Or set: GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
 #  4. Run:
-#       mvn -pl hyperscaledb-e2e exec:java -Dhyperscaledb.config=spanner.properties
+#       mvn -pl hyperscaledb-e2e process-resources exec:java -Dhyperscaledb.config=spanner.properties
 #
 #  Prerequisites:
 #    - A Spanner instance and database already created in your GCP project.

@@ -20,9 +20,9 @@ import java.util.Map;
  * <p>Runs the same CRUD + query calls against whichever provider is configured
  * in the active properties file. Switch providers without changing any code:
  * <pre>
- *   mvn -pl hyperscaledb-e2e exec:java                                          # Cosmos DB (default)
- *   mvn -pl hyperscaledb-e2e exec:java -Dhyperscaledb.config=dynamo.properties
- *   mvn -pl hyperscaledb-e2e exec:java -Dhyperscaledb.config=spanner.properties
+ *   mvn -pl hyperscaledb-e2e process-resources exec:java                                          # Cosmos DB (default)
+ *   mvn -pl hyperscaledb-e2e process-resources exec:java -Dhyperscaledb.config=dynamo.properties
+ *   mvn -pl hyperscaledb-e2e process-resources exec:java -Dhyperscaledb.config=spanner.properties
  * </pre>
  *
  * <p>Copy and fill in the appropriate {@code *.properties} file under
@@ -185,15 +185,36 @@ public class Main {
             System.out.printf("  client.query(address, expression=\"%s\", params=%s)%n",
                     request.expression(), request.parameters());
         } else {
-            System.out.printf("  client.query(address, maxPageSize=%d)%n",
-                    request.maxPageSize());
+            System.out.printf("  client.query(address, maxPageSize=%s)%n",
+                    request.maxPageSize() != null ? request.maxPageSize() : "(default)");
         }
-        QueryPage page = client.query(address, request);
-        System.out.printf("    → %d item(s) returned%s%n",
-                page.items().size(),
-                page.continuationToken() != null ? "  [more pages available]" : "");
-        for (var item : page.items()) {
-            System.out.println("      • " + item);
+
+        QueryRequest currentRequest = request;
+        int pageNumber = 1;
+        int totalItems = 0;
+
+        while (true) {
+            QueryPage page = client.query(address, currentRequest);
+            totalItems += page.items().size();
+
+            System.out.printf("    → page %d: %d item(s) returned%s%n",
+                    pageNumber,
+                    page.items().size(),
+                    page.continuationToken() != null ? "  [more pages available]" : "");
+            for (var item : page.items()) {
+                System.out.println("      • " + item);
+            }
+
+            if (page.continuationToken() == null) {
+                break;
+            }
+
+            currentRequest = QueryRequest.builder()
+                    .continuationToken(page.continuationToken())
+                    .build();
+            pageNumber++;
         }
+
+        System.out.printf("    → total: %d item(s) across %d page(s)%n", totalItems, pageNumber);
     }
 }

@@ -6,7 +6,7 @@
 #       cp dynamo.properties.template dynamo.properties
 #  2. Replace placeholder values with your AWS credentials.
 #  3. Run:
-#       mvn -pl hyperscaledb-e2e exec:java -Dhyperscaledb.config=dynamo.properties
+#       mvn -pl hyperscaledb-e2e process-resources exec:java -Dhyperscaledb.config=dynamo.properties
 #
 #  Where to find these values:
 #    AWS Console → IAM → Users → Security credentials → Create access key
