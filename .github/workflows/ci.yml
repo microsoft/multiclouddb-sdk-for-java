@@ -10,6 +10,7 @@ jobs:
   build:
     name: Build, Unit Tests & Artifacts
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -77,7 +78,7 @@ jobs:
   emulator-cosmos:
     name: Cosmos DB Emulator Tests
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -184,7 +185,7 @@ jobs:
         shell: bash
         run: |
           mvn verify -Pemulator-cosmos -pl hyperscaledb-conformance -am \
-            -Djunit.jupiter.execution.timeout.default=120s
+            -Djunit.jupiter.execution.timeout.default=20s
 
       - name: Upload test reports
         if: always()
@@ -197,6 +198,7 @@ jobs:
   emulator-dynamo:
     name: DynamoDB Local Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -239,7 +241,9 @@ jobs:
           echo "DynamoDB Local is ready"
 
       - name: Run DynamoDB integration tests
-        run: mvn verify -Pemulator-dynamo -pl hyperscaledb-conformance -am
+        run: |
+          mvn verify -Pemulator-dynamo -pl hyperscaledb-conformance -am \
+            -Djunit.jupiter.execution.timeout.default=20s
 
       - name: Stop DynamoDB Local
         if: always()
