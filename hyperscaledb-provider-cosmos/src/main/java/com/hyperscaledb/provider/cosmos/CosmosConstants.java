@@ -146,11 +146,19 @@ public final class CosmosConstants {
     public static final long DIAG_THRESHOLD_QUERY_ERROR_MS = 1000L;
 
     /**
-     * Maximum RU charge for a single point-read before a WARN is emitted.
-     * A well-partitioned point-read should cost ~1 RU; higher charges suggest
-     * large document size or misconfigured partition key.
+     * Maximum RU charge for a single point-read/write before a WARN is emitted.
+     *
+     * <p>Typical RU costs for a small document (~300 bytes, default indexing):
+     * <ul>
+     *   <li>Point-read: ~1 RU</li>
+     *   <li>Create (upsert, new): ~14–15 RU</li>
+     *   <li>Replace (upsert, existing): ~22–25 RU (read + write + index rebuild)</li>
+     * </ul>
+     * Set to 30 RU to allow normal create and replace operations through while
+     * still flagging genuinely expensive writes caused by large documents or
+     * overly broad indexing policies.
      */
-    public static final double DIAG_THRESHOLD_POINT_RU = 10.0;
+    public static final double DIAG_THRESHOLD_POINT_RU = 30.0;
 
     /**
      * Maximum RU charge for a single query page before a WARN is emitted.

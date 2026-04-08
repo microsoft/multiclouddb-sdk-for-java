@@ -78,13 +78,16 @@ public class Main {
         System.out.println();
 
         // ── SDK warm-up ───────────────────────────────────────────────
-        // Trigger a no-op query so the SDK caches container metadata and
-        // partition key ranges before the timed test operations begin.
-        // Without this, the first upsert/read incurs ~80ms of metadata
-        // lookup overhead and fires cosmos.slow WARN logs.
+        // Prime both the read-path and write-path metadata caches before the
+        // timed test operations begin. A query alone only warms the read path;
+        // the first real upsert would still incur a write-path metadata lookup
+        // (~20–80ms) and fire cosmos.slow WARN logs.
         System.out.println("── SDK warm-up ────────────────────────────────────────────────");
         client.query(address, QueryRequest.builder().maxPageSize(1).build());
-        System.out.println("  Metadata cached.");
+        HyperscaleDbKey warmupKey = HyperscaleDbKey.of("__warmup__", "__warmup__");
+        client.upsert(address, warmupKey, Map.of("id", "__warmup__"));
+        client.delete(address, warmupKey);
+        System.out.println("  Read and write metadata cached.");
         System.out.println();
 
         // ── CREATE ────────────────────────────────────────────────────
