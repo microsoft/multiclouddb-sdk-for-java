@@ -78,7 +78,7 @@ jobs:
   emulator-cosmos:
     name: Cosmos DB Emulator Tests
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -94,8 +94,46 @@ jobs:
         run: |
           Write-Host "Launching Azure Cosmos DB Emulator"
           Import-Module "$env:ProgramFiles\Azure Cosmos DB Emulator\PSModules\Microsoft.Azure.CosmosDB.Emulator"
-          Start-CosmosDbEmulator -NoUI -Key "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw=="
+
+          Start-CosmosDbEmulator -NoUI `
+            -Timeout 600 `
+            -Key "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw=="
+
+          # Fast-fail if the emulator process didn't even launch
+          Start-Sleep -Seconds 10
+          if (-not (Get-Process -Name "CosmosDB.Emulator" -ErrorAction SilentlyContinue)) {
+            Write-Error "Emulator process not found - installation may be broken"
+            exit 1
+          }
+
+          # Readiness probe: wait until the HTTPS endpoint responds
+          $deadline = (Get-Date).AddMinutes(5)
+          do {
+            try {
+              Invoke-RestMethod -Uri "https://localhost:8081/_explorer/emulator.pem" `
+                -SkipCertificateCheck -TimeoutSec 5 | Out-Null
+              Write-Host "Cosmos DB Emulator endpoint is responding"
+              break
+            } catch {
+              Write-Host "Emulator not ready yet; sleeping 5s..."
+              Start-Sleep -Seconds 5
+            }
+          } while ((Get-Date) -lt $deadline)
+
+          if ((Get-Date) -ge $deadline) {
+            Write-Error "Cosmos DB Emulator did not become ready in time"
+            exit 1
+          }
+
           Write-Host "Cosmos DB Emulator is running"
+
+      - name: Cosmos emulator diagnostics (on failure)
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-Process | Where-Object { $_.ProcessName -match "Cosmos|DocumentDB" } | Format-Table -AutoSize
+          Get-Service | Where-Object { $_.Name -match "Cosmos|DocumentDB" } | Format-Table -AutoSize
+          Test-NetConnection localhost -Port 8081 | Format-List
 
       - name: Import Cosmos DB Emulator certificate into JDK truststore
         shell: pwsh
