@@ -18,6 +18,7 @@ import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
+import com.multiclouddb.api.SdkUserAgent;
 import com.multiclouddb.api.query.TranslatedQuery;
 import com.multiclouddb.spi.MulticloudDbProviderClient;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -26,6 +27,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
+import software.amazon.awssdk.core.client.config.SdkAdvancedClientOption;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClientBuilder;
@@ -106,7 +109,12 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
         String endpoint = config.connection().get(DynamoConstants.CONFIG_ENDPOINT);
 
         DynamoDbClientBuilder builder = DynamoDbClient.builder()
-                .region(Region.of(region));
+                .region(Region.of(region))
+                .overrideConfiguration(
+                        ClientOverrideConfiguration.builder()
+                                .putAdvancedOption(SdkAdvancedClientOption.USER_AGENT_SUFFIX,
+                                        SdkUserAgent.userAgent(config))
+                                .build());
 
         // Custom endpoint for DynamoDB Local
         if (endpoint != null && !endpoint.isBlank()) {

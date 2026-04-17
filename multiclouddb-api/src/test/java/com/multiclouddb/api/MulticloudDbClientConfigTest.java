@@ -41,4 +41,23 @@ class MulticloudDbClientConfigTest {
         assertThrows(NullPointerException.class, () ->
                 MulticloudDbClientConfig.builder().build());
     }
+
+    @Test
+    void userAgentSuffixDefaultsToNull() {
+        MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+                .provider(ProviderId.COSMOS)
+                .build();
+
+        assertNull(config.userAgentSuffix());
+    }
+
+    @Test
+    void userAgentSuffixRoundTrip() {
+        MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+                .provider(ProviderId.COSMOS)
+                .userAgentSuffix("my-app/1.0")
+                .build();
+
+        assertEquals("my-app/1.0", config.userAgentSuffix());
+    }
 }

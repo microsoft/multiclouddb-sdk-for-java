@@ -18,6 +18,7 @@ import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
+import com.multiclouddb.api.SdkUserAgent;
 import com.multiclouddb.api.SortOrder;
 import com.multiclouddb.api.query.TranslatedQuery;
 import com.multiclouddb.spi.MulticloudDbProviderClient;
@@ -34,6 +35,7 @@ import com.google.cloud.spanner.Spanner;
 import com.google.cloud.spanner.SpannerException;
 import com.google.cloud.spanner.SpannerOptions;
 import com.google.cloud.spanner.Statement;
+import com.google.api.gax.rpc.FixedHeaderProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -97,7 +99,9 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
         }
 
         SpannerOptions.Builder builder = SpannerOptions.newBuilder()
-                .setProjectId(projectId);
+                .setProjectId(projectId)
+                .setHeaderProvider(FixedHeaderProvider.create(
+                        "user-agent", SdkUserAgent.userAgent(config)));
 
         if (emulatorHost != null && !emulatorHost.isBlank()) {
             builder.setEmulatorHost(emulatorHost);

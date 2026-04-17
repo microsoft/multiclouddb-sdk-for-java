@@ -33,12 +33,21 @@ public final class MulticloudDbClientConfig {
      */
     private final boolean nativeDiagnosticsEnabled;
 
+    /**
+     * Optional suffix appended to the SDK's user agent string.
+     * When set, outgoing requests include the user agent
+     * {@code azsdk-java-multiclouddb/<version> <userAgentSuffix>}.
+     * {@code null} when no custom suffix is configured.
+     */
+    private final String userAgentSuffix;
+
     private MulticloudDbClientConfig(Builder builder) {
         this.provider = Objects.requireNonNull(builder.provider, "provider is required");
         this.connection = builder.connection != null ? Map.copyOf(builder.connection) : Collections.emptyMap();
         this.auth = builder.auth != null ? Map.copyOf(builder.auth) : Collections.emptyMap();
         this.defaultOptions = builder.defaultOptions != null ? builder.defaultOptions : OperationOptions.defaults();
         this.nativeDiagnosticsEnabled = builder.nativeDiagnosticsEnabled;
+        this.userAgentSuffix = builder.userAgentSuffix;
     }
 
     /** The target provider. */
@@ -79,6 +88,16 @@ public final class MulticloudDbClientConfig {
         return nativeDiagnosticsEnabled;
     }
 
+    /**
+     * Optional customer-provided suffix appended to the SDK user agent string.
+     * Returns {@code null} when no custom suffix is configured.
+     *
+     * @see Builder#userAgentSuffix(String)
+     */
+    public String userAgentSuffix() {
+        return userAgentSuffix;
+    }
+
 
     public static Builder builder() {
         return new Builder();
@@ -96,6 +115,7 @@ public final class MulticloudDbClientConfig {
         private Map<String, String> auth;
         private OperationOptions defaultOptions;
         private boolean nativeDiagnosticsEnabled = false;
+        private String userAgentSuffix;
 
         /** Set the target provider. */
         public Builder provider(ProviderId provider) {
@@ -153,6 +173,21 @@ public final class MulticloudDbClientConfig {
          */
         public Builder nativeDiagnosticsEnabled(boolean enabled) {
             this.nativeDiagnosticsEnabled = enabled;
+            return this;
+        }
+
+        /**
+         * Set a custom suffix that is appended to the SDK's user agent string.
+         * <p>
+         * The resulting user agent sent with every request is:
+         * {@code azsdk-java-multiclouddb/<version> <suffix>}.
+         * Pass {@code null} to clear a previously set suffix.
+         *
+         * @param suffix the application-specific identifier to append
+         * @return this builder
+         */
+        public Builder userAgentSuffix(String suffix) {
+            this.userAgentSuffix = suffix;
             return this;
         }
 

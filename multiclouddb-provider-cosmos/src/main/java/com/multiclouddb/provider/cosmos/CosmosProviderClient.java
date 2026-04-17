@@ -9,6 +9,7 @@ import com.azure.cosmos.models.*;
 import com.azure.identity.DefaultAzureCredentialBuilder;
 import com.multiclouddb.api.*;
 import com.multiclouddb.api.OperationNames;
+import com.multiclouddb.api.SdkUserAgent;
 import com.multiclouddb.api.query.TranslatedQuery;
 import com.multiclouddb.spi.MulticloudDbProviderClient;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -93,6 +94,8 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         } else {
             builder.gatewayMode();
         }
+
+        builder.userAgentSuffix(SdkUserAgent.userAgent(config));
 
         this.cosmosClient = builder.buildClient();
         LOG.info("Cosmos client created for endpoint: {}", endpoint);

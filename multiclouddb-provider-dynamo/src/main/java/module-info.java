@@ -9,6 +9,7 @@ module com.multiclouddb.provider.dynamo {
 
     requires com.multiclouddb.api;
     requires software.amazon.awssdk.services.dynamodb;
+    requires software.amazon.awssdk.core;
     requires software.amazon.awssdk.auth;
     requires software.amazon.awssdk.regions;
     requires software.amazon.awssdk.awscore;
