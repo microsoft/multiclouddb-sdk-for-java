@@ -81,9 +81,13 @@ public final class SdkUserAgent {
     /**
      * Returns the SDK version loaded from the properties resource.
      *
+     * <p>Package-private: intended for internal use and same-package unit tests only.
+     * Not part of the public SPI contract — consumers should use {@link #userAgent(MulticloudDbClientConfig)}
+     * or {@link #userAgentBase()} instead.
+     *
      * @return the version string, or {@code "unknown"} if unavailable
      */
-    public static String sdkVersion() {
+    static String sdkVersion() {
         return SDK_VERSION;
     }
 }
