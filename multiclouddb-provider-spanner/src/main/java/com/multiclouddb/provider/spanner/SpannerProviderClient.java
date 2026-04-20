@@ -18,7 +18,7 @@ import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
-import com.multiclouddb.api.SdkUserAgent;
+import com.multiclouddb.spi.SdkUserAgent;
 import com.multiclouddb.api.SortOrder;
 import com.multiclouddb.api.query.TranslatedQuery;
 import com.multiclouddb.spi.MulticloudDbProviderClient;

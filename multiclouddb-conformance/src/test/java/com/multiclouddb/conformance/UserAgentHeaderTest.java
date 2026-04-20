@@ -9,7 +9,7 @@ import com.multiclouddb.api.MulticloudDbClientFactory;
 import com.multiclouddb.api.MulticloudDbKey;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.ResourceAddress;
-import com.multiclouddb.api.SdkUserAgent;
+import com.multiclouddb.spi.SdkUserAgent;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

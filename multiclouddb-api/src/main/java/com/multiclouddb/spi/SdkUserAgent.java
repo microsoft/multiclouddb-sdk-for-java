@@ -1,8 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package com.multiclouddb.api;
+package com.multiclouddb.spi;
 
+import com.multiclouddb.api.MulticloudDbClientConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

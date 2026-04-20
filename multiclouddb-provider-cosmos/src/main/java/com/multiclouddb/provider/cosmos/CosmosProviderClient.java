@@ -11,6 +11,7 @@ import com.multiclouddb.api.*;
 import com.multiclouddb.api.OperationNames;
 import com.multiclouddb.api.query.TranslatedQuery;
 import com.multiclouddb.spi.MulticloudDbProviderClient;
+import com.multiclouddb.spi.SdkUserAgent;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
