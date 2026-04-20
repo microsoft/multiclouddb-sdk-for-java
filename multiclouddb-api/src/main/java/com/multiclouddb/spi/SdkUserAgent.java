@@ -14,10 +14,10 @@ import java.util.Properties;
 /**
  * Builds the SDK user agent string sent with every request.
  * <p>
- * The base format is {@code azsdk-java-multiclouddb/<version>}. When the
+ * The base format is {@code multiclouddb-sdk-java/<version>}. When the
  * customer supplies a {@linkplain MulticloudDbClientConfig#userAgentSuffix()
  * user agent suffix}, it is appended with a space separator:
- * {@code azsdk-java-multiclouddb/<version> <suffix>}.
+ * {@code multiclouddb-sdk-java/<version> <suffix>}.
  * <p>
  * The SDK version is read at class-load time from
  * {@code multiclouddb-version.properties} on the classpath (populated via
@@ -29,7 +29,7 @@ public final class SdkUserAgent {
     private static final Logger LOG = LoggerFactory.getLogger(SdkUserAgent.class);
 
     private static final String VERSION_RESOURCE = "multiclouddb-version.properties";
-    private static final String SDK_NAME = "azsdk-java-multiclouddb";
+    private static final String SDK_NAME = "multiclouddb-sdk-java";
     private static final String UNKNOWN_VERSION = "unknown";
 
     private static final String SDK_VERSION;
@@ -62,9 +62,9 @@ public final class SdkUserAgent {
      * @return the full user agent string, never {@code null}
      */
     public static String userAgent(MulticloudDbClientConfig config) {
-        String base = SDK_NAME + "/" + SDK_VERSION;
-        if (config != null && config.userAgentSuffix() != null && !config.userAgentSuffix().isBlank()) {
-            return base + " " + config.userAgentSuffix().trim();
+        String base = userAgentBase();
+        if (config != null && config.userAgentSuffix() != null && !config.userAgentSuffix().isEmpty()) {
+            return base + " " + config.userAgentSuffix();
         }
         return base;
     }
@@ -72,7 +72,7 @@ public final class SdkUserAgent {
     /**
      * Returns the SDK user agent base string without any customer suffix.
      *
-     * @return the base user agent string, e.g. {@code "azsdk-java-multiclouddb/0.1.0-beta.2"}
+     * @return the base user agent string, e.g. {@code "multiclouddb-sdk-java/0.1.0-beta.2"}
      */
     public static String userAgentBase() {
         return SDK_NAME + "/" + SDK_VERSION;

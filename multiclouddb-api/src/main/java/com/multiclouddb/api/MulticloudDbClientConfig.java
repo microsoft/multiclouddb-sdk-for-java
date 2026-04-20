@@ -36,7 +36,7 @@ public final class MulticloudDbClientConfig {
     /**
      * Optional suffix appended to the SDK's user agent string.
      * When set, outgoing requests include the user agent
-     * {@code azsdk-java-multiclouddb/<version> <userAgentSuffix>}.
+     * {@code multiclouddb-sdk-java/<version> <userAgentSuffix>}.
      * {@code null} when no custom suffix is configured.
      */
     private final String userAgentSuffix;
@@ -183,8 +183,11 @@ public final class MulticloudDbClientConfig {
          * Set a custom suffix that is appended to the SDK's user agent string.
          * <p>
          * The resulting user agent sent with every request is:
-         * {@code azsdk-java-multiclouddb/<version> <suffix>}.
+         * {@code multiclouddb-sdk-java/<version> <suffix>}.
          * Pass {@code null} to clear a previously set suffix.
+         * <p>
+         * The suffix is trimmed of leading/trailing whitespace; if the trimmed
+         * value is empty it is treated as {@code null}.
          * <p>
          * The suffix must contain only printable ASCII characters (0x20-0x7E)
          * or HTAB (0x09), and must not exceed {@value #USER_AGENT_SUFFIX_MAX_LENGTH}
@@ -197,6 +200,12 @@ public final class MulticloudDbClientConfig {
          *         length or contains disallowed characters
          */
         public Builder userAgentSuffix(String suffix) {
+            if (suffix != null) {
+                suffix = suffix.trim();
+                if (suffix.isEmpty()) {
+                    suffix = null;
+                }
+            }
             if (suffix != null) {
                 if (suffix.length() > USER_AGENT_SUFFIX_MAX_LENGTH) {
                     throw new IllegalArgumentException(

@@ -13,8 +13,8 @@ class SdkUserAgentTest {
     @Test
     void baseFormatStartsWithSdkPrefix() {
         String base = SdkUserAgent.userAgentBase();
-        assertTrue(base.startsWith("azsdk-java-multiclouddb/"),
-                "Expected base UA to start with 'azsdk-java-multiclouddb/', got: " + base);
+        assertTrue(base.startsWith("multiclouddb-sdk-java/"),
+                "Expected base UA to start with 'multiclouddb-sdk-java/', got: " + base);
     }
 
     @Test
@@ -41,7 +41,7 @@ class SdkUserAgentTest {
                 .build();
 
         String ua = SdkUserAgent.userAgent(config);
-        assertTrue(ua.startsWith("azsdk-java-multiclouddb/"));
+        assertTrue(ua.startsWith("multiclouddb-sdk-java/"));
         assertTrue(ua.endsWith(" my-app/2.0"));
     }
 
