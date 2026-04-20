@@ -64,6 +64,11 @@ provider compatibility matrix and feature-flag reference, see
   - [Query Diagnostics](#query-diagnostics)
   - [Provider Field Availability](#provider-field-availability)
   - [Structured Logging](#structured-logging)
+- [Customizing the User-Agent](#customizing-the-user-agent)
+  - [Why Set a Suffix?](#why-set-a-suffix)
+  - [Configuring the Suffix](#configuring-the-suffix)
+  - [Resulting Header Format](#resulting-header-format)
+  - [Validation Rules](#validation-rules)
 
 ---
 
@@ -1380,3 +1385,88 @@ dynamo.error op=upsert table=mydb__users requestId=xyz awsErrorCode=ProvisionedT
 
 This format is grep-friendly and compatible with log aggregation systems
 (e.g., Azure Monitor, CloudWatch, Google Cloud Logging).
+
+---
+
+## Customizing the User-Agent
+
+All provider clients (Cosmos, DynamoDB, Spanner) automatically stamp outgoing
+requests with a canonical SDK user-agent token of the form:
+
+```
+multiclouddb-sdk-java/<sdk-version> (<jvm-version>; <os-name> <os-version>)
+```
+
+You can append your own identifier to this token via the configuration
+builder. This is useful for downstream identification of applications,
+frameworks, or tenants in provider-side telemetry.
+
+### Why Set a Suffix?
+
+- Distinguish traffic from different applications sharing the same SDK
+  version (e.g., `my-app/1.2.3`)
+- Identify a framework or library that wraps this SDK (e.g.,
+  `acme-data-layer/4.0`)
+- Tag traffic from a specific tenant or environment for support and
+  diagnostics
+
+### Configuring the Suffix
+
+```java
+MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+    .providerId(ProviderId.COSMOS)
+    .property("endpoint", "https://my-account.documents.azure.com:443/")
+    .authProperty("masterKey", "...")
+    .userAgentSuffix("my-app/1.2.3")
+    .build();
+
+MulticloudDbClient client = MulticloudDbClientFactory.create(config);
+```
+
+The suffix is optional. Pass `null` to clear a previously-set value when
+deriving a new builder from an existing config.
+
+### Resulting Header Format
+
+When a suffix is configured, providers append it to the canonical token,
+separated by a single space:
+
+```
+multiclouddb-sdk-java/0.1.0-beta.1 (17.0.5; Mac OS X 14.4) my-app/1.2.3
+```
+
+Provider-specific notes:
+
+- **Cosmos** — sent as the `User-Agent` HTTP header.
+- **DynamoDB** — contributed via `ClientOverrideConfiguration#putAdvancedOption`
+  with `SdkAdvancedClientOption.USER_AGENT_SUFFIX`. The AWS SDK appends this
+  to its own `aws-sdk-java/...` token.
+- **Spanner** — contributed via gax `FixedHeaderProvider` for the gRPC
+  `user-agent` metadata. The gax channel preserves and merges with the
+  underlying gRPC default user-agent.
+
+### Validation Rules
+
+The setter enforces strict rules to protect the user-agent header from
+injection of CR/LF or other control characters that could break framing in
+HTTP/2 or HTTP/1.1 transports:
+
+| Rule              | Limit                                              |
+| ----------------- | -------------------------------------------------- |
+| Maximum length    | 256 characters                                     |
+| Allowed code points | Printable US-ASCII (0x20–0x7E) + horizontal tab (0x09) |
+| Disallowed        | CR (0x0D), LF (0x0A), NUL, other control chars     |
+
+Violations throw `IllegalArgumentException` from the builder setter, before
+any client is constructed:
+
+```java
+// Throws IllegalArgumentException — contains newline
+config.userAgentSuffix("my-app\nv1.0");
+
+// Throws IllegalArgumentException — too long
+config.userAgentSuffix("x".repeat(257));
+```
+
+If a `null` value is passed, the suffix is cleared and providers send only
+the canonical SDK token.

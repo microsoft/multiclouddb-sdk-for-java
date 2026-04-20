@@ -7,6 +7,13 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- The Cosmos client now stamps the outgoing `User-Agent` header with the
+  canonical `multiclouddb-sdk-java/<version>` token. When
+  `MulticloudDbClientConfig.Builder.userAgentSuffix(String)` is configured,
+  the suffix is appended to the header.
+
 ## [0.1.0-beta.1] — 2026-04-03
 
 Initial public beta of the Azure Cosmos DB provider.
