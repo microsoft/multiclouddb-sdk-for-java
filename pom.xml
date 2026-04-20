@@ -71,9 +71,6 @@
         <junit-jupiter.version>5.10.2</junit-jupiter.version>
         <mockito.version>5.11.0</mockito.version>
         <logback.version>1.5.25</logback.version>
-        <!-- Transitive Netty version override: fixes CVE-2025-67735 (CRLF Injection
-             in HttpRequestEncoder) pulled in by the AWS SDK. Minimum safe: 4.2.8. -->
-        <netty.version>4.2.8.Final</netty.version>
 
         <!-- Test tag filtering: set via profiles or -D on command line -->
         <test.includedGroups/>
@@ -146,18 +143,6 @@
                 <groupId>software.amazon.awssdk</groupId>
                 <artifactId>dynamodb</artifactId>
                 <version>${aws-sdk.version}</version>
-            </dependency>
-
-            <!-- Netty BOM: pins ALL transitive Netty modules to the same version.
-                 Fixes CVE-2025-67735 (CRLF Injection in HttpRequestEncoder) and
-                 prevents split-version ClassNotFoundErrors (e.g. LeakPresenceDetector)
-                 when different SDKs pull in different Netty versions. -->
-            <dependency>
-                <groupId>io.netty</groupId>
-                <artifactId>netty-bom</artifactId>
-                <version>${netty.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
             </dependency>
 
             <!-- Google Cloud Spanner -->
