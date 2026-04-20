@@ -18,6 +18,7 @@ import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
+import com.multiclouddb.spi.SdkUserAgent;
 import com.multiclouddb.api.query.TranslatedQuery;
 import com.multiclouddb.spi.MulticloudDbProviderClient;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -26,6 +27,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
+import software.amazon.awssdk.core.client.config.SdkAdvancedClientOption;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClientBuilder;
@@ -105,8 +108,18 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
         String region   = config.connection().getOrDefault(DynamoConstants.CONFIG_REGION, DynamoConstants.REGION_DEFAULT);
         String endpoint = config.connection().get(DynamoConstants.CONFIG_ENDPOINT);
 
+        // NOTE: DynamoDbClientBuilder.overrideConfiguration(...) fully REPLACES any prior override
+        // configuration on the builder. When adding new overrides (retry policy, API call timeout,
+        // metric publishers, additional advanced options, etc.), append them to the same
+        // ClientOverrideConfiguration.builder() chain below rather than making a second
+        // .overrideConfiguration(...) call, which would clobber the user-agent suffix.
         DynamoDbClientBuilder builder = DynamoDbClient.builder()
-                .region(Region.of(region));
+                .region(Region.of(region))
+                .overrideConfiguration(
+                        ClientOverrideConfiguration.builder()
+                                .putAdvancedOption(SdkAdvancedClientOption.USER_AGENT_SUFFIX,
+                                        SdkUserAgent.userAgent(config))
+                                .build());
 
         // Custom endpoint for DynamoDB Local
         if (endpoint != null && !endpoint.isBlank()) {

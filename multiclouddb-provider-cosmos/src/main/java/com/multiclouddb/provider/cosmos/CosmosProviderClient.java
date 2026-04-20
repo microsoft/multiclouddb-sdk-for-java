@@ -11,6 +11,7 @@ import com.multiclouddb.api.*;
 import com.multiclouddb.api.OperationNames;
 import com.multiclouddb.api.query.TranslatedQuery;
 import com.multiclouddb.spi.MulticloudDbProviderClient;
+import com.multiclouddb.spi.SdkUserAgent;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -93,6 +94,8 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         } else {
             builder.gatewayMode();
         }
+
+        builder.userAgentSuffix(SdkUserAgent.userAgent(config));
 
         this.cosmosClient = builder.buildClient();
         LOG.info("Cosmos client created for endpoint: {}", endpoint);

@@ -33,12 +33,21 @@ public final class MulticloudDbClientConfig {
      */
     private final boolean nativeDiagnosticsEnabled;
 
+    /**
+     * Optional suffix appended to the SDK's user agent string.
+     * When set, outgoing requests include the user agent
+     * {@code multiclouddb-sdk-java/<version> <userAgentSuffix>}.
+     * {@code null} when no custom suffix is configured.
+     */
+    private final String userAgentSuffix;
+
     private MulticloudDbClientConfig(Builder builder) {
         this.provider = Objects.requireNonNull(builder.provider, "provider is required");
         this.connection = builder.connection != null ? Map.copyOf(builder.connection) : Collections.emptyMap();
         this.auth = builder.auth != null ? Map.copyOf(builder.auth) : Collections.emptyMap();
         this.defaultOptions = builder.defaultOptions != null ? builder.defaultOptions : OperationOptions.defaults();
         this.nativeDiagnosticsEnabled = builder.nativeDiagnosticsEnabled;
+        this.userAgentSuffix = builder.userAgentSuffix;
     }
 
     /** The target provider. */
@@ -79,6 +88,16 @@ public final class MulticloudDbClientConfig {
         return nativeDiagnosticsEnabled;
     }
 
+    /**
+     * Optional customer-provided suffix appended to the SDK user agent string.
+     * Returns {@code null} when no custom suffix is configured.
+     *
+     * @see Builder#userAgentSuffix(String)
+     */
+    public String userAgentSuffix() {
+        return userAgentSuffix;
+    }
+
 
     public static Builder builder() {
         return new Builder();
@@ -96,6 +115,7 @@ public final class MulticloudDbClientConfig {
         private Map<String, String> auth;
         private OperationOptions defaultOptions;
         private boolean nativeDiagnosticsEnabled = false;
+        private String userAgentSuffix;
 
         /** Set the target provider. */
         public Builder provider(ProviderId provider) {
@@ -153,6 +173,54 @@ public final class MulticloudDbClientConfig {
          */
         public Builder nativeDiagnosticsEnabled(boolean enabled) {
             this.nativeDiagnosticsEnabled = enabled;
+            return this;
+        }
+
+        /** Maximum allowed length for {@link #userAgentSuffix}. */
+        private static final int USER_AGENT_SUFFIX_MAX_LENGTH = 256;
+
+        /**
+         * Set a custom suffix that is appended to the SDK's user agent string.
+         * <p>
+         * The resulting user agent sent with every request is:
+         * {@code multiclouddb-sdk-java/<version> <suffix>}.
+         * Pass {@code null} to clear a previously set suffix.
+         * <p>
+         * The suffix is trimmed of leading/trailing whitespace; an empty
+         * (or whitespace-only) suffix is omitted from the resulting user agent.
+         * <p>
+         * The suffix must contain only printable ASCII characters (0x20-0x7E)
+         * or HTAB (0x09), and must not exceed {@value #USER_AGENT_SUFFIX_MAX_LENGTH}
+         * characters. Control characters such as CR, LF, and NUL are rejected to
+         * prevent HTTP header injection.
+         *
+         * @param suffix the application-specific identifier to append
+         * @return this builder
+         * @throws IllegalArgumentException if {@code suffix} exceeds the maximum
+         *         length or contains disallowed characters
+         */
+        public Builder userAgentSuffix(String suffix) {
+            if (suffix != null) {
+                suffix = suffix.trim();
+                if (suffix.length() > USER_AGENT_SUFFIX_MAX_LENGTH) {
+                    throw new IllegalArgumentException(
+                            "userAgentSuffix length must be <= " + USER_AGENT_SUFFIX_MAX_LENGTH
+                                    + " characters (was " + suffix.length() + ")");
+                }
+                for (int i = 0; i < suffix.length(); i++) {
+                    char c = suffix.charAt(i);
+                    if (c == '\t') {
+                        continue;
+                    }
+                    if (c < 0x20 || c > 0x7E) {
+                        throw new IllegalArgumentException(
+                                "userAgentSuffix contains invalid character at index " + i
+                                        + " (0x" + Integer.toHexString(c)
+                                        + "); only printable ASCII (0x20-0x7E) and HTAB are allowed");
+                    }
+                }
+            }
+            this.userAgentSuffix = suffix;
             return this;
         }
 

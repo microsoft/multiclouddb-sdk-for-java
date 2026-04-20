@@ -7,6 +7,15 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- The Spanner client now contributes the canonical
+  `multiclouddb-sdk-java/<version>` token to the outgoing gRPC `user-agent`
+  metadata via gax `FixedHeaderProvider`. The gax channel preserves the
+  underlying gRPC default user-agent and merges this token alongside it. When
+  `MulticloudDbClientConfig.Builder.userAgentSuffix(String)` is configured,
+  the suffix is appended to the token.
+
 ## [0.1.0-beta.1] — 2026-04-03
 
 Initial public beta of the Google Cloud Spanner provider.

@@ -7,6 +7,26 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- `MulticloudDbClientConfig.Builder.userAgentSuffix(String)` — optional
+  caller-supplied token appended to the SDK user-agent header sent by all
+  provider clients (Cosmos, DynamoDB, Spanner). Useful for downstream
+  identification of applications, frameworks, or tenants. Pass `null` to clear
+  a previously-set suffix.
+- `MulticloudDbClientConfig.userAgentSuffix()` — accessor returning an
+  `Optional<String>` of the configured suffix.
+- `com.multiclouddb.spi.SdkUserAgent` — SPI helper that builds the canonical
+  `multiclouddb-sdk-java/<version> (<jvm>; <os>)` token consumed by provider
+  adapters.
+
+### Validation
+
+- `userAgentSuffix(String)` rejects values longer than 256 characters and any
+  string containing characters outside printable US-ASCII (0x20–0x7E) plus
+  horizontal tab (0x09), throwing `IllegalArgumentException`. This protects
+  the user-agent header from injection of CR/LF or other control characters.
+
 ## [0.1.0-beta.1] — 2026-04-03
 
 Initial public beta of the portable API and SPI layer.
