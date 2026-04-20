@@ -37,15 +37,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * via gRPC (HTTP/2), which the JDK {@code HttpServer} does not support.
  * Verifying the Spanner {@code user-agent} gRPC metadata requires the Spanner
  * emulator or a gRPC-level interceptor and is not covered here.
+ * <p>
+ * <strong>Note on Cosmos DB:</strong> The Cosmos SDK forces HTTPS even when
+ * an {@code http://} endpoint is provided, so a plain JDK {@code HttpServer}
+ * cannot intercept its requests. Cosmos user-agent configuration is verified
+ * separately at the provider unit-test level — see
+ * {@code com.multiclouddb.provider.cosmos.CosmosUserAgentTest} — which
+ * intercepts {@code CosmosClientBuilder} construction and asserts the
+ * {@code userAgentSuffix} value directly without relying on SDK diagnostic
+ * output formatting.
  */
 @Tag("user-agent")
 class UserAgentHeaderTest {
 
     private static final String CUSTOMER_SUFFIX = "conformance-test-app";
-
-    /** Cosmos emulator master key — a valid Base64 string needed for HMAC auth header generation. */
-    private static final String COSMOS_DUMMY_KEY =
-            "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==";
 
     private HttpServer mockServer;
     private int port;
@@ -136,55 +141,8 @@ class UserAgentHeaderTest {
     }
 
     // ------------------------------------------------------------------
-    // Cosmos DB
+    // Cosmos DB — see CosmosUserAgentTest in multiclouddb-provider-cosmos
     // ------------------------------------------------------------------
-    //
-    // The Cosmos SDK forces HTTPS even when an http:// endpoint is provided,
-    // so a plain JDK HttpServer cannot intercept its requests. Instead, we
-    // verify the user agent from the SDK's diagnostics embedded in the error
-    // message when initialization fails against a non-Cosmos endpoint.
-    //
-
-    @Test
-    void cosmosClientIncludesSdkUserAgentInDiagnostics() {
-        MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
-                .provider(ProviderId.COSMOS)
-                .connection("endpoint", "https://localhost:" + port)
-                .connection("key", COSMOS_DUMMY_KEY)
-                .connection("connectionMode", "gateway")
-                .userAgentSuffix(CUSTOMER_SUFFIX)
-                .build();
-
-        String errorMessage = "";
-        try (MulticloudDbClient client = MulticloudDbClientFactory.create(config)) {
-            client.read(
-                    new ResourceAddress("testdb", "testcontainer"),
-                    MulticloudDbKey.of("pk1", "pk1"));
-        } catch (Exception e) {
-            // Cosmos SDK includes userAgent in diagnostics within the error message
-            errorMessage = extractFullMessage(e);
-        }
-
-        assertTrue(errorMessage.contains(SdkUserAgent.userAgentBase()),
-                "Cosmos diagnostics should contain SDK base '" + SdkUserAgent.userAgentBase()
-                        + "' in error message, but message was: "
-                        + errorMessage.substring(0, Math.min(300, errorMessage.length())) + "...");
-        assertTrue(errorMessage.contains(CUSTOMER_SUFFIX),
-                "Cosmos diagnostics should contain customer suffix '" + CUSTOMER_SUFFIX
-                        + "' in error message");
-    }
-
-    /** Walks the exception cause chain and concatenates all messages. */
-    private static String extractFullMessage(Throwable t) {
-        StringBuilder sb = new StringBuilder();
-        while (t != null) {
-            if (t.getMessage() != null) {
-                sb.append(t.getMessage()).append(" ");
-            }
-            t = t.getCause();
-        }
-        return sb.toString();
-    }
 
     // ------------------------------------------------------------------
     // Assertions
