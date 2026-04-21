@@ -5,9 +5,11 @@
 }
 
 .hero-banner img {
-    max-width: 100%;
+    max-width: 220px;
     height: auto;
     border-radius: 8px;
+    margin: 0 auto;
+    display: block;
 }
 
 .hero-buttons {
