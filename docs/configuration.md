@@ -25,16 +25,17 @@ Select a provider and supply its connection and auth properties.
     multiclouddb.connection.connectionMode=gateway
     ```
 
-=== "Azure Cloud"
+=== "Azure Cloud (key-based)"
 
     ```properties
+    # ⚠ Not recommended for production — use Entra ID (see next tab)
     multiclouddb.provider=cosmos
     multiclouddb.connection.endpoint=https://your-account.documents.azure.com:443/
     multiclouddb.connection.key=your-master-key
     multiclouddb.connection.connectionMode=direct
     ```
 
-=== "Azure Identity (Entra ID)"
+=== "Azure Identity (Entra ID) — Recommended"
 
     ```properties
     multiclouddb.provider=cosmos
@@ -52,10 +53,17 @@ Select a provider and supply its connection and auth properties.
 
 ### Authentication Modes
 
-- **Master key** — when `connection.key` is provided, uses shared-key authentication
-- **Azure Identity / Entra ID** — when no key is provided, uses `DefaultAzureCredential`
+!!! tip "Recommended: Use identity-based authentication"
+
+    Key-based / shared-key authentication is supported for local development
+    and emulator use. For production workloads, **always use identity-based auth**
+    (Entra ID for Cosmos DB, IAM roles for DynamoDB, GCP service accounts for Spanner).
+
+- **Azure Identity / Entra ID** (**recommended**) — when no key is provided, uses `DefaultAzureCredential`
   (supporting Managed Identity, Azure CLI, environment variables, and the full
   Azure credential chain)
+- **Master key** — when `connection.key` is provided, uses shared-key authentication.
+  Suitable for local emulator development only.
 
 ### Connection Modes
 
@@ -79,6 +87,7 @@ Select a provider and supply its connection and auth properties.
 === "AWS Cloud"
 
     ```properties
+    # ⚠ Static credentials shown for reference — use IAM roles in production
     multiclouddb.provider=dynamo
     # No endpoint — uses the AWS default endpoint for the region
     multiclouddb.connection.region=us-east-1

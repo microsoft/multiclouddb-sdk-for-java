@@ -34,13 +34,13 @@ switch providers by changing a single properties file, with zero code changes.
 
 ## Why Multicloud DB?
 
-| Problem | Multicloud DB Solution |
-|---------|------------------------|
-| **Vendor lock-in** — each cloud DB has its own SDK, data model, and query language | Single `MulticloudDbClient` interface with portable CRUD + query |
-| **Divergent query languages** — Cosmos SQL, PartiQL, GoogleSQL | **Portable query DSL** — write `status = @status AND priority > @min`, auto-translated per provider |
-| **Migration pain** — rewriting data-access code when switching providers | Change **one property** (`multiclouddb.provider=dynamo` → `cosmos`) |
-| **Feature uncertainty** — which features are portable vs. provider-specific? | Runtime `CapabilitySet` introspection and `PortabilityWarning` on non-portable use |
-| **Testing across providers** | Conformance test suite runs identical tests against every provider |
+| Challenge | How the SDK helps |
+|-----------|-------------------|
+| **Vendor lock-in** | Single `MulticloudDbClient` interface — portable CRUD + query |
+| **Divergent query languages** | Portable DSL auto-translated to Cosmos SQL, PartiQL, or GoogleSQL |
+| **Migration pain** | Switch providers by changing one property — zero code changes |
+| **Feature uncertainty** | Runtime `CapabilitySet` introspection with portability warnings |
+| **Cross-provider testing** | Conformance suite runs identical tests against every provider |
 
 ---
 
@@ -108,23 +108,27 @@ correlation IDs. SLF4J structured logging for production monitoring.
 
 ## Architecture
 
-```
-┌───────────────────────────────────────────────────┐
-│                 Your Application                  │
-│          (code against Multicloud DB API)         │
-└────────────────────────┬──────────────────────────┘
-                         │
-            ┌────────────▼─────────────┐
-            │    MulticloudDbClient    │   Portable contract
-            │     (multiclouddb-api)   │   CRUD · Query · Capabilities
-            └────────────┬─────────────┘
-                         │  ServiceLoader
-            ┌────────────┼───────────────┐
-            ▼            ▼               ▼
-       ┌─────────┐ ┌──────────┐ ┌───────────┐
-       │ Cosmos  │ │ DynamoDB │ │  Spanner  │
-       │ Provider│ │ Provider │ │  Provider │
-       └─────────┘ └──────────┘ └───────────┘
+```mermaid
+graph TD
+    APP["<b>Your Application</b><br/>code against Multicloud DB API"]
+    API["<b>MulticloudDbClient</b><br/>multiclouddb-api<br/><i>CRUD · Query · Capabilities</i>"]
+    SL(("ServiceLoader"))
+    COSMOS["<b>Cosmos DB</b><br/>Provider"]
+    DYNAMO["<b>DynamoDB</b><br/>Provider"]
+    SPANNER["<b>Spanner</b><br/>Provider"]
+
+    APP --> API
+    API --> SL
+    SL --> COSMOS
+    SL --> DYNAMO
+    SL --> SPANNER
+
+    style APP fill:#e8eaf6,stroke:#3949ab,stroke-width:2px,color:#1a237e
+    style API fill:#e8eaf6,stroke:#3949ab,stroke-width:2px,color:#1a237e
+    style SL fill:#fff,stroke:#666,stroke-width:1px,color:#333
+    style COSMOS fill:#e3f2fd,stroke:#0078d4,stroke-width:2px,color:#0d47a1
+    style DYNAMO fill:#fff3e0,stroke:#ff9900,stroke-width:2px,color:#e65100
+    style SPANNER fill:#e3f2fd,stroke:#4285f4,stroke-width:2px,color:#1565c0
 ```
 
 Providers are discovered at runtime via Java's `ServiceLoader` — no provider
@@ -166,6 +170,8 @@ MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
     .connection("endpoint", props.getProperty("multiclouddb.connection.endpoint"))
     .connection("key", props.getProperty("multiclouddb.connection.key"))
     .build();
+// ⚠ Key-based auth shown for emulator use — use identity-based auth in production.
+// See Configuration Reference for recommended auth patterns.
 
 MulticloudDbClient client = MulticloudDbClientFactory.create(config);
 

@@ -82,15 +82,16 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 // Configure — provider selected entirely by config, not code
 Properties props = new Properties();
-props.load(getClass().getResourceAsStream("/todo-app-cosmos.properties"));
+props.load(getClass().getResourceAsStream("/app.properties"));
 
-String providerName = props.getProperty("multiclouddb.provider");
-ProviderId provider = ProviderId.fromId(providerName);
+ProviderId provider = ProviderId.fromId(props.getProperty("multiclouddb.provider"));
 
 MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
         .provider(provider)
         .connection("endpoint", props.getProperty("multiclouddb.connection.endpoint"))
-        .connection("key", props.getProperty("multiclouddb.connection.key"))
+        // Auth properties (key, credentials, etc.) are loaded from the
+        // properties file. See Configuration Reference for recommended
+        // identity-based auth patterns for each provider.
         .build();
 
 // Create client via ServiceLoader discovery
@@ -177,9 +178,18 @@ When you need provider-specific query syntax, use `nativeExpression()`:
 
 Change **only** the properties file — no code changes required:
 
+!!! warning "Use identity-based authentication in production"
+
+    The examples below use **key-based auth for local emulators only**.
+    For production workloads, use identity-based authentication:
+    Azure Entra ID for Cosmos DB, IAM roles for DynamoDB, or
+    GCP service accounts for Spanner.
+    See the [Configuration Reference](configuration.md) for details.
+
 === "Cosmos DB"
 
     ```properties
+    # Local emulator only — do not use key-based auth in production
     multiclouddb.provider=cosmos
     multiclouddb.connection.endpoint=https://localhost:8081
     multiclouddb.connection.key=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==
@@ -188,6 +198,7 @@ Change **only** the properties file — no code changes required:
 === "DynamoDB"
 
     ```properties
+    # Local emulator only — do not use static credentials in production
     multiclouddb.provider=dynamo
     multiclouddb.connection.endpoint=http://localhost:8000
     multiclouddb.connection.region=us-east-1
