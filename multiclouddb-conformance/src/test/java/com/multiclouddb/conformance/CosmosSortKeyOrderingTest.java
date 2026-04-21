@@ -38,8 +38,7 @@ class CosmosSortKeyOrderingTest extends SortKeyOrderingConformanceTest {
     protected MulticloudDbClient createClient() {
         MulticloudDbClientConfig.Builder builder = MulticloudDbClientConfig.builder()
                 .provider(ProviderId.COSMOS)
-                .connection("endpoint", ENDPOINT)
-                .connection("connectionMode", "gateway");
+                .connection("endpoint", ENDPOINT);
         if (KEY != null && !KEY.isBlank()) {
             builder.connection("key", KEY);
         }
