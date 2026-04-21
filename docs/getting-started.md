@@ -62,6 +62,7 @@ runtime dependencies:
         <version>0.1.0-SNAPSHOT</version>
         <scope>runtime</scope>
     </dependency>
+    <!-- Spanner: source available, Maven artifact coming soon -->
     <dependency>
         <groupId>com.microsoft.multiclouddb</groupId>
         <artifactId>multiclouddb-provider-spanner</artifactId>

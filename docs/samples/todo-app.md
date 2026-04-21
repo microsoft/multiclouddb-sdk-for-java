@@ -34,7 +34,7 @@ graph TD
 |------|---------|-------|
 | JDK  | 17 LTS  | e.g., [Eclipse Adoptium](https://adoptium.net/) |
 | Maven | 3.9+   | Build tool |
-| Docker | 20+   | Required for Spanner Emulator |
+| Docker | 20+   | Required for Spanner Emulator (coming soon) |
 
 ---
 

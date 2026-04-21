@@ -112,6 +112,12 @@ Select a provider and supply its connection and auth properties.
 
 ## Google Cloud Spanner
 
+!!! info "Maven artifact coming soon"
+
+    The Spanner provider source code and conformance tests are included in
+    the repository, but Maven artifacts are not yet published. You can build
+    from source to use the Spanner provider today.
+
 === "Emulator"
 
     ```properties
