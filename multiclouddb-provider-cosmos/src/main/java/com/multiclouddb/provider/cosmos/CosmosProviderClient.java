@@ -606,6 +606,13 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
                 orderClause.append("c.").append(so.field()).append(" ").append(so.direction().name());
             }
             result = result + orderClause;
+        } else {
+            // DynamoDB Query implicitly returns items sorted by sort key (range key) ASC
+            // within a partition. Cosmos DB has no implicit ordering. To ensure consistent
+            // cross-provider behavior for both partition-scoped and cross-partition queries,
+            // automatically sort by the id field (which holds the sort key value) when no
+            // explicit ORDER BY is specified.
+            result = result + " ORDER BY c.id ASC";
         }
 
         return result;
