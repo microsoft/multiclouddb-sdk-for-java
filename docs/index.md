@@ -55,6 +55,8 @@ switch providers by changing a single properties file, with zero code changes.
 Single `MulticloudDbClient` interface for CRUD and query operations.
 Switch providers by changing one config property — zero code changes.
 
+[Learn more →](architecture.md)
+
 </div>
 
 <div class="card" markdown>
@@ -63,6 +65,8 @@ Switch providers by changing one config property — zero code changes.
 
 Write WHERE-clause filters once using a SQL-subset syntax with named parameters.
 Automatically translated to Cosmos SQL, DynamoDB PartiQL, or Spanner GoogleSQL.
+
+[Learn more →](compatibility.md#query--portable-expression-dsl)
 
 </div>
 
@@ -73,6 +77,8 @@ Automatically translated to Cosmos SQL, DynamoDB PartiQL, or Spanner GoogleSQL.
 Query provider capabilities at runtime. Get clear signals when a feature
 is unavailable or behaviour may differ across providers.
 
+[Learn more →](compatibility.md)
+
 </div>
 
 <div class="card" markdown>
@@ -81,6 +87,8 @@ is unavailable or behaviour may differ across providers.
 
 Database-per-tenant isolation via `ResourceAddress` routing.
 Partition-scoped queries for efficient within-partition reads.
+
+[Learn more →](samples/risk-platform.md)
 
 </div>
 
@@ -91,6 +99,8 @@ Partition-scoped queries for efficient within-partition reads.
 281+ tests across API and provider modules. Identical CRUD + query tests
 run against every provider emulator.
 
+[Learn more →](contributing.md)
+
 </div>
 
 <div class="card" markdown>
@@ -99,6 +109,8 @@ run against every provider emulator.
 
 Structured diagnostics with latency, request charge (RU), and provider
 correlation IDs. SLF4J structured logging for production monitoring.
+
+[Learn more →](api-reference.md)
 
 </div>
 
@@ -168,10 +180,10 @@ props.load(getClass().getResourceAsStream("/app.properties"));
 MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
     .provider(ProviderId.fromId(props.getProperty("multiclouddb.provider")))
     .connection("endpoint", props.getProperty("multiclouddb.connection.endpoint"))
-    .connection("key", props.getProperty("multiclouddb.connection.key"))
+    // Auth properties (key, credentials, etc.) are loaded from the
+    // properties file. See Configuration Reference for recommended
+    // identity-based auth patterns for each provider.
     .build();
-// ⚠ Key-based auth shown for emulator use — use identity-based auth in production.
-// See Configuration Reference for recommended auth patterns.
 
 MulticloudDbClient client = MulticloudDbClientFactory.create(config);
 
