@@ -546,6 +546,19 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                 items.add(DynamoItemMapper.attributeMapToMap(item));
             }
 
+            // PartiQL ExecuteStatement returns items in undefined order for scans.
+            // Sort by sort key (ascending) to match the implicit ordering of
+            // DynamoDB Query within a partition and the Cosmos provider's default
+            // ORDER BY c.id ASC.
+            items.sort((a, b) -> {
+                Object sa = a.get(DynamoConstants.ATTR_SORT_KEY);
+                Object sb = b.get(DynamoConstants.ATTR_SORT_KEY);
+                if (sa == null && sb == null) return 0;
+                if (sa == null) return -1;
+                if (sb == null) return 1;
+                return sa.toString().compareTo(sb.toString());
+            });
+
             OperationDiagnostics diag = buildQueryDiagnostics(OperationNames.QUERY_WITH_TRANSLATION, address,
                     response.responseMetadata().requestId(),
                     response.consumedCapacity(), items.size(), response.nextToken(),
