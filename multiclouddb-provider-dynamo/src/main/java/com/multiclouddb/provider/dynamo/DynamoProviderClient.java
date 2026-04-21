@@ -549,15 +549,9 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
             // PartiQL ExecuteStatement returns items in undefined order for scans.
             // Sort by sort key (ascending) to match the implicit ordering of
             // DynamoDB Query within a partition and the Cosmos provider's default
-            // ORDER BY c.id ASC.
-            items.sort((a, b) -> {
-                Object sa = a.get(DynamoConstants.ATTR_SORT_KEY);
-                Object sb = b.get(DynamoConstants.ATTR_SORT_KEY);
-                if (sa == null && sb == null) return 0;
-                if (sa == null) return -1;
-                if (sb == null) return 1;
-                return sa.toString().compareTo(sb.toString());
-            });
+            // ORDER BY c.id ASC. Ordering applies within this page only; see
+            // sortBySortKeyAsc() for the multi-page limitation note.
+            items.sort(sortBySortKeyAsc());
 
             OperationDiagnostics diag = buildQueryDiagnostics(OperationNames.QUERY_WITH_TRANSLATION, address,
                     response.responseMetadata().requestId(),
@@ -724,15 +718,10 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
 
         // DynamoDB Scan returns items in undefined hash-key order. Sort by sort key
         // (ascending) to match the implicit ordering of DynamoDB Query within a
-        // partition and the Cosmos provider's default ORDER BY c.id ASC.
-        items.sort((a, b) -> {
-            Object sa = a.get(DynamoConstants.ATTR_SORT_KEY);
-            Object sb = b.get(DynamoConstants.ATTR_SORT_KEY);
-            if (sa == null && sb == null) return 0;
-            if (sa == null) return -1;
-            if (sb == null) return 1;
-            return sa.toString().compareTo(sb.toString());
-        });
+        // partition and the Cosmos provider's default ORDER BY c.id ASC. Ordering
+        // applies within this page only; see sortBySortKeyAsc() for the multi-page
+        // limitation note.
+        items.sort(sortBySortKeyAsc());
 
         String continuationToken = null;
         if (response.lastEvaluatedKey() != null && !response.lastEvaluatedKey().isEmpty()) {
@@ -795,15 +784,10 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
 
         // DynamoDB Scan returns items in undefined hash-key order. Sort by sort key
         // (ascending) to match the implicit ordering of DynamoDB Query within a
-        // partition and the Cosmos provider's default ORDER BY c.id ASC.
-        items.sort((a, b) -> {
-            Object sa = a.get(DynamoConstants.ATTR_SORT_KEY);
-            Object sb = b.get(DynamoConstants.ATTR_SORT_KEY);
-            if (sa == null && sb == null) return 0;
-            if (sa == null) return -1;
-            if (sb == null) return 1;
-            return sa.toString().compareTo(sb.toString());
-        });
+        // partition and the Cosmos provider's default ORDER BY c.id ASC. Ordering
+        // applies within this page only; see sortBySortKeyAsc() for the multi-page
+        // limitation note.
+        items.sort(sortBySortKeyAsc());
 
         String continuationToken = null;
         if (response.lastEvaluatedKey() != null && !response.lastEvaluatedKey().isEmpty()) {
@@ -830,6 +814,29 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      */
     private String resolveTableName(ResourceAddress address) {
         return address.database() + DynamoConstants.TABLE_NAME_SEPARATOR + address.collection();
+    }
+
+    /**
+     * Returns a {@link Comparator} that orders result items by their sort key
+     * ({@code sortKey} attribute) in ascending lexicographic order.
+     * <p>
+     * Items without a sort key are sorted before items with one.
+     * Used by all scan paths to produce consistent per-page ordering that matches
+     * DynamoDB Query's implicit range-key ordering within a partition.
+     * <p>
+     * <b>Note:</b> This sort applies within a single page of results only.
+     * For multi-page scans the overall iteration order across pages remains
+     * determined by DynamoDB's internal token-based traversal, not by sort key.
+     */
+    private java.util.Comparator<Map<String, Object>> sortBySortKeyAsc() {
+        return (a, b) -> {
+            Object sa = a.get(DynamoConstants.ATTR_SORT_KEY);
+            Object sb = b.get(DynamoConstants.ATTR_SORT_KEY);
+            if (sa == null && sb == null) return 0;
+            if (sa == null) return -1;
+            if (sb == null) return 1;
+            return sa.toString().compareTo(sb.toString());
+        };
     }
 
     /**

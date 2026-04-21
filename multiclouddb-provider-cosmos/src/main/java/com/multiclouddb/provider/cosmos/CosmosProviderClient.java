@@ -561,9 +561,13 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
      * Applies TOP N (limit) and ORDER BY from the query request to a Cosmos SQL string.
      * <p>
      * For TOP N: rewrites {@code SELECT} to {@code SELECT TOP N} when limit is set.
-     * For ORDER BY: appends {@code ORDER BY c.field ASC/DESC} clause.
+     * For ORDER BY: appends {@code ORDER BY c.field ASC/DESC} clause when explicit
+     * ordering is requested, or appends {@code ORDER BY c.id ASC} for partition-scoped
+     * queries without an explicit order (to match DynamoDB's implicit range-key ordering).
+     * <p>
+     * Package-private for unit testing.
      */
-    private String applyResultSetControl(String sql, QueryRequest query) {
+    String applyResultSetControl(String sql, QueryRequest query) {
         String result = sql;
 
         // Apply TOP N — rewrite SELECT to SELECT TOP N using a boolean flag to
@@ -606,12 +610,12 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
                 orderClause.append("c.").append(so.field()).append(" ").append(so.direction().name());
             }
             result = result + orderClause;
-        } else {
+        } else if (query.partitionKey() != null) {
             // DynamoDB Query implicitly returns items sorted by sort key (range key) ASC
-            // within a partition. Cosmos DB has no implicit ordering. To ensure consistent
-            // cross-provider behavior for both partition-scoped and cross-partition queries,
-            // automatically sort by the id field (which holds the sort key value) when no
-            // explicit ORDER BY is specified.
+            // within a partition. Cosmos DB has no implicit ordering, so only apply the
+            // default id-based ordering for partition-scoped queries to preserve that
+            // behavior without imposing cross-partition ORDER BY cost and pagination
+            // changes on full-container or cross-partition queries.
             result = result + " ORDER BY c.id ASC";
         }
 
