@@ -709,6 +709,18 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
             items.add(DynamoItemMapper.attributeMapToMap(item));
         }
 
+        // DynamoDB Scan returns items in undefined hash-key order. Sort by sort key
+        // (ascending) to match the implicit ordering of DynamoDB Query within a
+        // partition and the Cosmos provider's default ORDER BY c.id ASC.
+        items.sort((a, b) -> {
+            Object sa = a.get(DynamoConstants.ATTR_SORT_KEY);
+            Object sb = b.get(DynamoConstants.ATTR_SORT_KEY);
+            if (sa == null && sb == null) return 0;
+            if (sa == null) return -1;
+            if (sb == null) return 1;
+            return sa.toString().compareTo(sb.toString());
+        });
+
         String continuationToken = null;
         if (response.lastEvaluatedKey() != null && !response.lastEvaluatedKey().isEmpty()) {
             continuationToken = DynamoContinuationToken.encode(response.lastEvaluatedKey());
@@ -767,6 +779,18 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
         for (Map<String, AttributeValue> item : response.items()) {
             items.add(DynamoItemMapper.attributeMapToMap(item));
         }
+
+        // DynamoDB Scan returns items in undefined hash-key order. Sort by sort key
+        // (ascending) to match the implicit ordering of DynamoDB Query within a
+        // partition and the Cosmos provider's default ORDER BY c.id ASC.
+        items.sort((a, b) -> {
+            Object sa = a.get(DynamoConstants.ATTR_SORT_KEY);
+            Object sb = b.get(DynamoConstants.ATTR_SORT_KEY);
+            if (sa == null && sb == null) return 0;
+            if (sa == null) return -1;
+            if (sb == null) return 1;
+            return sa.toString().compareTo(sb.toString());
+        });
 
         String continuationToken = null;
         if (response.lastEvaluatedKey() != null && !response.lastEvaluatedKey().isEmpty()) {
