@@ -125,5 +125,3 @@ Initial public beta of the Azure Cosmos DB provider.
 
 - Azure Cosmos DB Java SDK v4 (`azure-cosmos 4.78.0`)
 - Azure Identity (`azure-identity 1.18.2`)
-- Netty BOM 4.2.8.Final (inherited from parent POM) — pins all transitive
-  Netty modules to a single version, fixing CVE-2025-67735
