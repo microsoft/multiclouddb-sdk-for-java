@@ -111,4 +111,30 @@ class CosmosResultSetControlTest {
         assertTrue(result.endsWith("ORDER BY c.id ASC"),
                 "Expected ORDER BY c.id ASC, got: " + result);
     }
+
+    // ── Idempotency: existing ORDER BY must not be duplicated ─────────────────
+
+    @Test
+    @DisplayName("SQL that already contains ORDER BY does not get a second ORDER BY appended")
+    void existingOrderByIsNotDuplicated() {
+        QueryRequest query = QueryRequest.builder().build(); // no explicit orderBy
+        String sql = "SELECT * FROM c ORDER BY c.name ASC";
+        String result = CosmosProviderClient.applyResultSetControl(sql, query);
+        long count = result.chars()
+                .filter(c -> result.indexOf("ORDER BY", result.indexOf("ORDER BY") + 1) > 0)
+                .count();
+        // A simple check: result must start with the original SQL unchanged and contain ORDER BY exactly once
+        assertEquals(sql, result,
+                "SQL with existing ORDER BY must be returned unchanged; got: " + result);
+    }
+
+    @Test
+    @DisplayName("SQL with ORDER BY from native expression passes through without modification")
+    void nativeExpressionWithOrderByPassesThrough() {
+        QueryRequest query = QueryRequest.builder().build();
+        String sql = "SELECT * FROM c WHERE c.category = 'books' ORDER BY c.price DESC";
+        String result = CosmosProviderClient.applyResultSetControl(sql, query);
+        assertEquals(sql, result,
+                "Native expression SQL with ORDER BY must not be modified; got: " + result);
+    }
 }

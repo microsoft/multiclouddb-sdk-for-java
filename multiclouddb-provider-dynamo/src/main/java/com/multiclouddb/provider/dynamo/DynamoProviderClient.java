@@ -551,7 +551,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
             // DynamoDB Query within a partition and the Cosmos provider's default
             // ORDER BY c.id ASC. Ordering applies within this page only; see
             // sortBySortKeyAsc() for the multi-page limitation note.
-            items.sort(sortBySortKeyAsc());
+            items.sort(SORT_KEY_ASC);
 
             OperationDiagnostics diag = buildQueryDiagnostics(OperationNames.QUERY_WITH_TRANSLATION, address,
                     response.responseMetadata().requestId(),
@@ -721,7 +721,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
         // partition and the Cosmos provider's default ORDER BY c.id ASC. Ordering
         // applies within this page only; see sortBySortKeyAsc() for the multi-page
         // limitation note.
-        items.sort(sortBySortKeyAsc());
+        items.sort(SORT_KEY_ASC);
 
         String continuationToken = null;
         if (response.lastEvaluatedKey() != null && !response.lastEvaluatedKey().isEmpty()) {
@@ -787,7 +787,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
         // partition and the Cosmos provider's default ORDER BY c.id ASC. Ordering
         // applies within this page only; see sortBySortKeyAsc() for the multi-page
         // limitation note.
-        items.sort(sortBySortKeyAsc());
+        items.sort(SORT_KEY_ASC);
 
         String continuationToken = null;
         if (response.lastEvaluatedKey() != null && !response.lastEvaluatedKey().isEmpty()) {
@@ -828,16 +828,18 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      * For multi-page scans the overall iteration order across pages remains
      * determined by DynamoDB's internal token-based traversal, not by sort key.
      */
-    private java.util.Comparator<Map<String, Object>> sortBySortKeyAsc() {
-        return (a, b) -> {
-            Object sa = a.get(DynamoConstants.ATTR_SORT_KEY);
-            Object sb = b.get(DynamoConstants.ATTR_SORT_KEY);
-            if (sa == null && sb == null) return 0;
-            if (sa == null) return -1;
-            if (sb == null) return 1;
-            return sa.toString().compareTo(sb.toString());
-        };
-    }
+    private static final java.util.Comparator<Map<String, Object>> SORT_KEY_ASC =
+            (a, b) -> {
+                Object sa = a.get(DynamoConstants.ATTR_SORT_KEY);
+                Object sb = b.get(DynamoConstants.ATTR_SORT_KEY);
+                if (sa == null && sb == null) return 0;
+                if (sa == null) return -1;
+                if (sb == null) return 1;
+                if (sa instanceof Number na && sb instanceof Number nb) {
+                    return Double.compare(na.doubleValue(), nb.doubleValue());
+                }
+                return sa.toString().compareTo(sb.toString());
+            };
 
     /**
      * Appends a partition key equality condition to a PartiQL statement.

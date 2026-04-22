@@ -611,7 +611,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
                 orderClause.append("c.").append(so.field()).append(" ").append(so.direction().name());
             }
             result = result + orderClause;
-        } else {
+        } else if (!result.toUpperCase().contains("ORDER BY")) {
             // DynamoDB Query implicitly sorts by range key within a partition; DynamoDB
             // Scan sorts per-page in memory. Cosmos has no implicit ordering, so always
             // append ORDER BY c.id ASC to ensure sorted results on every query.
@@ -619,6 +619,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             // For multi-page cross-partition queries Cosmos is globally sorted server-side,
             // which is strictly better than DynamoDB's per-page sort — this is a documented
             // capability difference, not a bug.
+            // Guard: skip if the SQL already carries an ORDER BY (e.g. native expressions).
             result = result + " ORDER BY c.id ASC";
         }
 
