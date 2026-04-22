@@ -192,14 +192,19 @@ MulticloudDbClient client = MulticloudDbClientFactory.create(config);
 
 // CRUD — same code for every provider
 ResourceAddress todos = new ResourceAddress("mydb", "todos");
-Key key = Key.of("todo-1", "todo-1");
+MulticloudDbKey key = MulticloudDbKey.of("todo-1", "todo-1");
+Map<String, Object> doc = Map.of(
+    "id", "todo-1",
+    "status", "active",
+    "category", "shopping"
+);
 client.upsert(todos, key, doc);
 
 // Query with portable expressions — auto-translated per provider
 QueryRequest query = QueryRequest.builder()
     .expression("status = @status AND category = @cat")
     .parameters(Map.of("status", "active", "cat", "shopping"))
-    .pageSize(25)
+    .maxPageSize(25)
     .build();
 QueryPage page = client.query(todos, query);
 ```
