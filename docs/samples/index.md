@@ -1,8 +1,9 @@
 # Sample Applications
 
 The SDK includes two sample applications demonstrating the portable API.
-Each sample runs against **Azure Cosmos DB**, **Amazon DynamoDB**, or
-**Google Cloud Spanner** — switch providers by changing a single properties file.
+Each sample runs against **Azure Cosmos DB** or **Amazon DynamoDB** —
+switch providers by changing a single properties file. Some samples also
+support **Google Cloud Spanner**; see the sample guides and support table below.
 
 ---
 
