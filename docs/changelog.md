@@ -16,8 +16,8 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - `MulticloudDbClientConfig.Builder.userAgentSuffix(String)` — optional
   caller-supplied token appended to the SDK user-agent header sent by all
   provider clients.
-- `MulticloudDbClientConfig.userAgentSuffix()` — accessor returning an
-  `Optional<String>` of the configured suffix.
+- `MulticloudDbClientConfig.userAgentSuffix()` — accessor returning the
+  configured suffix, or `null` if unset.
 - `com.multiclouddb.spi.SdkUserAgent` — SPI helper that builds the canonical
   `multiclouddb-sdk-java/<version>` user-agent token.
 
