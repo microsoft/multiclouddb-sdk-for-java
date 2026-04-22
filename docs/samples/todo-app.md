@@ -18,12 +18,6 @@ graph TD
     Server -->|MulticloudDbClient| Cosmos["Cosmos DB<br/>Emulator"]
     Server -->|MulticloudDbClient| Dynamo["DynamoDB<br/>Local"]
     Server -->|MulticloudDbClient| Spanner["Spanner<br/>Emulator"]
-
-    style UI fill:#e8eaf6,stroke:#3949ab,color:#1a237e
-    style Server fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
-    style Cosmos fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
-    style Dynamo fill:#fff3e0,stroke:#ef6c00,color:#e65100
-    style Spanner fill:#fce4ec,stroke:#c62828,color:#b71c1c
 ```
 
 ---

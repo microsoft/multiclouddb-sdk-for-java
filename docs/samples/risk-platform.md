@@ -42,11 +42,6 @@ graph TD
     subgraph Client["MulticloudDbClient — portable API"]
         Cosmos["Cosmos DB Provider<br/><i>DB per tenant</i>"] ~~~ Dynamo["DynamoDB Provider<br/><i>Table-prefix per tenant</i>"]
     end
-
-    style Dashboard fill:#e8eaf6,stroke:#3949ab,color:#1a237e
-    style App fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
-    style TM fill:#fff3e0,stroke:#ef6c00,color:#e65100
-    style Client fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
 ```
 
 ### Tenant Isolation Model

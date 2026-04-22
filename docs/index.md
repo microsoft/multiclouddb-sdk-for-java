@@ -134,13 +134,6 @@ graph TD
     SL --> COSMOS
     SL --> DYNAMO
     SL --> SPANNER
-
-    style APP fill:#e8eaf6,stroke:#3949ab,stroke-width:2px,color:#1a237e
-    style API fill:#e8eaf6,stroke:#3949ab,stroke-width:2px,color:#1a237e
-    style SL fill:#fff,stroke:#666,stroke-width:1px,color:#333
-    style COSMOS fill:#e3f2fd,stroke:#0078d4,stroke-width:2px,color:#0d47a1
-    style DYNAMO fill:#fff3e0,stroke:#ff9900,stroke-width:2px,color:#e65100
-    style SPANNER fill:#e3f2fd,stroke:#4285f4,stroke-width:2px,color:#1565c0
 ```
 
 Providers are discovered at runtime via Java's `ServiceLoader` — no provider
