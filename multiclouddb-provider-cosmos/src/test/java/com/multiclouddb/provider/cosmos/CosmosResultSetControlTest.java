@@ -120,10 +120,6 @@ class CosmosResultSetControlTest {
         QueryRequest query = QueryRequest.builder().build(); // no explicit orderBy
         String sql = "SELECT * FROM c ORDER BY c.name ASC";
         String result = CosmosProviderClient.applyResultSetControl(sql, query);
-        long count = result.chars()
-                .filter(c -> result.indexOf("ORDER BY", result.indexOf("ORDER BY") + 1) > 0)
-                .count();
-        // A simple check: result must start with the original SQL unchanged and contain ORDER BY exactly once
         assertEquals(sql, result,
                 "SQL with existing ORDER BY must be returned unchanged; got: " + result);
     }
@@ -136,5 +132,50 @@ class CosmosResultSetControlTest {
         String result = CosmosProviderClient.applyResultSetControl(sql, query);
         assertEquals(sql, result,
                 "Native expression SQL with ORDER BY must not be modified; got: " + result);
+    }
+
+    // ── Aggregate / GROUP BY guard ────────────────────────────────────────────
+
+    @Test
+    @DisplayName("SELECT VALUE COUNT(1) does not get ORDER BY appended (Cosmos rejects it)")
+    void aggregateCountDoesNotGetOrderBy() {
+        QueryRequest query = QueryRequest.builder().build();
+        String sql = "SELECT VALUE COUNT(1) FROM c";
+        String result = CosmosProviderClient.applyResultSetControl(sql, query);
+        assertEquals(sql, result,
+                "COUNT aggregate must not have ORDER BY appended; got: " + result);
+        assertFalse(result.contains("ORDER BY"),
+                "ORDER BY must not appear in COUNT aggregate query; got: " + result);
+    }
+
+    @Test
+    @DisplayName("SELECT VALUE SUM(c.price) does not get ORDER BY appended")
+    void aggregateSumDoesNotGetOrderBy() {
+        QueryRequest query = QueryRequest.builder().build();
+        String sql = "SELECT VALUE SUM(c.price) FROM c WHERE c.category = 'books'";
+        String result = CosmosProviderClient.applyResultSetControl(sql, query);
+        assertEquals(sql, result,
+                "SUM aggregate must not have ORDER BY appended; got: " + result);
+    }
+
+    @Test
+    @DisplayName("GROUP BY query does not get ORDER BY appended")
+    void groupByQueryDoesNotGetOrderBy() {
+        QueryRequest query = QueryRequest.builder().build();
+        String sql = "SELECT c.category, COUNT(1) AS cnt FROM c GROUP BY c.category";
+        String result = CosmosProviderClient.applyResultSetControl(sql, query);
+        assertEquals(sql, result,
+                "GROUP BY query must not have ORDER BY appended; got: " + result);
+    }
+
+    @Test
+    @DisplayName("String literal containing 'order by' does not suppress the default ORDER BY")
+    void stringLiteralWithOrderByPhraseDoesNotSuppressDefault() {
+        QueryRequest query = QueryRequest.builder().build();
+        // The string literal 'place order by friday' must NOT be mistaken for a SQL ORDER BY clause
+        String sql = "SELECT * FROM c WHERE c.note = 'place order by friday'";
+        String result = CosmosProviderClient.applyResultSetControl(sql, query);
+        assertTrue(result.endsWith("ORDER BY c.id ASC"),
+                "String literal containing 'order by' must not suppress the default ORDER BY; got: " + result);
     }
 }

@@ -60,9 +60,11 @@ import software.amazon.awssdk.services.dynamodb.model.TableStatus;
 import software.amazon.awssdk.services.dynamodb.waiters.DynamoDbWaiter;
 import software.amazon.awssdk.http.SdkHttpResponse;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Instant;
 import java.util.*;
+import java.util.Comparator;
 
 /**
  * Amazon DynamoDB provider client implementing CRUD + scan/query with
@@ -817,18 +819,24 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
     }
 
     /**
-     * Returns a {@link Comparator} that orders result items by their sort key
-     * ({@code sortKey} attribute) in ascending lexicographic order.
+     * Comparator that orders result items by their sort key ({@code sortKey}
+     * attribute) ascending.
      * <p>
-     * Items without a sort key are sorted before items with one.
-     * Used by all scan paths to produce consistent per-page ordering that matches
-     * DynamoDB Query's implicit range-key ordering within a partition.
+     * <ul>
+     *   <li>Items without a sort key sort before items that have one.</li>
+     *   <li>String sort keys compare lexicographically.</li>
+     *   <li>Numeric sort keys compare by value: {@code Long} and {@code Integer}
+     *       use their native comparators to avoid precision loss. Other
+     *       {@code Number} subtypes (including mixed-type pairs) are compared via
+     *       {@link BigDecimal} — DynamoDB Number supports up to 38 significant
+     *       digits, which exceeds {@code double} precision.</li>
+     * </ul>
      * <p>
      * <b>Note:</b> This sort applies within a single page of results only.
      * For multi-page scans the overall iteration order across pages remains
      * determined by DynamoDB's internal token-based traversal, not by sort key.
      */
-    private static final java.util.Comparator<Map<String, Object>> SORT_KEY_ASC =
+    private static final Comparator<Map<String, Object>> SORT_KEY_ASC =
             (a, b) -> {
                 Object sa = a.get(DynamoConstants.ATTR_SORT_KEY);
                 Object sb = b.get(DynamoConstants.ATTR_SORT_KEY);
@@ -836,7 +844,18 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                 if (sa == null) return -1;
                 if (sb == null) return 1;
                 if (sa instanceof Number na && sb instanceof Number nb) {
-                    return Double.compare(na.doubleValue(), nb.doubleValue());
+                    // Use Long.compare for integer types to avoid precision loss —
+                    // Double.compare(long, long) is incorrect for values > 2^53.
+                    if (sa instanceof Long la && sb instanceof Long lb) {
+                        return Long.compare(la, lb);
+                    }
+                    if (sa instanceof Integer ia && sb instanceof Integer ib) {
+                        return Integer.compare(ia, ib);
+                    }
+                    // For Double, mixed types, or other Number subtypes use BigDecimal
+                    // (DynamoDB Number supports up to 38 significant digits — beyond double
+                    // precision — so toString() → BigDecimal preserves full value ordering).
+                    return new BigDecimal(na.toString()).compareTo(new BigDecimal(nb.toString()));
                 }
                 return sa.toString().compareTo(sb.toString());
             };

@@ -92,6 +92,57 @@ The raw HTTP or gRPC status code is also available via `error.statusCode()`.
 > The portable API does not yet expose ETag-based conditional updates; when it does, the 412-equivalent
 > path will be split into a dedicated `PRECONDITION_FAILED` category (tracked in issue #29).
 
+## Default Sort-Key Ordering
+
+Starting from this release, all Cosmos DB and DynamoDB query paths return results
+sorted by the document's sort key ascending.
+
+### Cosmos DB
+
+Cosmos DB appends `ORDER BY c.id ASC` to every query that does not already carry
+an explicit `ORDER BY` clause (and is not an aggregate / `GROUP BY` query). This
+is applied server-side, so the order is globally consistent across all pages.
+
+> **⚠️ Custom indexing policy — composite index required**
+> If your Cosmos container uses a **custom indexing policy** that does not include
+> a composite index on `(filterField ASC, id ASC)`, Cosmos DB will throw a
+> `400 Bad Request` at runtime for cross-partition queries that combine `WHERE` and
+> the default `ORDER BY c.id ASC`. The default indexing policy includes all paths
+> and supports this automatically. If you have tuned your indexing policy, add the
+> composite index for every field you filter on:
+> ```json
+> { "compositeIndexes": [ [{ "path": "/filterField", "order": "ascending" },
+>                          { "path": "/id", "order": "ascending" }] ] }
+> ```
+>
+> **⚠️ RU cost**
+> Appending `ORDER BY c.id ASC` to all Cosmos queries incurs an additional RU
+> charge versus unordered queries, proportional to result-set size. This cost is
+> the price of cross-provider consistency and is expected behavior.
+>
+> **⚠️ Aggregates and GROUP BY**
+> Cosmos DB rejects `ORDER BY` on aggregate expressions (`COUNT`, `SUM`, `MIN`,
+> `MAX`, `AVG`) and `GROUP BY` queries. The SDK automatically detects these patterns
+> and omits the default `ORDER BY` for them.
+
+### DynamoDB
+
+DynamoDB results are sorted in memory per page after fetching (client-side).
+Within a single page, items are returned sorted by sort key ascending.
+For multi-page scans the overall order across pages is determined by DynamoDB's
+internal token-based traversal, not sort key — this is a known limitation.
+
+### Spanner
+
+The Spanner provider does not yet implement default sort-key ordering.
+Consumers relying on consistent cross-provider sort behavior should not use
+the Spanner provider until this gap is addressed.
+
+> **Tracking issue**: Default sort-key ordering for the Spanner provider is
+> tracked in [GitHub Issue #55](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/55)
+> (to be created). Until resolved, do not mix Spanner with Cosmos or DynamoDB
+> in conformance-sensitive workloads.
+
 ## Escape Hatch Policy
 
 The SDK does not expose a `nativeClient()` method. Direct access to the

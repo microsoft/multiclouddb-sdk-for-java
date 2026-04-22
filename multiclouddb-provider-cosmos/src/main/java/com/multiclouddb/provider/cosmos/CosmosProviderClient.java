@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.regex.Pattern;
 
 /**
  * Azure Cosmos DB provider client implementing CRUD + query with continuation
@@ -553,6 +554,41 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
      * @param key the portable document key
      * @return the Cosmos SDK partition key object
      */
+    /**
+     * Returns {@code true} if the SQL string already contains a syntactic
+     * {@code ORDER BY} clause.
+     * <p>
+     * Uses a word-boundary regex rather than a plain {@code contains()} call so that
+     * string literals in the query (e.g. {@code WHERE c.note = 'place order by friday'})
+     * do not produce false positives. String literals are stripped before the check.
+     */
+    private static final Pattern ORDER_BY_PATTERN =
+            Pattern.compile("(?i)\\bORDER\\s+BY\\b");
+
+    /**
+     * Matches aggregate functions that Cosmos DB forbids combining with ORDER BY.
+     * Covers: COUNT, SUM, MIN, MAX, AVG — both plain and SELECT VALUE variants.
+     */
+    private static final Pattern AGGREGATE_PATTERN =
+            Pattern.compile("(?i)\\b(COUNT|SUM|MIN|MAX|AVG)\\s*\\(|\\bGROUP\\s+BY\\b");
+
+    private static boolean containsOrderBy(String sql) {
+        return ORDER_BY_PATTERN.matcher(stripStringLiterals(sql)).find();
+    }
+
+    private static boolean containsAggregate(String sql) {
+        return AGGREGATE_PATTERN.matcher(stripStringLiterals(sql)).find();
+    }
+
+    /**
+     * Replaces all single-quoted string literals in a SQL fragment with empty
+     * placeholders so that content inside literals does not interfere with
+     * keyword detection.
+     */
+    private static String stripStringLiterals(String sql) {
+        return sql.replaceAll("'[^']*'", "''");
+    }
+
     private PartitionKey resolvePartitionKey(MulticloudDbKey key) {
         return new PartitionKey(key.partitionKey());
     }
@@ -561,10 +597,20 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
      * Applies TOP N (limit) and ORDER BY from the query request to a Cosmos SQL string.
      * <p>
      * For TOP N: rewrites {@code SELECT} to {@code SELECT TOP N} when limit is set.
-     * For ORDER BY: appends {@code ORDER BY c.field ASC/DESC} clause when explicit
-     * ordering is requested, or appends {@code ORDER BY c.id ASC} for all queries
-     * without an explicit order (to match DynamoDB's implicit range-key ordering for
-     * partition-scoped queries and per-page sort for cross-partition scans).
+     * <p>
+     * For ORDER BY: appends {@code ORDER BY c.field ASC/DESC} when an explicit
+     * {@code orderBy} is set, or appends {@code ORDER BY c.id ASC} as a default for
+     * all queries without an explicit order (to match DynamoDB's implicit sort behavior).
+     * <p>
+     * The default {@code ORDER BY} is <b>skipped</b> when:
+     * <ul>
+     *   <li>The SQL already contains an {@code ORDER BY} clause (idempotency guard —
+     *       uses a word-boundary regex so string literals containing "order by" are
+     *       not mistakenly detected).</li>
+     *   <li>The SQL contains an aggregate function ({@code COUNT}, {@code SUM},
+     *       {@code MIN}, {@code MAX}, {@code AVG}) or a {@code GROUP BY} clause —
+     *       Cosmos DB rejects {@code ORDER BY} on aggregate queries.</li>
+     * </ul>
      * <p>
      * Package-private and static for unit testing.
      */
@@ -611,7 +657,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
                 orderClause.append("c.").append(so.field()).append(" ").append(so.direction().name());
             }
             result = result + orderClause;
-        } else if (!result.toUpperCase().contains("ORDER BY")) {
+        } else if (!containsOrderBy(result) && !containsAggregate(result)) {
             // DynamoDB Query implicitly sorts by range key within a partition; DynamoDB
             // Scan sorts per-page in memory. Cosmos has no implicit ordering, so always
             // append ORDER BY c.id ASC to ensure sorted results on every query.
@@ -619,7 +665,12 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             // For multi-page cross-partition queries Cosmos is globally sorted server-side,
             // which is strictly better than DynamoDB's per-page sort — this is a documented
             // capability difference, not a bug.
-            // Guard: skip if the SQL already carries an ORDER BY (e.g. native expressions).
+            // Guards:
+            //  1. Skip if SQL already has ORDER BY (prevents double-ORDER BY on native exprs).
+            //     Uses word-boundary regex — plain contains() would falsely match string
+            //     literals like WHERE c.note = 'place order by friday'.
+            //  2. Skip if SQL is an aggregate query (COUNT/SUM/MIN/MAX/AVG, GROUP BY) —
+            //     Cosmos DB rejects ORDER BY on aggregate expressions at runtime.
             result = result + " ORDER BY c.id ASC";
         }
 
