@@ -13,6 +13,7 @@ skills-lock.json
 
 # ── Build output ────────────────────────────────────────
 target/
+site/
 *.class
 *.jar
 *.war

@@ -2,9 +2,9 @@
 
 Comprehensive reference for the Multicloud DB SDK's key management, CRUD operations,
 query DSL, and provider-specific storage behavior. For a quick-start tutorial
-and architecture overview, see the main [README](../README.md). For the
-provider compatibility matrix and feature-flag reference, see
-[compatibility.md](compatibility.md).
+and architecture overview, see the [Getting Started](getting-started.md) guide. For the
+portable API surface and error mapping reference, see
+[Compatibility](compatibility.md).
 
 ---
 
@@ -640,7 +640,7 @@ QueryRequest query = QueryRequest.builder()
     .expression("status = @status AND priority > @minPriority")
     .parameter("status", "active")
     .parameter("minPriority", 3)
-    .pageSize(25)
+    .maxPageSize(25)
     .build();
 
 QueryPage page = client.query(addr, query);
@@ -667,7 +667,7 @@ Parameters use `@name` syntax in expressions and are passed as a
 QueryRequest query = QueryRequest.builder()
     .expression("portfolioId = @pid")
     .parameter("pid", "portfolio-alpha")
-    .pageSize(50)
+    .maxPageSize(50)
     .build();
 
 // Using .parameters() with a pre-built map
@@ -677,7 +677,7 @@ QueryRequest query2 = QueryRequest.builder()
         "sector", "Technology",
         "minValue", 100000.0
     ))
-    .pageSize(25)
+    .maxPageSize(25)
     .build();
 ```
 
@@ -733,7 +733,7 @@ a page, then pass the continuation token to get the next page:
 QueryRequest firstPage = QueryRequest.builder()
     .expression("status = @status")
     .parameter("status", "active")
-    .pageSize(25)
+    .maxPageSize(25)
     .build();
 
 QueryPage page = client.query(addr, firstPage);
@@ -744,7 +744,7 @@ while (page.continuationToken() != null) {
     QueryRequest nextPage = QueryRequest.builder()
         .expression("status = @status")
         .parameter("status", "active")
-        .pageSize(25)
+        .maxPageSize(25)
         .continuationToken(page.continuationToken())
         .build();
     page = client.query(addr, nextPage);
@@ -762,7 +762,7 @@ To retrieve all documents in a collection (a full scan), omit the expression:
 
 ```java
 QueryRequest scanAll = QueryRequest.builder()
-    .pageSize(100)
+    .maxPageSize(100)
     .build();
 
 QueryPage page = client.query(addr, scanAll);
@@ -817,7 +817,7 @@ QueryRequest query = QueryRequest.builder()
     .parameter("pid", "portfolio-alpha")
     .parameter("sector", "Technology")
     .parameter("minValue", 100000.0)
-    .pageSize(50)
+    .maxPageSize(50)
     .build();
 
 // Complex boolean logic with grouping
@@ -845,7 +845,7 @@ QueryRequest cosmosQuery = QueryRequest.builder()
         "WHERE c.portfolioId = @pid ORDER BY c.marketValue DESC"
     )
     .parameter("pid", "portfolio-alpha")
-    .pageSize(10)
+    .maxPageSize(10)
     .build();
 
 // DynamoDB — PartiQL syntax
@@ -854,7 +854,7 @@ QueryRequest dynamoQuery = QueryRequest.builder()
         "SELECT * FROM \"acme-risk-db__positions\" " +
         "WHERE begins_with(symbol, 'AA')"
     )
-    .pageSize(10)
+    .maxPageSize(10)
     .build();
 
 // Spanner — GoogleSQL syntax
@@ -941,7 +941,7 @@ filtering**. Example: positions within a portfolio.
 
 // Query: fetch ALL positions, filter in Java
 List<JsonNode> allPositions = client.query(addr,
-    QueryRequest.builder().pageSize(200).build()
+    QueryRequest.builder().maxPageSize(200).build()
 ).items();
 
 List<JsonNode> filtered = allPositions.stream()
@@ -962,7 +962,7 @@ portfolios.
 QueryRequest query = QueryRequest.builder()
     .expression("portfolioId = @pid")
     .parameter("pid", "portfolio-alpha")
-    .pageSize(50)
+    .maxPageSize(50)
     .build();
 
 List<JsonNode> positions = client.query(addr, query).items();
@@ -981,7 +981,7 @@ all partitions, it just doesn't return non-matching documents).
 QueryRequest query = QueryRequest.builder()
     .expression("portfolioId = @pid")
     .parameter("pid", "portfolio-alpha")
-    .pageSize(50)
+    .maxPageSize(50)
     .build();
 
 List<JsonNode> positions = client.query(addr, query).items();
@@ -1019,7 +1019,7 @@ QueryRequest query = QueryRequest.builder()
     .expression("sector = @sector")
     .parameter("sector", "Technology")
     .partitionKey("portfolio-alpha")
-    .pageSize(50)
+    .maxPageSize(50)
     .build();
 
 // Only returns positions within "portfolio-alpha" that match sector = Technology
@@ -1034,7 +1034,7 @@ Omit the expression to retrieve all documents in a single partition:
 // Get ALL positions in portfolio-alpha (no expression filter)
 QueryRequest allInPartition = QueryRequest.builder()
     .partitionKey("portfolio-alpha")
-    .pageSize(100)
+    .maxPageSize(100)
     .build();
 
 QueryPage page = client.query(positionsAddr, allInPartition);
@@ -1053,7 +1053,7 @@ all partitions — the same behavior as before:
 QueryRequest crossPartition = QueryRequest.builder()
     .expression("severity = @sev")
     .parameter("sev", "CRITICAL")
-    .pageSize(25)
+    .maxPageSize(25)
     .build();
 ```
 

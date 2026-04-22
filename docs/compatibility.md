@@ -1,104 +1,126 @@
-# Multicloud DB SDK — Provider Compatibility Matrix
+# Portable API Surface
 
-This document describes the portable capabilities supported by each provider and the
-provider-specific extensions (feature flags) that are available.
+The Multicloud DB SDK's portable API surface covers capabilities that work
+identically across all three providers. The features listed below require no
+runtime capability checks — they are guaranteed to work on Azure Cosmos DB,
+Amazon DynamoDB, and Google Cloud Spanner. Some providers offer additional
+capabilities (e.g., `CROSS_PARTITION_QUERY`, `ORDER_BY`, `LIKE`); use
+`client.capabilities()` to discover what the current provider supports.
 
-## Portable Capabilities
+---
 
-| Capability                   | Cosmos DB | DynamoDB | Spanner | Description |
-|------------------------------|:---------:|:--------:|:-------:|-------------|
-| `PORTABLE_QUERY_EXPRESSION`  | ✅        | ✅       | ✅      | Portable expression DSL for queries |
-| `CONTINUATION_TOKEN_PAGING`  | ✅        | ✅       | ✅      | Cursor-based pagination |
-| `TRANSACTIONS`               | ✅        | ✅       | ✅      | Multi-document transactions |
-| `BATCH_OPERATIONS`           | ✅        | ✅       | ✅      | Batch read/write operations |
-| `STRONG_CONSISTENCY`         | ✅        | ✅       | ✅      | Strongly-consistent reads |
-| `CHANGE_FEED`                | ✅        | ✅       | ✅      | Change feed / streams |
-| `CROSS_PARTITION_QUERY`      | ✅        | ❌       | ✅      | Cross-partition / global secondary index queries |
-| `NATIVE_SQL_QUERY`           | ✅        | ❌       | ✅      | Native SQL-like query passthrough |
-| `LIKE`                       | ✅        | ❌       | ✅      | LIKE pattern matching in queries |
-| `ORDER_BY`                   | ✅        | ❌       | ✅      | ORDER BY clause support |
-| `ENDS_WITH`                  | ✅        | ❌       | ✅      | ENDS_WITH string function |
-| `REGEX_MATCH`                | ✅        | ❌       | ✅      | Regular expression matching |
-| `CASE_FUNCTIONS`             | ✅        | ❌       | ✅      | UPPER/LOWER case functions |
+## What Works Everywhere
 
-### Capability Discovery at Runtime
+Every capability listed below is fully supported on **all** providers. There are
+no asterisks, no provider-specific caveats, and no runtime checks required.
 
-```java
-MulticloudDbClient client = MulticloudDbClientFactory.create(config);
-CapabilitySet caps = client.capabilities();
+### CRUD Operations
 
-if (caps.isSupported(Capability.LIKE_OPERATOR)) {
-    // Use LIKE in queries
-} else {
-    // Fall back to STARTS_WITH + CONTAINS
-}
-```
+| Operation | Description |
+|-----------|-------------|
+| **Create** | Insert a new document (fails if the key already exists) |
+| **Read** | Point-read by partition key + sort key |
+| **Update** | Replace an existing document (fails if not found) |
+| **Upsert** | Create or replace — always succeeds |
+| **Delete** | Remove by key (idempotent) |
 
-## Portable Expression DSL
+### Query — Portable Expression DSL
 
-All providers support the portable expression grammar for queries:
+Write a WHERE-clause filter once. The SDK translates it to the native query
+language of whichever provider is configured — Cosmos SQL, DynamoDB PartiQL,
+or Spanner GoogleSQL.
 
-| Feature         | Operator / Function   | Example |
-|-----------------|-----------------------|---------|
-| Comparison      | `=`, `!=`, `<`, `>`, `<=`, `>=` | `status = 'active'` |
-| Logical         | `AND`, `OR`, `NOT`    | `age > 18 AND active = true` |
-| Functions       | `STARTS_WITH`         | `STARTS_WITH(name, 'A')` |
-|                 | `CONTAINS`            | `CONTAINS(tags, 'urgent')` |
-|                 | `FIELD_EXISTS`        | `FIELD_EXISTS(metadata)` |
-|                 | `STRING_LENGTH`       | `STRING_LENGTH(name) > 3` |
-|                 | `COLLECTION_SIZE`     | `COLLECTION_SIZE(items) >= 1` |
-| Parameters      | `@paramName`          | `price > @minPrice` |
-
-### Expression Examples
+| Feature | Operators / Functions | Example |
+|---------|----------------------|---------|
+| Comparison | `=`, `!=`, `<`, `>`, `<=`, `>=` | `status = 'active'` |
+| Logical | `AND`, `OR`, `NOT` | `age > 18 AND active = true` |
+| String functions | `STARTS_WITH`, `CONTAINS` | `STARTS_WITH(name, 'A')` |
+| Field introspection | `FIELD_EXISTS` | `FIELD_EXISTS(metadata)` |
+| Length functions | `STRING_LENGTH`, `COLLECTION_SIZE` | `STRING_LENGTH(name) > 3` |
+| Named parameters | `@paramName` | `price > @minPrice` |
 
 ```java
-// Simple comparison
-QueryRequest q1 = QueryRequest.builder()
-    .expression("status = @status")
-    .parameter("status", "active")
-    .maxPageSize(20)
-    .build();
-
-// Function call
-QueryRequest q2 = QueryRequest.builder()
+QueryRequest query = QueryRequest.builder()
     .expression("STARTS_WITH(name, @prefix) AND age >= @minAge")
     .parameter("prefix", "J")
     .parameter("minAge", 21)
     .maxPageSize(50)
     .build();
+
+QueryPage page = client.query(address, query);
 ```
 
-## Error Category Mapping
+### Pagination
+
+| Feature | Description |
+|---------|-------------|
+| **Cursor-based paging** | Continuation-token pagination across all providers |
+| **Page size control** | `maxPageSize` to limit results per page |
+
+### Data Management
+
+| Feature | Description |
+|---------|-------------|
+| **Schema provisioning** | `provisionSchema()` creates databases, containers, and tables portably |
+| **Transactions** | Multi-document transactional operations |
+| **Batch operations** | Batch read/write for throughput efficiency |
+| **Strong consistency** | Strongly-consistent reads |
+| **Change feed** | Change feed / change streams |
+
+### Diagnostics & Error Handling
+
+| Feature | Description |
+|---------|-------------|
+| **Structured diagnostics** | Latency, request charge, and provider correlation IDs per operation |
+| **Portable error categories** | All provider exceptions mapped to `MulticloudDbErrorCategory` |
+| **Capability introspection** | `client.capabilities()` reports what the current provider supports |
+
+---
+
+## Portable Error Mapping
 
 All provider exceptions are mapped to portable `MulticloudDbErrorCategory` values.
 The raw HTTP or gRPC status code is also available via `error.statusCode()`.
 
-| Category  | Cosmos DB  | DynamoDB  | Spanner  |
-|-----------|------------|-----------|----------|
-| `INVALID_REQUEST`  | HTTP 400  | ValidationException, HTTP 400  | INVALID_ARGUMENT, FAILED_PRECONDITION  |
-| `AUTHENTICATION_FAILED`  | HTTP 401  | UnrecognizedClientException, HTTP 401/403  | UNAUTHENTICATED  |
-| `AUTHORIZATION_FAILED`  | HTTP 403  | AccessDeniedException  | PERMISSION_DENIED  |
-| `NOT_FOUND`  | HTTP 404  | ResourceNotFoundException, HTTP 404  | NOT_FOUND  |
-| `CONFLICT` (409 — duplicate key)  | HTTP 409  | `ConditionalCheckFailedException` from `create()` — `attribute_not_exists` guard fails when the item already exists  | ALREADY_EXISTS  |
-| `CONFLICT` (412 — precondition)  | HTTP 412  | `ConditionalCheckFailedException` from `update()`/`upsert()` with a condition expression¹  | ABORTED  |
-| `THROTTLED`  | HTTP 429  | ProvisionedThroughputExceededException, ThrottlingException  | RESOURCE_EXHAUSTED  |
-| `TRANSIENT_FAILURE`  | HTTP 449, 500, 502, 503  | HTTP 500–5xx  | UNAVAILABLE  |
-| `PERMANENT_FAILURE`  | —  | ItemCollectionSizeLimitExceededException  | —  |
-| `UNSUPPORTED_CAPABILITY`  | —  | —  | UNIMPLEMENTED  |
-| `PROVIDER_ERROR`  | Other  | Other  | INTERNAL, Other  |
+| Category | Cosmos DB | DynamoDB | Spanner |
+|----------|-----------|----------|---------|
+| `INVALID_REQUEST` | HTTP 400 | ValidationException, HTTP 400 | INVALID_ARGUMENT, FAILED_PRECONDITION |
+| `AUTHENTICATION_FAILED` | HTTP 401 | UnrecognizedClientException, HTTP 401/403 | UNAUTHENTICATED |
+| `AUTHORIZATION_FAILED` | HTTP 403 | AccessDeniedException | PERMISSION_DENIED |
+| `NOT_FOUND` | HTTP 404 | ResourceNotFoundException, HTTP 404 | NOT_FOUND |
+| `CONFLICT` (duplicate key) | HTTP 409 | `ConditionalCheckFailedException` from `create()` | ALREADY_EXISTS |
+| `CONFLICT` (precondition) | HTTP 412 | `ConditionalCheckFailedException` from conditional `update()`¹ | ABORTED |
+| `THROTTLED` | HTTP 429 | ProvisionedThroughputExceededException | RESOURCE_EXHAUSTED |
+| `TRANSIENT_FAILURE` | HTTP 449, 500, 502, 503 | HTTP 500–5xx | UNAVAILABLE |
+| `PERMANENT_FAILURE` | — | ItemCollectionSizeLimitExceededException | — |
+| `PROVIDER_ERROR` | Other | Other | INTERNAL, Other |
 
-> ¹ DynamoDB uses `ConditionalCheckFailedException` for both the 409 (duplicate-key on `create`) and 412
-> (precondition failure on conditional `update`/`upsert`) cases — both currently map to `CONFLICT`.
-> The portable API does not yet expose ETag-based conditional updates; when it does, the 412-equivalent
-> path will be split into a dedicated `PRECONDITION_FAILED` category (tracked in issue #29).
+> ¹ DynamoDB uses `ConditionalCheckFailedException` for both duplicate-key and precondition-failure
+> cases. The portable API does not yet expose ETag-based conditional updates; when it does, the
+> 412-equivalent path will be split into a dedicated `PRECONDITION_FAILED` category.
 
-## Escape Hatch Policy
+---
 
-The SDK does not expose a `nativeClient()` method. Direct access to the
+## Native Query Escape Hatch
+
+For advanced scenarios requiring provider-specific query syntax, `nativeExpression()`
+allows passing a raw query string directly to the underlying provider. This is the
+**only** escape hatch the SDK provides — it is deliberately minimal.
+
+```java
+QueryRequest q = QueryRequest.builder()
+    .nativeExpression("SELECT * FROM c WHERE c.title LIKE '%flight%'")
+    .maxPageSize(25)
+    .build();
+```
+
+!!! warning "Portability trade-off"
+
+    Code using `nativeExpression()` is **not portable**. It will only work with
+    the provider whose query language you've written. The SDK logs a
+    `PortabilityWarning` when native expressions are used.
+
+The SDK does **not** expose a `nativeClient()` method. Direct access to the
 underlying provider client is intentionally omitted to enforce portability
 guarantees — code written against the SDK must remain switchable between
 providers by configuration alone.
-
-For provider-specific features not covered by the portable API, file a feature
-request or implement the operation using the provider's own SDK alongside
-(not through) the `MulticloudDbClient`.

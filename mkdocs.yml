@@ -1,0 +1,100 @@
+site_name: Multicloud DB SDK for Java
+site_url: https://microsoft.github.io/multiclouddb-sdk-for-java/
+site_description: >-
+  A portable database SDK — write CRUD and query logic once, run against
+  Azure Cosmos DB, Amazon DynamoDB, or Google Cloud Spanner.
+site_author: Microsoft
+
+repo_url: https://github.com/microsoft/multiclouddb-sdk-for-java
+repo_name: microsoft/multiclouddb-sdk-for-java
+edit_uri: edit/main/docs/
+
+copyright: Copyright &copy; Microsoft Corporation. All rights reserved.
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+    logo: material/database
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Quick Start: getting-started.md
+    - Configuration: configuration.md
+    - Architecture: architecture.md
+  - Developer Guide: guide.md
+  - Compatibility: compatibility.md
+  - Samples:
+    - samples/index.md
+    - TODO App: samples/todo-app.md
+    - Risk Analysis Platform: samples/risk-platform.md
+  - API Reference: api-reference.md
+  - Contributing: contributing.md
+  - Changelog: changelog.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.mark
+  - pymdownx.keys
+  - attr_list
+  - md_in_html
+  - tables
+  - def_list
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/microsoft/multiclouddb-sdk-for-java
+
+extra_css:
+  - stylesheets/extra.css
