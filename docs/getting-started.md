@@ -12,7 +12,7 @@ Get up and running with the Multicloud DB SDK in minutes.
 | Maven | 3.9+   | Build |
 
 ```bash
-java -version    # must be 17.x
+java -version    # must be 17 or newer
 mvn -version     # must be 3.9+
 ```
 
