@@ -209,7 +209,7 @@ QueryRequest query = QueryRequest.builder()
     .expression("sector = @sector")
     .parameter("sector", "Technology")
     .partitionKey("portfolio-alpha")
-    .pageSize(50)
+    .maxPageSize(50)
     .build();
 ```
 
