@@ -84,19 +84,18 @@ Provider modules implement two SPI contracts without importing each other:
 Providers are discovered at runtime via Java's `ServiceLoader`:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  1. Your app calls MulticloudDbClientFactory.create(config)     │
-│                                                                 │
-│  2. The factory scans:                                          │
-│     META-INF/services/com.multiclouddb.spi                     │
-│         .MulticloudDbProviderAdapter                            │
-│                                                                 │
-│  3. The matching adapter's createClient() builds a native       │
-│     SDK client (Cosmos SDK, DynamoDB SDK, or Spanner SDK)       │
-│                                                                 │
-│  4. A DefaultMulticloudDbClient wraps it with error mapping,    │
-│     diagnostics, and the portable contract                      │
-└─────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────┐
+│  1. Your app calls MulticloudDbClientFactory.create(config)                        │
+│                                                                                    │
+│  2. The factory scans:                                                             │
+│     META-INF/services/com.multiclouddb.spi.MulticloudDbProviderAdapter            │
+│                                                                                    │
+│  3. The matching adapter's createClient() builds a native                         │
+│     SDK client (Cosmos SDK, DynamoDB SDK, or Spanner SDK)                         │
+│                                                                                    │
+│  4. A DefaultMulticloudDbClient wraps it with error mapping,                      │
+│     diagnostics, and the portable contract                                        │
+└────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **No provider imports in application code.** Just drop the provider JAR on the
