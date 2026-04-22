@@ -9,6 +9,20 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Default sort-key ordering: all Cosmos DB queries now have `ORDER BY c.id ASC`
+  appended automatically when no explicit `ORDER BY` is set, ensuring consistent
+  sort behavior with DynamoDB. Aggregate queries (`COUNT`, `SUM`, `MIN`, `MAX`,
+  `AVG`) and `GROUP BY` queries are exempt — Cosmos DB rejects `ORDER BY` on them.
+  Queries with an existing `ORDER BY` clause are not modified (idempotent).
+  See `docs/compatibility.md` for custom indexing policy requirements and RU cost
+  implications.
+
+### Changed
+
+- `applyResultSetControl()` now uses a word-boundary regex (`\bORDER\s+BY\b`)
+  instead of `String.contains()` to detect existing `ORDER BY` clauses, preventing
+  false positives from string literals (e.g. `WHERE c.note = 'place order by friday'`).
+
 - The Cosmos client now stamps the outgoing `User-Agent` header with the
   canonical `multiclouddb-sdk-java/<version>` token. When
   `MulticloudDbClientConfig.Builder.userAgentSuffix(String)` is configured,

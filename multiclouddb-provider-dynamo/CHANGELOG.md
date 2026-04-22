@@ -9,6 +9,23 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- Default sort-key ordering: all DynamoDB scan paths (`executeScan`,
+  `executeScanWithFilter`, `queryWithTranslation`) now sort result items by sort
+  key ascending within each page before returning the `QueryPage`. This matches
+  the behavior of DynamoDB's native `Query` API (which sorts by range key within
+  a partition) and mirrors the global sort introduced in the Cosmos provider.
+  Note: sorting is per-page only — multi-page scans retain DynamoDB's token-based
+  traversal order across pages. See `docs/compatibility.md` for details.
+
+### Changed
+
+- `SORT_KEY_ASC` comparator now handles numeric sort keys using type-aware
+  comparison: `Long` pairs use `Long.compare`, `Integer` pairs use
+  `Integer.compare`, and all other `Number` types (including mixed) use
+  `BigDecimal` comparison to preserve DynamoDB's 38-digit numeric precision.
+  Previously all numeric keys were compared via `Double.compare`, which loses
+  precision for integers > 2^53.
+
 - The DynamoDB client now stamps the outgoing `User-Agent` header with the
   canonical `multiclouddb-sdk-java/<version>` token via the AWS SDK
   `ClientOverrideConfiguration` API user-agent suffix. When

@@ -60,9 +60,11 @@ import software.amazon.awssdk.services.dynamodb.model.TableStatus;
 import software.amazon.awssdk.services.dynamodb.waiters.DynamoDbWaiter;
 import software.amazon.awssdk.http.SdkHttpResponse;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Instant;
 import java.util.*;
+import java.util.Comparator;
 
 /**
  * Amazon DynamoDB provider client implementing CRUD + scan/query with
@@ -546,6 +548,13 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                 items.add(DynamoItemMapper.attributeMapToMap(item));
             }
 
+            // PartiQL ExecuteStatement returns items in undefined order for scans.
+            // Sort by sort key (ascending) to match the implicit ordering of
+            // DynamoDB Query within a partition and the Cosmos provider's default
+            // ORDER BY c.id ASC. Ordering applies within this page only; see
+            // SORT_KEY_ASC for the multi-page limitation note.
+            items.sort(SORT_KEY_ASC);
+
             OperationDiagnostics diag = buildQueryDiagnostics(OperationNames.QUERY_WITH_TRANSLATION, address,
                     response.responseMetadata().requestId(),
                     response.consumedCapacity(), items.size(), response.nextToken(),
@@ -709,6 +718,13 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
             items.add(DynamoItemMapper.attributeMapToMap(item));
         }
 
+        // DynamoDB Scan returns items in undefined hash-key order. Sort by sort key
+        // (ascending) to match the implicit ordering of DynamoDB Query within a
+        // partition and the Cosmos provider's default ORDER BY c.id ASC. Ordering
+        // applies within this page only; see SORT_KEY_ASC for the multi-page
+        // limitation note.
+        items.sort(SORT_KEY_ASC);
+
         String continuationToken = null;
         if (response.lastEvaluatedKey() != null && !response.lastEvaluatedKey().isEmpty()) {
             continuationToken = DynamoContinuationToken.encode(response.lastEvaluatedKey());
@@ -768,6 +784,13 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
             items.add(DynamoItemMapper.attributeMapToMap(item));
         }
 
+        // DynamoDB Scan returns items in undefined hash-key order. Sort by sort key
+        // (ascending) to match the implicit ordering of DynamoDB Query within a
+        // partition and the Cosmos provider's default ORDER BY c.id ASC. Ordering
+        // applies within this page only; see SORT_KEY_ASC for the multi-page
+        // limitation note.
+        items.sort(SORT_KEY_ASC);
+
         String continuationToken = null;
         if (response.lastEvaluatedKey() != null && !response.lastEvaluatedKey().isEmpty()) {
             continuationToken = DynamoContinuationToken.encode(response.lastEvaluatedKey());
@@ -794,6 +817,48 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
     private String resolveTableName(ResourceAddress address) {
         return address.database() + DynamoConstants.TABLE_NAME_SEPARATOR + address.collection();
     }
+
+    /**
+     * Comparator that orders result items by their sort key ({@code sortKey}
+     * attribute) ascending.
+     * <p>
+     * <ul>
+     *   <li>Items without a sort key sort before items that have one.</li>
+     *   <li>String sort keys compare lexicographically.</li>
+     *   <li>Numeric sort keys compare by value: {@code Long} and {@code Integer}
+     *       use their native comparators to avoid precision loss. Other
+     *       {@code Number} subtypes (including mixed-type pairs) are compared via
+     *       {@link BigDecimal} — DynamoDB Number supports up to 38 significant
+     *       digits, which exceeds {@code double} precision.</li>
+     * </ul>
+     * <p>
+     * <b>Note:</b> This sort applies within a single page of results only.
+     * For multi-page scans the overall iteration order across pages remains
+     * determined by DynamoDB's internal token-based traversal, not by sort key.
+     */
+    private static final Comparator<Map<String, Object>> SORT_KEY_ASC =
+            (a, b) -> {
+                Object sa = a.get(DynamoConstants.ATTR_SORT_KEY);
+                Object sb = b.get(DynamoConstants.ATTR_SORT_KEY);
+                if (sa == null && sb == null) return 0;
+                if (sa == null) return -1;
+                if (sb == null) return 1;
+                if (sa instanceof Number na && sb instanceof Number nb) {
+                    // Use Long.compare for integer types to avoid precision loss —
+                    // Double.compare(long, long) is incorrect for values > 2^53.
+                    if (sa instanceof Long la && sb instanceof Long lb) {
+                        return Long.compare(la, lb);
+                    }
+                    if (sa instanceof Integer ia && sb instanceof Integer ib) {
+                        return Integer.compare(ia, ib);
+                    }
+                    // For Double, mixed types, or other Number subtypes use BigDecimal
+                    // (DynamoDB Number supports up to 38 significant digits — beyond double
+                    // precision — so toString() → BigDecimal preserves full value ordering).
+                    return new BigDecimal(na.toString()).compareTo(new BigDecimal(nb.toString()));
+                }
+                return sa.toString().compareTo(sb.toString());
+            };
 
     /**
      * Appends a partition key equality condition to a PartiQL statement.

@@ -82,45 +82,85 @@ QueryPage page = client.query(address, query);
 All provider exceptions are mapped to portable `MulticloudDbErrorCategory` values.
 The raw HTTP or gRPC status code is also available via `error.statusCode()`.
 
-| Category | Cosmos DB | DynamoDB | Spanner |
-|----------|-----------|----------|---------|
-| `INVALID_REQUEST` | HTTP 400 | ValidationException, HTTP 400 | INVALID_ARGUMENT, FAILED_PRECONDITION |
-| `AUTHENTICATION_FAILED` | HTTP 401 | UnrecognizedClientException, HTTP 401/403 | UNAUTHENTICATED |
-| `AUTHORIZATION_FAILED` | HTTP 403 | AccessDeniedException | PERMISSION_DENIED |
-| `NOT_FOUND` | HTTP 404 | ResourceNotFoundException, HTTP 404 | NOT_FOUND |
-| `CONFLICT` (duplicate key) | HTTP 409 | `ConditionalCheckFailedException` from `create()` | ALREADY_EXISTS |
-| `CONFLICT` (precondition) | HTTP 412 | `ConditionalCheckFailedException` from conditional `update()`¹ | ABORTED |
-| `THROTTLED` | HTTP 429 | ProvisionedThroughputExceededException | RESOURCE_EXHAUSTED |
-| `TRANSIENT_FAILURE` | HTTP 449, 500, 502, 503 | HTTP 500–5xx | UNAVAILABLE |
-| `PERMANENT_FAILURE` | — | ItemCollectionSizeLimitExceededException | — |
-| `PROVIDER_ERROR` | Other | Other | INTERNAL, Other |
+| Category  | Cosmos DB  | DynamoDB  | Spanner  |
+|-----------|------------|-----------|----------|
+| `INVALID_REQUEST`  | HTTP 400  | ValidationException, HTTP 400  | INVALID_ARGUMENT, FAILED_PRECONDITION  |
+| `AUTHENTICATION_FAILED`  | HTTP 401  | UnrecognizedClientException, HTTP 401/403  | UNAUTHENTICATED  |
+| `AUTHORIZATION_FAILED`  | HTTP 403  | AccessDeniedException  | PERMISSION_DENIED  |
+| `NOT_FOUND`  | HTTP 404  | ResourceNotFoundException, HTTP 404  | NOT_FOUND  |
+| `CONFLICT` (409 — duplicate key)  | HTTP 409  | `ConditionalCheckFailedException` from `create()` — `attribute_not_exists` guard fails when the item already exists  | ALREADY_EXISTS  |
+| `CONFLICT` (412 — precondition)  | HTTP 412  | `ConditionalCheckFailedException` from `update()`/`upsert()` with a condition expression¹  | ABORTED  |
+| `THROTTLED`  | HTTP 429  | ProvisionedThroughputExceededException, ThrottlingException  | RESOURCE_EXHAUSTED  |
+| `TRANSIENT_FAILURE`  | HTTP 449, 500, 502, 503  | HTTP 500–5xx  | UNAVAILABLE  |
+| `PERMANENT_FAILURE`  | —  | ItemCollectionSizeLimitExceededException  | —  |
+| `UNSUPPORTED_CAPABILITY`  | —  | —  | UNIMPLEMENTED  |
+| `PROVIDER_ERROR`  | Other  | Other  | INTERNAL, Other  |
 
-> ¹ DynamoDB uses `ConditionalCheckFailedException` for both duplicate-key and precondition-failure
-> cases. The portable API does not yet expose ETag-based conditional updates; when it does, the
-> 412-equivalent path will be split into a dedicated `PRECONDITION_FAILED` category.
+> ¹ DynamoDB uses `ConditionalCheckFailedException` for both the 409 (duplicate-key on `create`) and 412
+> (precondition failure on conditional `update`/`upsert`) cases — both currently map to `CONFLICT`.
+> The portable API does not yet expose ETag-based conditional updates; when it does, the 412-equivalent
+> path will be split into a dedicated `PRECONDITION_FAILED` category (tracked in issue #29).
 
----
+## Default Sort-Key Ordering
 
-## Native Query Escape Hatch
+Starting from this release, all Cosmos DB and DynamoDB query paths return results
+sorted by the document's sort key ascending.
 
-For advanced scenarios requiring provider-specific query syntax, `nativeExpression()`
-allows passing a raw query string directly to the underlying provider. This is the
-**only** escape hatch the SDK provides — it is deliberately minimal.
+> **Design note:** The default `ORDER BY` is applied to **all** Cosmos queries
+> (both partition-scoped and cross-partition), not just partition-scoped ones.
+> This gives the strongest consistency guarantee: every query, on every provider,
+> returns items sorted by sort key. The early PR description mentioned
+> partition-scoped only as a starting point; the final implementation was
+> intentionally broadened to cover all queries.
 
-```java
-QueryRequest q = QueryRequest.builder()
-    .nativeExpression("SELECT * FROM c WHERE c.title LIKE '%flight%'")
-    .maxPageSize(25)
-    .build();
-```
+### Cosmos DB
 
-!!! warning "Portability trade-off"
+Cosmos DB appends `ORDER BY c.id ASC` to every query that does not already carry
+an explicit `ORDER BY` clause (and is not an aggregate / `GROUP BY` query). This
+is applied server-side, so the order is globally consistent across all pages.
 
-    Code using `nativeExpression()` is **not portable**. It will only work with
-    the provider whose query language you've written. The SDK logs a
-    `PortabilityWarning` when native expressions are used.
+> **⚠️ Custom indexing policy — composite index required**
+> If your Cosmos container uses a **custom indexing policy** that does not include
+> a composite index on `(filterField ASC, id ASC)`, Cosmos DB will throw a
+> `400 Bad Request` at runtime for cross-partition queries that combine `WHERE` and
+> the default `ORDER BY c.id ASC`. The default indexing policy includes all paths
+> and supports this automatically. If you have tuned your indexing policy, add the
+> composite index for every field you filter on:
+> ```json
+> { "compositeIndexes": [ [{ "path": "/filterField", "order": "ascending" },
+>                          { "path": "/id", "order": "ascending" }] ] }
+> ```
+>
+> **⚠️ RU cost**
+> Appending `ORDER BY c.id ASC` to all Cosmos queries incurs an additional RU
+> charge versus unordered queries, proportional to result-set size. This cost is
+> the price of cross-provider consistency and is expected behavior.
+>
+> **⚠️ Aggregates and GROUP BY**
+> Cosmos DB rejects `ORDER BY` on aggregate expressions (`COUNT`, `SUM`, `MIN`,
+> `MAX`, `AVG`) and `GROUP BY` queries. The SDK automatically detects these patterns
+> and omits the default `ORDER BY` for them.
 
-The SDK does **not** expose a `nativeClient()` method. Direct access to the
+### DynamoDB
+
+DynamoDB results are sorted in memory per page after fetching (client-side).
+Within a single page, items are returned sorted by sort key ascending.
+For multi-page scans the overall order across pages is determined by DynamoDB's
+internal token-based traversal, not sort key — this is a known limitation.
+
+### Spanner
+
+The Spanner provider does not yet implement default sort-key ordering.
+Consumers relying on consistent cross-provider sort behavior should not use
+the Spanner provider until this gap is addressed.
+
+> **Tracking**: A follow-up issue will be filed to implement default sort-key
+> ordering for the Spanner provider. Until resolved, do not mix Spanner with
+> Cosmos or DynamoDB in conformance-sensitive workloads.
+
+## Escape Hatch Policy
+
+The SDK does not expose a `nativeClient()` method. Direct access to the
 underlying provider client is intentionally omitted to enforce portability
 guarantees — code written against the SDK must remain switchable between
 providers by configuration alone.
