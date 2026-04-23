@@ -189,12 +189,15 @@ handoff:
    The partner pipeline also requires the matching POM as
    `<artifactId>-<version>.pom`. The `release.yml` workflow currently does
    **not** attach this to the GitHub Release — grab it from the
-   `maven-staging-<MODULE>-<VERSION>` GitHub Actions artifact, or rename a copy
-   of the module's `pom.xml` from the tagged commit. All four files must be
+   `maven-staging-<MODULE>-<VERSION>` GitHub Actions artifact (which stores
+   files in a Maven-repository directory tree under
+   `<groupId-as-path>/<artifactId>/<version>/`), or rename a copy of the
+   module's `pom.xml` from the tagged commit. All four files must be
    **unsigned** (the partner pipeline signs them).
 
-2. **Upload the four files to the Azure SDK partner blob container**, using
-   your own credentials (Azure Portal / `azcopy` / Azure Storage Explorer):
+2. **Upload the four files (flat) to the Azure SDK partner blob container**,
+   using your own credentials (Azure Portal / `azcopy` / Azure Storage
+   Explorer):
 
    - Container:
      `https://azuresdkpartnerdrops.blob.core.windows.net/drops`
@@ -203,6 +206,10 @@ handoff:
      for this SDK, ask in the
      [Partner Release Pipelines](https://teams.microsoft.com/l/channel/19%3ac89f67e32f5941d78a3710a692cf7717%40thread.skype/Partner%2520Release%2520Pipelines?groupId=3e17dcb0-4257-4a30-b843-77f47f1d4121&tenantId=72f988bf-86f1-41af-91ab-2d7cd011db47)
      Teams channel before the first release.)
+   - Upload the 4 files **directly** under that path — do **not** preserve
+     the `<groupId>/<artifactId>/<version>/` Maven directory tree from the
+     staging artifact. The partner pipeline reads files at exactly the
+     `BlobPath` level.
    - Important: put **only** the artifacts for this version under that path.
      The pipeline publishes _everything_ in that folder.
    - Repeat per released module under the same `<team>/java/<version>/` path

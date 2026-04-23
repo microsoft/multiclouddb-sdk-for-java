@@ -169,11 +169,17 @@ The `publish` job in `release.yml`:
 - Builds and `mvn deploy`s the target module to a **local `file://` staging
   directory** on the GitHub Actions runner
 - Uploads that `staging/` tree as a GitHub Actions artifact named
-  `maven-staging-<MODULE>-<VERSION>` (90-day retention) — this contains the
-  `.pom` plus the three jars in standard Maven layout
+  `maven-staging-<MODULE>-<VERSION>` (90-day retention) — this is a Maven
+  **repository-style** tree (i.e. files live under
+  `<groupId-as-path>/<artifactId>/<version>/`), containing the module's
+  `.pom`, `<module>-<version>.jar`, `<module>-<version>-sources.jar`, and
+  `<module>-<version>-javadoc.jar`. Note: this is the layout `mvn deploy`
+  produces; the partner pipeline does **not** consume this layout directly —
+  see the handoff procedure below.
 - Attaches `<module>-<version>.jar`, `<module>-<version>-sources.jar`, and
   `<module>-<version>-javadoc.jar` to the GitHub Release (the `.pom` is
-  currently NOT attached to the release — pull it from the staging artifact)
+  currently NOT attached to the release — pull it from the staging artifact's
+  Maven-layout tree)
 
 ### Prerequisites
 
@@ -189,7 +195,7 @@ The `publish` job in `release.yml`:
 
 ### Manual handoff procedure (per release)
 
-For each module released by Phase 5:
+For each module released by the `release.yml` workflow:
 
 1. **Gather the four required files** (all **unsigned**):
 
@@ -200,8 +206,16 @@ For each module released by Phase 5:
    | `<artifactId>-<version>-sources.jar` | GitHub Release (or staging artifact) |
    | `<artifactId>-<version>-javadoc.jar` | GitHub Release (or staging artifact) |
 
-   `<artifactId>` and `<version>` follow the standard Maven naming Maven
+   `<artifactId>` and `<version>` follow the standard naming that Maven
    produces for the module (e.g. `multiclouddb-api-0.1.0-beta.1.pom`).
+
+   > **Layout note:** the `maven-staging-<MODULE>-<VERSION>` artifact stores
+   > these files inside a Maven-repository directory tree
+   > (`<groupId-as-path>/<artifactId>/<version>/`). The partner pipeline does
+   > **not** want that tree — it wants the 4 leaf files in a flat folder.
+   > Either extract just the 4 files from the staging tree before uploading,
+   > or download them from the GitHub Release (3 jars) plus the staging
+   > artifact (`.pom`).
 
 2. **Upload to the partner blob container** using your own credentials
    (Azure Portal, [`azcopy`](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azcopy-v10),
@@ -210,6 +224,10 @@ For each module released by Phase 5:
    - Container: `https://azuresdkpartnerdrops.blob.core.windows.net/drops`
    - Path: `<team>/java/<version>/`
      (e.g. `adp/java/1.0.3/`)
+   - Upload the 4 files **flat** at that path (do **not** preserve the
+     `<groupId>/<artifactId>/<version>/` Maven directory tree from the
+     staging artifact — the partner pipeline globs files at exactly the
+     `BlobPath` level).
    - Put **only** the files you want published in that folder — the pipeline
      publishes _everything_ at that path.
    - If you don't know the `<team>` prefix to use for this SDK yet, ask in
