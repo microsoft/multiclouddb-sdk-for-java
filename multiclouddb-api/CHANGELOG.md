@@ -29,8 +29,6 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   horizontal tab (0x09), throwing `IllegalArgumentException`. This protects
   the user-agent header from injection of CR/LF or other control characters.
 
-### Added
-
 #### Portable client API
 
 - `MulticloudDbClient` — synchronous, provider-agnostic interface for CRUD

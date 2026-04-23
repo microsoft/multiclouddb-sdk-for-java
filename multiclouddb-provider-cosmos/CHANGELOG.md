@@ -30,8 +30,6 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `MulticloudDbClientConfig.Builder.userAgentSuffix(String)` is configured,
   the suffix is appended to the header.
 
-### Added
-
 #### Provider adapter and client
 
 - `CosmosProviderAdapter` — SPI entry point auto-discovered via `ServiceLoader`;

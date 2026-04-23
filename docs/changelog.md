@@ -11,6 +11,8 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### [Unreleased]
 
+### [0.1.0-beta.1] — 2026-04-23
+
 **Added:**
 
 - `MulticloudDbClientConfig.Builder.userAgentSuffix(String)` — optional
@@ -20,16 +22,6 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   configured suffix, or `null` if unset.
 - `com.multiclouddb.spi.SdkUserAgent` — SPI helper that builds the canonical
   `multiclouddb-sdk-java/<version>` user-agent token.
-
-**Validation:**
-
-- `userAgentSuffix(String)` rejects values longer than 256 characters and
-  non-printable US-ASCII, protecting against header injection.
-
-### [0.1.0-beta.1] — 2026-04-03
-
-Initial public beta of the portable API and SPI layer.
-
 - `MulticloudDbClient` — synchronous, provider-agnostic interface for CRUD,
   query, and schema provisioning
 - `MulticloudDbClientFactory` — discovers provider adapters via `ServiceLoader`
@@ -45,21 +37,23 @@ Initial public beta of the portable API and SPI layer.
 - `DocumentMetadata` — last modified, TTL expiry, version/ETag
 - Document size enforcement (399 KB limit)
 
+**Validation:**
+
+- `userAgentSuffix(String)` rejects values longer than 256 characters and
+  non-printable US-ASCII, protecting against header injection.
+
 ---
 
 ## multiclouddb-provider-cosmos
 
 ### [Unreleased]
 
+### [0.1.0-beta.1] — 2026-04-23
+
 **Added:**
 
 - User-Agent header stamping with `multiclouddb-sdk-java/<version>` token
   and optional user-configured suffix.
-
-### [0.1.0-beta.1] — 2026-04-03
-
-Initial public beta of the Azure Cosmos DB provider.
-
 - `CosmosProviderAdapter` — SPI entry point for Cosmos DB
 - `CosmosProviderClient` — full implementation backed by Azure Cosmos DB Java SDK v4
 - Master-key and Azure Identity (Entra ID) authentication
@@ -76,14 +70,11 @@ Initial public beta of the Azure Cosmos DB provider.
 
 ### [Unreleased]
 
+### [0.1.0-beta.1] — 2026-04-23
+
 **Added:**
 
 - User-Agent suffix support via `SdkAdvancedClientOption.USER_AGENT_SUFFIX`.
-
-### [0.1.0-beta.1] — 2026-04-03
-
-Initial public beta of the Amazon DynamoDB provider.
-
 - `DynamoProviderAdapter` — SPI entry point for DynamoDB
 - `DynamoProviderClient` — full implementation backed by AWS SDK for Java 2.25.16
 - AWS credential authentication (access key + secret key)
@@ -98,14 +89,11 @@ Initial public beta of the Amazon DynamoDB provider.
 
 ### [Unreleased]
 
+### [0.1.0-beta.1] — 2026-04-23
+
 **Added:**
 
 - User-Agent support via gax `FixedHeaderProvider`.
-
-### [0.1.0-beta.1] — 2026-04-03
-
-Initial public beta of the Google Cloud Spanner provider.
-
 - `SpannerProviderAdapter` — SPI entry point for Spanner
 - `SpannerProviderClient` — full implementation backed by Google Cloud Spanner 6.62.0
 - GCP credential and emulator authentication
