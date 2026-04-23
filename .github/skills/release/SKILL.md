@@ -155,6 +155,82 @@ After each tag is pushed:
    - Remind the user that the `production` environment requires manual approval:
      **Actions → Release → (the run) → Review deployments → Approve**
 
+### Phase 6: Azure Partner Drops Handoff (Manual — Outside This Repo)
+
+> **Status: not automated.** The `release.yml` workflow stops after creating the
+> GitHub Release. Publishing to **Maven Central** is performed by the Azure SDK
+> **Partner Release Pipeline** (in the `azure-sdk/internal` ADO project), which
+> handles ESRP signing, OSSRH staging, and the Maven Central push. This repo's
+> only responsibility is to hand the unsigned artifacts to that pipeline.
+>
+> Reference (Microsoft-internal):
+> [Azure Partner Release Pipeline wiki](https://aka.ms/azsdk/partner-release-pipeline)
+
+After Phase 5 succeeds for every released module, walk the user through the
+handoff:
+
+**Prerequisites (one-time):**
+
+- Membership in the **Azure SDK Partners** security group
+  (request via <https://aka.ms/azsdk/join/azuresdkpartners> — manager approval
+  required). Grants both blob upload rights and ADO pipeline run rights.
+- For a brand-new package (first ever release of new Maven coordinates), the
+  releaser must first chat with an Azure SDK architect to confirm the package
+  conforms to the Azure SDK Design Guidelines (per the wiki).
+
+**Per-release steps (communicate to the user):**
+
+1. **Download the GitHub Release jars** for each module just released.
+   For each module the release includes:
+   - `<artifactId>-<version>.jar`
+   - `<artifactId>-<version>-sources.jar`
+   - `<artifactId>-<version>-javadoc.jar`
+
+   The partner pipeline also requires the matching POM as
+   `<artifactId>-<version>.pom`. The `release.yml` workflow currently does
+   **not** attach this to the GitHub Release — grab it from the
+   `maven-staging-<MODULE>-<VERSION>` GitHub Actions artifact, or rename a copy
+   of the module's `pom.xml` from the tagged commit. All four files must be
+   **unsigned** (the partner pipeline signs them).
+
+2. **Upload the four files to the Azure SDK partner blob container**, using
+   your own credentials (Azure Portal / `azcopy` / Azure Storage Explorer):
+
+   - Container:
+     `https://azuresdkpartnerdrops.blob.core.windows.net/drops`
+   - Path convention: `<team>/java/<version>/`
+     (e.g. `adp/java/1.0.3/`. If you do not yet know the team prefix to use
+     for this SDK, ask in the
+     [Partner Release Pipelines](https://teams.microsoft.com/l/channel/19%3ac89f67e32f5941d78a3710a692cf7717%40thread.skype/Partner%2520Release%2520Pipelines?groupId=3e17dcb0-4257-4a30-b843-77f47f1d4121&tenantId=72f988bf-86f1-41af-91ab-2d7cd011db47)
+     Teams channel before the first release.)
+   - Important: put **only** the artifacts for this version under that path.
+     The pipeline publishes _everything_ in that folder.
+   - Repeat per released module under the same `<team>/java/<version>/` path
+     (or, if releasing different modules at different versions in the same
+     wave, use one folder per `<version>`).
+
+3. **Trigger the [`java - partner-release`](https://dev.azure.com/azure-sdk/internal/_build?definitionId=1809&_a=summary)
+   pipeline** in the `azure-sdk/internal` ADO project. Click **Run pipeline**
+   and set:
+   - `BlobPath` → the relative path you used in step 2
+     (e.g. `adp/java/1.0.3`)
+   - `StageOnly` → leave at `false` for a normal GA / beta release.
+     Set to `true` only if you want to stage in OSSRH and inspect / promote
+     manually.
+
+   The pipeline will sign the jars, stage to `oss.sonatype.org` under the
+   `azuresdk` account, and release to **Maven Central**.
+
+4. **Confirm publish to Maven Central** once the partner pipeline finishes:
+   `https://repo.maven.apache.org/maven2/<groupId-as-path>/<artifactId>/<version>/`
+
+> **First time?** It is highly recommended to coordinate the first release
+> through the Partner Release Pipelines Teams channel so the Azure SDK release
+> management team can shadow the run.
+
+For more detail, see the "Azure Partner Release Pipeline" section in
+`<THIS_SKILL_DIRECTORY>/references/release-process.md`.
+
 ## Multi-Module Release
 
 When releasing multiple modules, enforce dependency order:
