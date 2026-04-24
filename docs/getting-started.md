@@ -220,4 +220,4 @@ Change **only** the properties file — no code changes required:
 - [Configuration Reference](configuration.md) — full connection and auth properties per provider
 - [Developer Guide](guide.md) — keys, CRUD semantics, query DSL, partitioning, multi-tenant patterns
 - [Provider Compatibility](compatibility.md) — capability matrix and error mapping
-- [Samples](samples/index.md) — TODO app and Risk Analysis Platform
+- [Samples](https://github.com/microsoft/multiclouddb-sdk-for-java-samples) — TODO app, Risk Analysis Platform, and Portable CRUD + Query sample

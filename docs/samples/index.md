@@ -1,15 +1,29 @@
 # Sample Applications
 
-The SDK includes two sample applications demonstrating the portable API.
-Each sample runs against **Azure Cosmos DB** or **Amazon DynamoDB** —
-switch providers by changing a single properties file. Some samples also
-support **Google Cloud Spanner**; see the sample guides and support table below.
+Sample applications demonstrating the Multicloud DB SDK's portable API are
+maintained in a **separate repository**:
+
+:material-github: **[microsoft/multiclouddb-sdk-for-java-samples](https://github.com/microsoft/multiclouddb-sdk-for-java-samples)**
+
+Each sample runs against **Azure Cosmos DB**, **Amazon DynamoDB**, or
+**Google Cloud Spanner** — switch providers by changing a single properties file.
 
 ---
 
 ## Available Samples
 
 <div class="feature-grid" markdown>
+
+<div class="card" markdown>
+
+### :material-code-tags:{ .card-icon } Portable CRUD + Query
+
+A minimal end-to-end sample showing CRUD operations and the portable query DSL
+against any provider.
+
+[View in samples repo →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples#portable-crud--query-sample){ .md-button }
+
+</div>
 
 <div class="card" markdown>
 
@@ -20,7 +34,7 @@ updating, and deleting TODO items.
 
 **Port:** `8080`
 
-[View guide →](todo-app.md){ .md-button }
+[View guide →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-todo-app.md){ .md-button }
 
 </div>
 
@@ -34,7 +48,7 @@ auto-provisioning.
 
 **Port:** `8090`
 
-[View guide →](risk-platform.md){ .md-button }
+[View guide →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-risk-platform.md){ .md-button }
 
 </div>
 
@@ -44,9 +58,11 @@ auto-provisioning.
 
 ## Quick Start
 
-Build the SDK from the repo root first:
+Clone the samples repository and build:
 
 ```bash
+git clone https://github.com/microsoft/multiclouddb-sdk-for-java-samples.git
+cd multiclouddb-sdk-for-java-samples
 mvn clean install -DskipTests
 ```
 

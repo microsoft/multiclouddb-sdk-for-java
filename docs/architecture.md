@@ -15,7 +15,9 @@ the provider implementations.
 | **multiclouddb-provider-dynamo** | `com.microsoft.multiclouddb:multiclouddb-provider-dynamo` | Amazon DynamoDB adapter (AWS SDK v2) |
 | **multiclouddb-provider-spanner** | `com.microsoft.multiclouddb:multiclouddb-provider-spanner` | Google Cloud Spanner adapter (Google Cloud Spanner 6.62.0) |
 | **multiclouddb-conformance** | `com.microsoft.multiclouddb:multiclouddb-conformance` | Cross-provider integration tests |
-| **multiclouddb-samples** | `com.microsoft.multiclouddb:multiclouddb-samples` | Sample apps: TODO web app + multi-tenant Risk Analysis Platform |
+
+> **Samples** are maintained in a separate repository:
+> [microsoft/multiclouddb-sdk-for-java-samples](https://github.com/microsoft/multiclouddb-sdk-for-java-samples)
 
 ---
 
@@ -121,13 +123,10 @@ multiclouddb-sdk-java/
 ├── multiclouddb-provider-dynamo/          # Amazon DynamoDB adapter
 ├── multiclouddb-provider-spanner/         # Google Cloud Spanner adapter
 ├── multiclouddb-conformance/              # Cross-provider integration tests
-├── multiclouddb-samples/                  # Sample applications
-│   ├── src/main/java/.../todo/            # TODO web app
-│   ├── src/main/java/.../riskplatform/    # Risk Analysis Platform
-│   └── src/main/resources/
-│       ├── static/                        # Browser UIs
-│       └── *.properties                   # Provider config files
 └── specs/                                 # Design documents
+
+# Sample applications (separate repo):
+# https://github.com/microsoft/multiclouddb-sdk-for-java-samples
 ```
 
 ---

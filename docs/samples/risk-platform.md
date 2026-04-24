@@ -8,6 +8,14 @@ and hedge funds.
 The app starts an embedded HTTP server on `http://localhost:8090` with a
 dark-themed executive dashboard for portfolio risk analytics.
 
+!!! tip "Samples repository"
+
+    The Risk Analysis Platform source code and full setup instructions are in the
+    **[multiclouddb-sdk-for-java-samples](https://github.com/microsoft/multiclouddb-sdk-for-java-samples)**
+    repository. See the
+    [Risk Platform README](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-risk-platform.md)
+    for complete emulator setup, cloud provider configuration, build, and run instructions.
+
 ---
 
 ## Features
@@ -53,38 +61,22 @@ graph TD
 
 ---
 
-## Prerequisites
+## Quick Start
 
-| Tool | Version | Notes |
-|------|---------|-------|
-| JDK  | 17 LTS  | Required |
-| Maven | 3.9+   | Build tool |
+Clone the samples repository and build:
 
-Plus one of:
+```bash
+git clone https://github.com/microsoft/multiclouddb-sdk-for-java-samples.git
+cd multiclouddb-sdk-for-java-samples
+mvn clean install -DskipTests
+```
 
-| Option | Extra Tools |
-|--------|-------------|
-| **A** — Cosmos DB Emulator | `openssl`, `keytool` |
-| **B** — DynamoDB Local | _(none)_ |
-| **C** — Cosmos DB Cloud | Azure CLI (`az login`) |
-| **D** — DynamoDB Cloud | AWS CLI (`aws configure`) |
-
-!!! note "Auto-provisioning"
-
-    You do **not** need to create any databases, containers, or tables manually.
-    The Risk Platform auto-provisions everything on startup via the SDK's
-    portable `provisionSchema()` API.
-
----
-
-## Running the Platform
+Then run against your chosen provider:
 
 === "Cosmos DB Emulator"
 
-    Start the Cosmos DB Emulator, then:
-
     ```bash
-    mvn -pl multiclouddb-samples exec:java \
+    mvn exec:java \
       -Dexec.mainClass=com.multiclouddb.samples.riskplatform.RiskPlatformApp \
       -Drisk.config=risk-platform-cosmos.properties \
       -Djavax.net.ssl.trustStore=$PWD/.tools/cacerts-local \
@@ -93,55 +85,32 @@ Plus one of:
 
 === "DynamoDB Local"
 
-    Start DynamoDB Local on port 8000, then:
-
     ```bash
-    mvn -pl multiclouddb-samples exec:java \
+    mvn exec:java \
       -Dexec.mainClass=com.multiclouddb.samples.riskplatform.RiskPlatformApp \
       -Drisk.config=risk-platform-dynamo.properties
     ```
 
 === "Cosmos DB (Azure Cloud)"
 
-    Create a `risk-platform-cosmos-cloud.properties` file with your Azure credentials, then:
-
     ```bash
-    mvn -pl multiclouddb-samples exec:java \
+    mvn exec:java \
       -Dexec.mainClass=com.multiclouddb.samples.riskplatform.RiskPlatformApp \
       -Drisk.config=risk-platform-cosmos-cloud.properties
     ```
 
 === "DynamoDB (AWS Cloud)"
 
-    Create a `risk-platform-dynamo-cloud.properties` file with your AWS credentials, then:
-
     ```bash
-    mvn -pl multiclouddb-samples exec:java \
+    mvn exec:java \
       -Dexec.mainClass=com.multiclouddb.samples.riskplatform.RiskPlatformApp \
       -Drisk.config=risk-platform-dynamo-cloud.properties
     ```
 
 Then open **http://localhost:8090** in your browser.
 
-### Running Both Providers Side by Side
-
-You can run two instances simultaneously on different ports to compare
-providers:
-
-```bash
-# Terminal 1 — Cosmos DB on port 8090
-mvn -pl multiclouddb-samples exec:java \
-  -Dexec.mainClass=com.multiclouddb.samples.riskplatform.RiskPlatformApp \
-  -Drisk.config=risk-platform-cosmos.properties \
-  -Djavax.net.ssl.trustStore=$PWD/.tools/cacerts-local \
-  -Djavax.net.ssl.trustStorePassword=changeit
-
-# Terminal 2 — DynamoDB on port 8091
-mvn -pl multiclouddb-samples exec:java \
-  -Dexec.mainClass=com.multiclouddb.samples.riskplatform.RiskPlatformApp \
-  -Drisk.config=risk-platform-dynamo.properties \
-  -Drisk.port=8091
-```
+For detailed emulator setup, cloud configuration, and prerequisites, see the
+[full Risk Platform guide](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-risk-platform.md).
 
 ---
 
@@ -219,5 +188,5 @@ client.provisionSchema(schema);
 
 For complete setup instructions including emulator installation and cloud
 provider configuration, see the
-[full README](https://github.com/microsoft/multiclouddb-sdk-for-java/blob/main/multiclouddb-samples/README-risk-platform.md)
-in the repository.
+[full Risk Platform guide](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-risk-platform.md)
+in the samples repository.
