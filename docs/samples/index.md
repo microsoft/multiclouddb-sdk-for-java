@@ -21,7 +21,7 @@ Each sample runs against **Azure Cosmos DB**, **Amazon DynamoDB**, or
 A minimal end-to-end sample showing CRUD operations and the portable query DSL
 against any provider.
 
-[View in samples repo →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples#portable-crud--query-sample){ .md-button }
+[View guide →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples#portable-crud--query-sample){ .md-button }
 
 </div>
 
@@ -72,15 +72,15 @@ Then see the individual guides above for per-sample instructions.
 
 ## What the Samples Demonstrate
 
-| Feature | TODO App | Risk Platform |
-|---------|:--------:|:-------------:|
-| Basic CRUD operations | ✅ | ✅ |
-| Portable query DSL | ✅ | ✅ |
-| Partition-scoped queries | — | ✅ |
-| Database-per-tenant isolation | — | ✅ |
-| Auto-provisioning (`provisionSchema`) | — | ✅ |
-| Provider portability (zero code changes) | ✅ | ✅ |
-| Embedded HTTP server + browser UI | ✅ | ✅ |
-| Cosmos DB support | ✅ | ✅ |
-| DynamoDB support | ✅ | ✅ |
-| Spanner support | ✅ | — |
+| Feature | Portable CRUD + Query | TODO App | Risk Platform |
+|---------|:---------------------:|:--------:|:-------------:|
+| Basic CRUD operations | ✅ | ✅ | ✅ |
+| Portable query DSL | ✅ | ✅ | ✅ |
+| Partition-scoped queries | — | — | ✅ |
+| Database-per-tenant isolation | — | — | ✅ |
+| Auto-provisioning (`provisionSchema`) | — | — | ✅ |
+| Provider portability (zero code changes) | ✅ | ✅ | ✅ |
+| Embedded HTTP server + browser UI | — | ✅ | ✅ |
+| Cosmos DB support | ✅ | ✅ | ✅ |
+| DynamoDB support | ✅ | ✅ | ✅ |
+| Spanner support | ✅ | ✅ | — |

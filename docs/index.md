@@ -164,7 +164,7 @@ Sample applications are maintained in a separate repository:
 
 | Sample | Description | Details |
 |--------|-------------|---------|
-| **Portable CRUD + Query** | Minimal end-to-end CRUD and query sample | [View in samples repo →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples#portable-crud--query-sample) |
+| **Portable CRUD + Query** | Minimal end-to-end CRUD and query sample | [View guide →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples#portable-crud--query-sample) |
 | **TODO App** | Simple CRUD web app with browser UI | [View guide →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-todo-app.md) |
 | **Risk Analysis Platform** | Multi-tenant portfolio risk analytics with executive dashboard | [View guide →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-risk-platform.md) |
 
