@@ -778,7 +778,6 @@ multiclouddb-sdk-java/
 
 # Sample applications are in a separate repo:
 # https://github.com/microsoft/multiclouddb-sdk-for-java-samples
-└── specs/                           # Design documents
 ```
 
 ---
