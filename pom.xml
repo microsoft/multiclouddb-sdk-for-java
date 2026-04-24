@@ -41,7 +41,6 @@
         <module>multiclouddb-provider-dynamo</module>
         <module>multiclouddb-provider-spanner</module>
         <module>multiclouddb-conformance</module>
-        <module>multiclouddb-samples</module>
         <module>multiclouddb-e2e</module>
     </modules>
 

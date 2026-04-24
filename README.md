@@ -283,8 +283,8 @@ This is fully transparent - you never see the translated SQL. For direct control
 | **multiclouddb-provider-dynamo** | `com.microsoft.multiclouddb:multiclouddb-provider-dynamo` | Amazon DynamoDB adapter (AWS SDK v2) |
 | **multiclouddb-provider-spanner** | `com.microsoft.multiclouddb:multiclouddb-provider-spanner` | Google Cloud Spanner adapter (Google Cloud Spanner 6.62.0) |
 | **multiclouddb-conformance** | `com.microsoft.multiclouddb:multiclouddb-conformance` | Cross-provider integration tests |
-| **multiclouddb-samples** | `com.microsoft.multiclouddb:multiclouddb-samples` | Sample apps: TODO web app + multi-tenant Risk Analysis Platform |
 
+Samples: see the [separate samples repo](https://github.com/microsoft/multiclouddb-sdk-for-java-samples).
 ### API Surface
 
 All application code depends on `multiclouddb-api`. The core types are:
@@ -593,12 +593,23 @@ if (diag != null) {
 
 ## Sample Applications
 
-The `multiclouddb-samples` module includes two sample applications:
+Sample applications are maintained in a **separate repository**:
 
-| Sample | Description | Port | README |
-|--------|-------------|------|--------|
-| **TODO App** | Simple CRUD web app with browser UI | `8080` | [README-todo-app.md](multiclouddb-samples/README-todo-app.md) |
-| **Risk Analysis Platform** | Multi-tenant portfolio risk analytics with executive dashboard | `8090` | [README-risk-platform.md](multiclouddb-samples/README-risk-platform.md) |
+**[microsoft/multiclouddb-sdk-for-java-samples](https://github.com/microsoft/multiclouddb-sdk-for-java-samples)**
+
+| Sample | Description | Port | Guide |
+|--------|-------------|------|-------|
+| **Portable CRUD + Query** | Minimal end-to-end CRUD and query sample | — | [README](https://github.com/microsoft/multiclouddb-sdk-for-java-samples#portable-crud--query-sample) |
+| **TODO App** | Simple CRUD web app with browser UI | `8080` | [README-todo-app.md](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-todo-app.md) |
+| **Risk Analysis Platform** | Multi-tenant portfolio risk analytics with executive dashboard | `8090` | [README-risk-platform.md](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-risk-platform.md) |
+
+### Quick Start
+
+```bash
+git clone https://github.com/microsoft/multiclouddb-sdk-for-java-samples.git
+cd multiclouddb-sdk-for-java-samples
+mvn clean install -DskipTests
+```
 
 ### TODO App
 
@@ -621,14 +632,14 @@ The `multiclouddb-samples` module includes two sample applications:
 
 ```powershell
 # Cosmos DB
-mvn -pl multiclouddb-samples exec:java `
+mvn exec:java `
   "-Dexec.mainClass=com.multiclouddb.samples.todo.TodoApp" `
   "-Dtodo.config=todo-app-cosmos.properties" `
   "-Djavax.net.ssl.trustStore=$PWD/.tools/cacerts-local" `
   "-Djavax.net.ssl.trustStorePassword=changeit"
 
 # DynamoDB
-mvn -pl multiclouddb-samples exec:java `
+mvn exec:java `
   "-Dexec.mainClass=com.multiclouddb.samples.todo.TodoApp" `
   "-Dtodo.config=todo-app-dynamo.properties"
 ```
@@ -649,23 +660,23 @@ portfolio risk analytics, and an executive dashboard. Demonstrates:
 
 ```powershell
 # Cosmos DB (port 8090)
-mvn -pl multiclouddb-samples exec:java `
+mvn exec:java `
   "-Dexec.mainClass=com.multiclouddb.samples.riskplatform.RiskPlatformApp" `
   "-Drisk.config=risk-platform-cosmos.properties" `
   "-Djavax.net.ssl.trustStore=$PWD/.tools/cacerts-local" `
   "-Djavax.net.ssl.trustStorePassword=changeit"
 
 # DynamoDB (port 8090)
-mvn -pl multiclouddb-samples exec:java `
+mvn exec:java `
   "-Dexec.mainClass=com.multiclouddb.samples.riskplatform.RiskPlatformApp" `
   "-Drisk.config=risk-platform-dynamo.properties"
 ```
 
 Then open **http://localhost:8090** in your browser.
 
-For full setup instructions, see [multiclouddb-samples/README-risk-platform.md](multiclouddb-samples/README-risk-platform.md).
+For full setup instructions, see the [Risk Platform guide](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-risk-platform.md).
 
-For full emulator setup instructions, see [multiclouddb-samples/README.md](multiclouddb-samples/README.md).
+For full emulator setup instructions, see the [samples README](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README.md).
 
 ---
 
@@ -763,22 +774,10 @@ multiclouddb-sdk-java/
 │       └── resources/META-INF/services/
 ├── multiclouddb-provider-spanner/       # Google Cloud Spanner adapter
 ├── multiclouddb-conformance/            # Cross-provider integration test suite
-├── multiclouddb-samples/                # Sample applications
-│   ├── README.md                    # Sample overview & emulator setup
-│   ├── README-todo-app.md           # TODO app instructions
-│   ├── README-risk-platform.md      # Risk Platform instructions
-│   └── src/main/
-│       ├── java/.../todo/TodoApp.java              # TODO web app
-│       ├── java/.../riskplatform/RiskPlatformApp.java  # Risk Platform
-│       ├── java/.../riskplatform/data/DemoDataSeeder.java
-│       ├── java/.../riskplatform/tenant/TenantManager.java
-│       └── resources/
-│           ├── static/                  # Browser UIs (TODO + Risk dashboard)
-│           ├── todo-app-cosmos.properties
-│           ├── todo-app-dynamo.properties
-│           ├── risk-platform-cosmos.properties
-│           └── risk-platform-dynamo.properties
-└── specs/                           # Design documents
+└── specs/                               # Design documents
+
+# Sample applications are in a separate repo:
+# https://github.com/microsoft/multiclouddb-sdk-for-java-samples
 ```
 
 ---

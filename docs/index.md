@@ -88,7 +88,7 @@ is unavailable or behaviour may differ across providers.
 Database-per-tenant isolation via `ResourceAddress` routing.
 Partition-scoped queries for efficient within-partition reads.
 
-[Learn more →](samples/risk-platform.md)
+[Learn more →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-risk-platform.md)
 
 </div>
 
@@ -159,10 +159,14 @@ configure via properties.
 
 ## Sample Applications
 
+Sample applications are maintained in a separate repository:
+:material-github: **[microsoft/multiclouddb-sdk-for-java-samples](https://github.com/microsoft/multiclouddb-sdk-for-java-samples)**
+
 | Sample | Description | Details |
 |--------|-------------|---------|
-| **TODO App** | Simple CRUD web app with browser UI | [View guide →](samples/todo-app.md) |
-| **Risk Analysis Platform** | Multi-tenant portfolio risk analytics with executive dashboard | [View guide →](samples/risk-platform.md) |
+| **Portable CRUD + Query** | Minimal end-to-end CRUD and query sample | [View guide →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples#portable-crud--query-sample) |
+| **TODO App** | Simple CRUD web app with browser UI | [View guide →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-todo-app.md) |
+| **Risk Analysis Platform** | Multi-tenant portfolio risk analytics with executive dashboard | [View guide →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-risk-platform.md) |
 
 ---
 
