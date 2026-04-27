@@ -1421,7 +1421,7 @@ frameworks, or tenants in provider-side telemetry.
 MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
     .provider(ProviderId.COSMOS)
     .connection("endpoint", "https://my-account.documents.azure.com:443/")
-    .auth("masterKey", "...")
+    .connection("key", "...")
     .userAgentSuffix("my-app/1.2.3")
     .build();
 
