@@ -46,10 +46,10 @@ All application code depends on `multiclouddb-api`. The core types are:
 | `MulticloudDbClientFactory` | Creates a `MulticloudDbClient` by discovering providers via `ServiceLoader` |
 | `MulticloudDbClientConfig` | Builder-pattern config: provider selection, connection, auth, feature flags |
 | `ResourceAddress` | `(database, collection)` pair targeting a container/table |
-| `MulticloudDbKey` | `(partitionKey, sortKey)` pair — every document needs at least a partition key |
+| `MulticloudDbKey` | `(partitionKey, sortKey)` pair - every document needs at least a partition key |
 | `QueryRequest` | Portable expression, native expression, parameters, page size, continuation token, partition key scoping, `limit`, `orderBy` |
 | `QueryPage` | Result page: items + optional continuation token + optional diagnostics |
-| `SortOrder` / `SortDirection` | Sort specification for `orderBy` — validates field names against injection |
+| `SortOrder` / `SortDirection` | Sort specification for `orderBy` - validates field names against injection |
 | `DocumentResult` | Result of `read()`: document payload + optional `DocumentMetadata` |
 | `DocumentMetadata` | Write-metadata: `lastModified`, `ttlExpiry`, `version` |
 | `CapabilitySet` / `Capability` | Runtime introspection of provider capabilities |
@@ -65,7 +65,7 @@ All application code depends on `multiclouddb-api`. The core types are:
 | `Expression` | AST node interface for parsed query expressions |
 | `ExpressionParser` | Parses portable expression strings into an AST |
 | `ExpressionValidator` | Validates parameter bindings and function usage |
-| `ExpressionTranslator` | SPI — translates AST to provider-native query syntax |
+| `ExpressionTranslator` | SPI - translates AST to provider-native query syntax |
 | `TranslatedQuery` | Result of translation: query string + bound parameters |
 
 ---
@@ -76,8 +76,8 @@ Provider modules implement two SPI contracts without importing each other:
 
 | SPI Interface | Responsibility |
 |---------------|---------------|
-| `MulticloudDbProviderAdapter` | Factory — creates a `MulticloudDbProviderClient` from config; registered via `META-INF/services` |
-| `MulticloudDbProviderClient` | CRUD + query + provisioning + capabilities — called by `DefaultMulticloudDbClient` |
+| `MulticloudDbProviderAdapter` | Factory - creates a `MulticloudDbProviderClient` from config; registered via `META-INF/services` |
+| `MulticloudDbProviderClient` | CRUD + query + provisioning + capabilities - called by `DefaultMulticloudDbClient` |
 
 ---
 
@@ -135,7 +135,7 @@ multiclouddb-sdk-java/
 
 ### Why MulticloudDbKey Is an Explicit Parameter
 
-Every CRUD operation requires an explicit `MulticloudDbKey` parameter — the SDK never
+Every CRUD operation requires an explicit `MulticloudDbKey` parameter - the SDK never
 extracts key material from the document body:
 
 ```java
@@ -157,7 +157,7 @@ supposed to be a provider-agnostic interface, which defeats portability.
 
 | Concern | Explicit MulticloudDbKey | Extracted from Document |
 |---------|-------------|------------------------|
-| `read()` / `delete()` | Works — no document needed | Impossible — no document |
+| `read()` / `delete()` | Works - no document needed | Impossible - no document |
 | Consistency | All 5 operations use the same pattern | Writes differ from reads |
 | Compile-time safety | Missing key = compiler error | Missing field = runtime error |
 | Source of truth | Key is authoritative | Ambiguous when fields disagree |

@@ -28,19 +28,19 @@ Select a provider and supply its connection and auth properties.
 === "Azure Cloud (key-based)"
 
     ```properties
-    # ⚠ Not recommended for production — use Entra ID (see next tab)
+    # ⚠ Not recommended for production - use Entra ID (see next tab)
     multiclouddb.provider=cosmos
     multiclouddb.connection.endpoint=https://your-account.documents.azure.com:443/
     multiclouddb.connection.key=your-master-key
     multiclouddb.connection.connectionMode=direct
     ```
 
-=== "Azure Identity (Entra ID) — Recommended"
+=== "Azure Identity (Entra ID) - Recommended"
 
     ```properties
     multiclouddb.provider=cosmos
     multiclouddb.connection.endpoint=https://your-account.documents.azure.com:443/
-    # No key — uses DefaultAzureCredential (Managed Identity, Azure CLI, etc.)
+    # No key - uses DefaultAzureCredential (Managed Identity, Azure CLI, etc.)
     # multiclouddb.connection.tenantId=your-tenant-id   # optional, for multi-tenant
     ```
 
@@ -59,16 +59,16 @@ Select a provider and supply its connection and auth properties.
     and emulator use. For production workloads, **always use identity-based auth**
     (Entra ID for Cosmos DB, IAM roles for DynamoDB, GCP service accounts for Spanner).
 
-- **Azure Identity / Entra ID** (**recommended**) — when no key is provided, uses `DefaultAzureCredential`
+- **Azure Identity / Entra ID** (**recommended**) - when no key is provided, uses `DefaultAzureCredential`
   (supporting Managed Identity, Azure CLI, environment variables, and the full
   Azure credential chain)
-- **Master key** — when `connection.key` is provided, uses shared-key authentication.
+- **Master key** - when `connection.key` is provided, uses shared-key authentication.
   Suitable for local emulator development only.
 
 ### Connection Modes
 
-- **Gateway** (default) — HTTP-based routing through the Cosmos DB gateway. Required for the emulator.
-- **Direct** — TCP-based direct connectivity. Better performance for production workloads.
+- **Gateway** (default) - HTTP-based routing through the Cosmos DB gateway. Required for the emulator.
+- **Direct** - TCP-based direct connectivity. Better performance for production workloads.
 
 ---
 
@@ -87,9 +87,9 @@ Select a provider and supply its connection and auth properties.
 === "AWS Cloud"
 
     ```properties
-    # ⚠ Static credentials shown for reference — use IAM roles in production
+    # ⚠ Static credentials shown for reference - use IAM roles in production
     multiclouddb.provider=dynamo
-    # No endpoint — uses the AWS default endpoint for the region
+    # No endpoint - uses the AWS default endpoint for the region
     multiclouddb.connection.region=us-east-1
     multiclouddb.auth.accessKeyId=your-access-key
     multiclouddb.auth.secretAccessKey=your-secret-key
@@ -174,7 +174,7 @@ Map<String, List<String>> schema = Map.of(
     "acme-risk-db", List.of("portfolios", "positions", "risk_metrics")
 );
 
-// Single call — SDK handles parallel creation internally
+// Single call - SDK handles parallel creation internally
 client.provisionSchema(schema);
 ```
 

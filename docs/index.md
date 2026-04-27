@@ -6,12 +6,12 @@ hide:
 
 <div class="hero-banner" markdown>
 
-![Multicloud DB SDK — Unified Data Access Layer for Best-of-Breed Cloud DBs](images/multiclouddb-banner.png)
+![Multicloud DB SDK - Unified Data Access Layer for Best-of-Breed Cloud DBs](images/multiclouddb-banner.png)
 
 # Multicloud DB SDK for Java
 
 A **portable database SDK** that lets you write CRUD and query logic once and run it
-against **Azure Cosmos DB**, **Amazon DynamoDB**, or **Google Cloud Spanner** —
+against **Azure Cosmos DB**, **Amazon DynamoDB**, or **Google Cloud Spanner** -
 switch providers by changing a single properties file, with zero code changes.
 
 <div class="hero-buttons" markdown>
@@ -36,9 +36,9 @@ switch providers by changing a single properties file, with zero code changes.
 
 | Challenge | How the SDK helps |
 |-----------|-------------------|
-| **Vendor lock-in** | Single `MulticloudDbClient` interface — portable CRUD + query |
+| **Vendor lock-in** | Single `MulticloudDbClient` interface - portable CRUD + query |
 | **Divergent query languages** | Portable DSL auto-translated to Cosmos SQL, PartiQL, or GoogleSQL |
-| **Migration pain** | Switch providers by changing one property — zero code changes |
+| **Migration pain** | Switch providers by changing one property - zero code changes |
 | **Feature uncertainty** | Runtime `CapabilitySet` introspection with portability warnings |
 | **Cross-provider testing** | Conformance suite runs identical tests against every provider |
 
@@ -53,7 +53,7 @@ switch providers by changing a single properties file, with zero code changes.
 ### :material-swap-horizontal: Write Once, Run Anywhere
 
 Single `MulticloudDbClient` interface for CRUD and query operations.
-Switch providers by changing one config property — zero code changes.
+Switch providers by changing one config property - zero code changes.
 
 [Learn more →](architecture.md)
 
@@ -136,7 +136,7 @@ graph TD
     SL --> SPANNER
 ```
 
-Providers are discovered at runtime via Java's `ServiceLoader` — no provider
+Providers are discovered at runtime via Java's `ServiceLoader` - no provider
 imports in application code. Drop the provider JAR on the classpath and
 configure via properties.
 
@@ -173,7 +173,7 @@ Sample applications are maintained in a separate repository:
 ## Quick Example
 
 ```java
-// Configure — provider selected entirely by config
+// Configure - provider selected entirely by config
 Properties props = new Properties();
 props.load(getClass().getResourceAsStream("/app.properties"));
 
@@ -185,9 +185,9 @@ MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
     // identity-based auth patterns for each provider.
     .build();
 
-MulticloudDbClient client = MulticloudDbClientFactory.create(config);
+try (MulticloudDbClient client = MulticloudDbClientFactory.create(config)) {
 
-// CRUD — same code for every provider
+// CRUD - same code for every provider
 ResourceAddress todos = new ResourceAddress("mydb", "todos");
 MulticloudDbKey key = MulticloudDbKey.of("todo-1", "todo-1");
 Map<String, Object> doc = Map.of(
@@ -197,13 +197,14 @@ Map<String, Object> doc = Map.of(
 );
 client.upsert(todos, key, doc);
 
-// Query with portable expressions — auto-translated per provider
+// Query with portable expressions - auto-translated per provider
 QueryRequest query = QueryRequest.builder()
     .expression("status = @status AND category = @cat")
     .parameters(Map.of("status", "active", "cat", "shopping"))
     .maxPageSize(25)
     .build();
 QueryPage page = client.query(todos, query);
+}
 ```
 
 [Get started →](getting-started.md){ .md-button .md-button--primary }

@@ -1,4 +1,4 @@
-# Multicloud DB SDK — Developer Guide
+# Multicloud DB SDK - Developer Guide
 
 Comprehensive reference for the Multicloud DB SDK's key management, CRUD operations,
 query DSL, and provider-specific storage behavior. For a quick-start tutorial
@@ -18,17 +18,17 @@ portable API surface and error mapping reference, see
     - [Amazon DynamoDB](#amazon-dynamodb)
     - [Google Cloud Spanner](#google-cloud-spanner)
   - [Partition Key Strategy Guide](#partition-key-strategy-guide)
-  - [Why Key Is an Explicit Parameter](#why-key-is-an-explicit-parameter)
+  - [Why MulticloudDbKey Is an Explicit Parameter](#why-multiclouddbkey-is-an-explicit-parameter)
 - [Resource Addressing](#resource-addressing)
   - [Provider Physical Mapping](#provider-physical-mapping)
   - [Database-per-Tenant Pattern](#database-per-tenant-pattern)
   - [Provisioning Resources with provisionSchema()](#provisioning-resources-with-provisionschema)
 - [CRUD Semantics](#crud-semantics)
-  - [create — Insert Only](#create--insert-only)
-  - [read — Point Read](#read--point-read)
-  - [update — Replace Existing](#update--replace-existing)
-  - [upsert — Create or Replace](#upsert--create-or-replace)
-  - [delete — Idempotent Delete](#delete--idempotent-delete)
+  - [create - Insert Only](#create---insert-only)
+  - [read - Point Read](#read---point-read)
+  - [update - Replace Existing](#update---replace-existing)
+  - [upsert - Create or Replace](#upsert---create-or-replace)
+  - [delete - Idempotent Delete](#delete---idempotent-delete)
   - [Document Field Injection](#document-field-injection)
 - [Query DSL](#query-dsl)
   - [Portable Expressions](#portable-expressions)
@@ -76,21 +76,21 @@ portable API surface and error mapping reference, see
 
 ### The Key Model
 
-Every document stored through Multicloud DB is identified by a **`Key`** — a portable
+Every document stored through Multicloud DB is identified by a **`MulticloudDbKey`** - a portable
 representation of the minimum key material needed to uniquely identify a record
 across all three supported providers.
 
 ```java
-import com.multiclouddb.api.Key;
+import com.multiclouddb.api.MulticloudDbKey;
 
 // 1. Simple partition-key-only key
-Key simple = Key.of("order-123");
+MulticloudDbKey simple = MulticloudDbKey.of("order-123");
 
 // 2. Partition key + sort key
-Key partitioned = Key.of("customer-456", "order-123");
+MulticloudDbKey partitioned = MulticloudDbKey.of("customer-456", "order-123");
 
 // 3. Partition + sort + composite components (future extensibility)
-Key composite = Key.of("customer-456", "order-123",
+MulticloudDbKey composite = MulticloudDbKey.of("customer-456", "order-123",
     Map.of("region", "us-east", "year", "2025"));
 ```
 
@@ -104,40 +104,40 @@ The three fields:
 
 ### When to Use Each Key Form
 
-#### `Key.of(partitionKey)` — Simple Key
+#### `MulticloudDbKey.of(partitionKey)` - Simple Key
 
 Use when each document is independent and you don't need to group or co-locate
 related documents.
 
 ```java
 // A standalone configuration document
-Key configKey = Key.of("app-settings");
+MulticloudDbKey configKey = MulticloudDbKey.of("app-settings");
 client.upsert(address, configKey, settingsDoc);
 ```
 
 **Provider behavior:**
 - **Cosmos DB**: Uses `partitionKey` as **both** the document id and the partition key
   (effectively a single-partition-per-document layout).
-- **DynamoDB**: Uses `partitionKey` as the hash key only — no sort key is written.
+- **DynamoDB**: Uses `partitionKey` as the hash key only - no sort key is written.
 - **Spanner**: Uses `partitionKey` as both the `partitionKey` column and the `sortKey` column.
 
 **Best for**: Lookup tables, configuration documents, singleton records.
 
-#### `Key.of(partitionKey, sortKey)` — Partition Key + Sort Key
+#### `MulticloudDbKey.of(partitionKey, sortKey)` - Partition Key + Sort Key
 
 Use when documents naturally belong to a group and you want to co-locate them
 for efficient querying. The `partitionKey` defines the co-location group;
 the `sortKey` uniquely identifies the document within the partition.
 
 ```java
-// Positions within a portfolio — portfolioId is the partition key
-Key positionKey = Key.of("portfolio-alpha", "position-001");
+// Positions within a portfolio - portfolioId is the partition key
+MulticloudDbKey positionKey = MulticloudDbKey.of("portfolio-alpha", "position-001");
 
-// Orders within a customer — customerId is the partition key
-Key orderKey = Key.of("customer-456", "order-789");
+// Orders within a customer - customerId is the partition key
+MulticloudDbKey orderKey = MulticloudDbKey.of("customer-456", "order-789");
 
-// Events within a session — sessionId is the partition key
-Key eventKey = Key.of("session-abc", "event-42");
+// Events within a session - sessionId is the partition key
+MulticloudDbKey eventKey = MulticloudDbKey.of("session-abc", "event-42");
 ```
 
 **Provider behavior:**
@@ -152,7 +152,7 @@ Key eventKey = Key.of("session-abc", "event-42");
 **Best for**: Parent-child relationships, multi-tenant data, event streams,
 any scenario where you frequently query "all items within group X."
 
-#### `Key.of(pk, pk)` — Partition Key Equals Sort Key
+#### `MulticloudDbKey.of(pk, pk)` - Partition Key Equals Sort Key
 
 A common pattern where the document's sort key equals its partition key. Each
 document occupies its own partition. This is the simplest layout and is
@@ -160,10 +160,10 @@ appropriate when you don't need to group documents.
 
 ```java
 // Each portfolio is its own partition
-Key portfolioKey = Key.of("portfolio-alpha", "portfolio-alpha");
+MulticloudDbKey portfolioKey = MulticloudDbKey.of("portfolio-alpha", "portfolio-alpha");
 ```
 
-**Provider behavior**: Identical to `Key.of(partitionKey, sortKey)` with an explicit
+**Provider behavior**: Identical to `MulticloudDbKey.of(partitionKey, sortKey)` with an explicit
 sort key value, but every document is in its own partition (no co-location).
 
 **Best for**: Top-level entities (tenants, portfolios, users) where you access
@@ -171,13 +171,13 @@ documents primarily by their ID rather than querying within a group.
 
 ### Provider Storage Mapping
 
-The `Key` type is **portable** — you write `Key.of(partitionKey, sortKey)` and each
+The `MulticloudDbKey` type is **portable** - you write `MulticloudDbKey.of(partitionKey, sortKey)` and each
 provider maps it to its native key model. Here's exactly what happens in each:
 
 #### Azure Cosmos DB
 
 ```
-Key.of("portfolio-alpha", "pos-1")
+MulticloudDbKey.of("portfolio-alpha", "pos-1")
          │                  │
          ▼                  ▼
    ┌──────────────────────────────┐
@@ -199,7 +199,7 @@ Key.of("portfolio-alpha", "pos-1")
    └──────────────────────────────┘
 ```
 
-If `key.sortKey()` is null (i.e., `Key.of(partitionKey)` was used), Cosmos uses
+If `key.sortKey()` is null (i.e., `MulticloudDbKey.of(partitionKey)` was used), Cosmos uses
 `key.partitionKey()` as both the document id and the partition key. This means every
 document gets its own logical partition.
 
@@ -210,7 +210,7 @@ document gets its own logical partition.
 #### Amazon DynamoDB
 
 ```
-Key.of("portfolio-alpha", "pos-1")
+MulticloudDbKey.of("portfolio-alpha", "pos-1")
          │                  │
          ▼                  ▼
    ┌──────────────────────────────┐
@@ -239,7 +239,7 @@ reads. The table must be created with only a `"partitionKey"` hash key.
 #### Google Cloud Spanner
 
 ```
-Key.of("portfolio-alpha", "pos-1")
+MulticloudDbKey.of("portfolio-alpha", "pos-1")
          │                  │
          ▼                  ▼
    ┌──────────────────────────────┐
@@ -257,7 +257,7 @@ Key.of("portfolio-alpha", "pos-1")
    └──────────────────────────────┘
 ```
 
-If `key.sortKey()` is null, `sortKey` defaults to `key.partitionKey()` — giving a
+If `key.sortKey()` is null, `sortKey` defaults to `key.partitionKey()` - giving a
 composite primary key of `(pk, pk)`. Spanner always requires both columns
 because the table DDL defines `PRIMARY KEY (partitionKey, sortKey)`.
 
@@ -268,25 +268,25 @@ performance and scalability. Here are common strategies:
 
 | Strategy | Key Pattern | When to Use | Example |
 |----------|------------|-------------|---------|
-| **Entity-per-partition** | `Key.of(pk, pk)` | Simple lookups, no parent-child queries | Tenants, configuration docs |
-| **Parent-child grouping** | `Key.of(parentId, childId)` | Query all items within a parent | Positions within a portfolio |
-| **Tenant isolation** | `Key.of(tenantId, docId)` | Multi-tenant with per-tenant queries | SaaS applications |
-| **Time-based grouping** | `Key.of(dateKey, eventId)` | Time-range queries, event streams | Logs partitioned by `2025-03` |
-| **Category grouping** | `Key.of(category, itemId)` | Filtered queries within a category | Products by department |
-| **Composite** | `Key.of(compositeValue, id)` | Multiple dimensions in partition | `region#category` |
+| **Entity-per-partition** | `MulticloudDbKey.of(pk, pk)` | Simple lookups, no parent-child queries | Tenants, configuration docs |
+| **Parent-child grouping** | `MulticloudDbKey.of(parentId, childId)` | Query all items within a parent | Positions within a portfolio |
+| **Tenant isolation** | `MulticloudDbKey.of(tenantId, docId)` | Multi-tenant with per-tenant queries | SaaS applications |
+| **Time-based grouping** | `MulticloudDbKey.of(dateKey, eventId)` | Time-range queries, event streams | Logs partitioned by `2025-03` |
+| **Category grouping** | `MulticloudDbKey.of(category, itemId)` | Filtered queries within a category | Products by department |
+| **Composite** | `MulticloudDbKey.of(compositeValue, id)` | Multiple dimensions in partition | `region#category` |
 
 #### Choosing Between Entity-per-Partition and Grouped Partitions
 
-**Entity-per-partition** (`Key.of(pk, pk)`):
+**Entity-per-partition** (`MulticloudDbKey.of(pk, pk)`):
 - Every document gets its own partition
-- Optimal for point reads — always a single-partition operation
+- Optimal for point reads - always a single-partition operation
 - Queries for "all items of type X" require a **cross-partition scan**
 - Works well when you don't need to query within groups
 
-**Grouped partitions** (`Key.of(parentId, childId)`):
+**Grouped partitions** (`MulticloudDbKey.of(parentId, childId)`):
 - Related documents share a partition
 - Point reads still work (the SDK resolves the full key)
-- Queries within the group can be **partition-scoped** — much more efficient
+- Queries within the group can be **partition-scoped** - much more efficient
 - Requires knowing the partition key value at query time
 
 **Rule of thumb**: If you frequently query "give me all X within Y", use Y
@@ -295,9 +295,9 @@ entity-per-partition pattern.
 
 ---
 
-### Why Key Is an Explicit Parameter
+### Why MulticloudDbKey Is an Explicit Parameter
 
-Every CRUD operation requires an explicit `Key` parameter — the SDK never
+Every CRUD operation requires an explicit `MulticloudDbKey` parameter - the SDK never
 extracts key material from the document body. This is a deliberate design
 choice.
 
@@ -312,7 +312,7 @@ key field names differ across providers.
 When a provider writes a document, it injects key fields using **different
 names**:
 
-| Provider | `Key.partitionKey()` stored as | `Key.sortKey()` stored as |
+| Provider | `MulticloudDbKey.partitionKey()` stored as | `MulticloudDbKey.sortKey()` stored as |
 |----------|-------------------------------|---------------------------|
 | **Cosmos DB** | `partitionKey` (custom field) | `id` (built-in Cosmos field) |
 | **DynamoDB** | `partitionKey` (hash key attribute) | `sortKey` (range key attribute) |
@@ -330,25 +330,25 @@ while the same document read back from **DynamoDB** looks like:
 {"sortKey": "pos-42", "partitionKey": "tenant-1", "name": "Alpha Fund"}
 ```
 
-A convention-based overload — `upsert(address, document)` — would need to look
+A convention-based overload - `upsert(address, document)` - would need to look
 for `sortKey` on DynamoDB/Spanner but `id` on Cosmos DB. That requires
 provider-aware extraction logic in what is supposed to be a provider-agnostic
 interface, which defeats the purpose of a portable abstraction.
 
-**Additional reasons for the explicit Key design:**
+**Additional reasons for the explicit MulticloudDbKey design:**
 
-| Concern | Explicit Key | Extracted from Document |
+| Concern | Explicit MulticloudDbKey | Extracted from Document |
 |---------|-------------|------------------------|
-| **`read()` / `delete()`** | Works — no document needed | Impossible — no document to extract from |
+| **`read()` / `delete()`** | Works - no document needed | Impossible - no document to extract from |
 | **Consistency** | All 5 operations use the same signature pattern | Writes differ from reads/deletes |
 | **Compile-time safety** | Missing key = compiler error | Missing field = runtime error in provider |
 | **Key ≠ document** | Key can differ from document fields (remapping, replication) | Key must match document content |
 | **Source of truth** | Key is authoritative; providers overwrite document fields | Ambiguous when key fields and document disagree |
 
-The explicit Key keeps the API **uniform** (same pattern for all operations),
+The explicit MulticloudDbKey keeps the API **uniform** (same pattern for all operations),
 **safe** (compiler-enforced), and **portable** (no provider-specific field name
-assumptions). Each provider maps the Key to its native key representation
-internally — application code never needs to know which field name is used on
+assumptions). Each provider maps the MulticloudDbKey to its native key representation
+internally - application code never needs to know which field name is used on
 which backend.
 
 ---
@@ -426,14 +426,14 @@ ResourceAddress acmePortfolios = addressFor("acme-capital", "portfolios");
 ```
 
 This pattern provides **complete data isolation** at the database level for
-Cosmos DB and at the table level for DynamoDB — without any provider-specific
+Cosmos DB and at the table level for DynamoDB - without any provider-specific
 code.
 
 ### Provisioning Resources with `provisionSchema()`
 
 When your application starts, it typically needs to ensure that all required
 databases and containers/tables exist. The SDK provides `provisionSchema()` to
-do this efficiently in a single call — with internal parallelism so that
+do this efficiently in a single call - with internal parallelism so that
 application code does not need to manage threading.
 
 ```java
@@ -445,16 +445,16 @@ schema.put("admin-db",    List.of("tenants"));
 schema.put("acme-risk-db", List.of("portfolios", "positions", "risk_metrics", "alerts"));
 schema.put("shared-db",    List.of("market_data"));
 
-// Provision everything — databases then containers, both phases in parallel
+// Provision everything - databases then containers, both phases in parallel
 client.provisionSchema(schema);
 ```
 
 **How it works internally:**
 
-1. **Phase 1 — Databases**: All databases are created concurrently using a
+1. **Phase 1 - Databases**: All databases are created concurrently using a
    bounded thread pool (max 10 threads). The SDK waits for all database
    creations to complete before proceeding.
-2. **Phase 2 — Containers**: All containers/tables are created concurrently
+2. **Phase 2 - Containers**: All containers/tables are created concurrently
    using the same thread pool.
 
 This two-phase approach ensures that databases exist before their containers
@@ -473,7 +473,7 @@ are created, while maximising throughput within each phase.
 
 | Approach | Use When |
 |----------|----------|
-| `provisionSchema(schema)` | Provisioning multiple databases/containers at startup — the SDK handles all parallelism |
+| `provisionSchema(schema)` | Provisioning multiple databases/containers at startup - the SDK handles all parallelism |
 | `ensureDatabase(name)` | Creating a single database on demand (e.g., new tenant onboarding) |
 | `ensureContainer(address)` | Creating a single container on demand |
 
@@ -484,7 +484,7 @@ but the default SPI implementation works correctly for all providers.
 
 ## CRUD Semantics
 
-### create — Insert Only
+### create - Insert Only
 
 `create()` inserts a new document. If a document with the same key already
 exists, the operation **fails** with a conflict error. Use this when you need
@@ -492,8 +492,8 @@ insert-only semantics with duplicate detection.
 
 ```java
 ResourceAddress addr = new ResourceAddress("mydb", "orders");
-Key key = Key.of("customer-456", "order-123");
-ObjectNode doc = mapper.createObjectNode();
+MulticloudDbKey key = MulticloudDbKey.of("customer-456", "order-123");
+Map<String, Object> doc = new LinkedHashMap<>();
 doc.put("total", 99.95);
 doc.put("status", "pending");
 
@@ -509,15 +509,15 @@ client.create(addr, key, doc);   // Fails if document already exists
 | If not exists | Create | Create | Create |
 | Return value | None (void) | None (void) | None (void) |
 
-### read — Point Read
+### read - Point Read
 
-`read()` performs a single-document read using the full key. Returns the document
-as a `JsonNode` or `null` if not found.
+`read()` performs a single-document read using the full key. Returns a
+`DocumentResult` wrapping the document as an `ObjectNode`, or `null` if not found.
 
 ```java
-JsonNode order = client.read(addr, Key.of("customer-456", "order-123"));
-if (order != null) {
-    String status = order.path("status").asText();
+DocumentResult result = client.read(addr, MulticloudDbKey.of("customer-456", "order-123"));
+if (result != null) {
+    String status = result.document().path("status").asText();
 }
 ```
 
@@ -532,18 +532,18 @@ if (order != null) {
 Point reads are always efficient because the full key is provided. The provider
 can go directly to the partition/item without scanning.
 
-### update — Replace Existing
+### update - Replace Existing
 
 `update()` replaces an existing document. If the document does **not** exist,
 the operation **fails** with a not-found error. Use this when you need strict
 update-only semantics.
 
 ```java
-ObjectNode updated = mapper.createObjectNode();
+Map<String, Object> updated = new LinkedHashMap<>();
 updated.put("total", 109.95);
 updated.put("status", "shipped");
 
-client.update(addr, Key.of("customer-456", "order-123"), updated);   // Fails if not exists
+client.update(addr, MulticloudDbKey.of("customer-456", "order-123"), updated);   // Fails if not exists
 ```
 
 **Key behavior across providers:**
@@ -555,15 +555,15 @@ client.update(addr, Key.of("customer-456", "order-123"), updated);   // Fails if
 | If not exists | Throws NOT_FOUND | Throws NOT_FOUND | Throws NOT_FOUND |
 | Return value | None (void) | None (void) | None (void) |
 
-### upsert — Create or Replace
+### upsert - Create or Replace
 
 `upsert()` creates a new document or **overwrites** an existing document with
 the same key. It is an insert-or-update in all providers.
 
 ```java
 ResourceAddress addr = new ResourceAddress("mydb", "orders");
-Key key = Key.of("customer-456", "order-123");
-ObjectNode doc = mapper.createObjectNode();
+MulticloudDbKey key = MulticloudDbKey.of("customer-456", "order-123");
+Map<String, Object> doc = new LinkedHashMap<>();
 doc.put("total", 99.95);
 doc.put("status", "pending");
 
@@ -579,14 +579,14 @@ client.upsert(addr, key, doc);   // Creates or replaces the document
 | If not exists | Create | Create | Create |
 | Return value | None (void) | None (void) | None (void) |
 
-### delete — Idempotent Delete
+### delete - Idempotent Delete
 
 `delete()` removes a document by key. If the document doesn't exist, the
 operation **succeeds silently** (no error). This makes delete idempotent and
 safe for retry.
 
 ```java
-client.delete(addr, Key.of("customer-456", "order-123"));
+client.delete(addr, MulticloudDbKey.of("customer-456", "order-123"));
 // Succeeds whether or not the document exists
 ```
 
@@ -602,15 +602,15 @@ client.delete(addr, Key.of("customer-456", "order-123"));
 
 When you call `create()`, `update()`, or `upsert()`, the SDK **injects key
 fields into the document** automatically. You don't need to manually set `"id"`
-or `"partitionKey"` in your JSON — the provider handles this:
+or `"partitionKey"` in your JSON - the provider handles this:
 
 ```java
-ObjectNode doc = mapper.createObjectNode();
+Map<String, Object> doc = new LinkedHashMap<>();
 doc.put("name", "Alpha Fund");
 doc.put("type", "EQUITY");
 
-// No need to set "id" or "partitionKey" in doc — injected by provider
-client.upsert(addr, Key.of("acme", "port-1"), doc);
+// No need to set "id" or "partitionKey" in doc - injected by provider
+client.upsert(addr, MulticloudDbKey.of("acme", "port-1"), doc);
 ```
 
 **What gets injected per provider:**
@@ -631,7 +631,7 @@ client.upsert(addr, Key.of("acme", "port-1"), doc);
 
 ### Portable Expressions
 
-The SDK provides a **portable query expression language** — write a WHERE-clause
+The SDK provides a **portable query expression language** - write a WHERE-clause
 filter once and it's automatically translated to each provider's native query
 syntax (Cosmos SQL, DynamoDB PartiQL, Spanner GoogleSQL).
 
@@ -644,7 +644,7 @@ QueryRequest query = QueryRequest.builder()
     .build();
 
 QueryPage page = client.query(addr, query);
-for (JsonNode item : page.items()) {
+for (Map<String, Object> item : page.items()) {
     System.out.println(item);
 }
 ```
@@ -682,7 +682,7 @@ QueryRequest query2 = QueryRequest.builder()
 ```
 
 **Supported parameter types**: `String`, `Integer`, `Long`, `Double`, `Float`,
-`Boolean`. Parameters are bound safely — no SQL injection risk.
+`Boolean`. Parameters are bound safely - no SQL injection risk.
 
 ### Portable Functions
 
@@ -752,7 +752,7 @@ while (page.continuationToken() != null) {
 }
 ```
 
-Continuation tokens are **opaque strings** — their format differs by provider
+Continuation tokens are **opaque strings** - their format differs by provider
 (Cosmos uses its own JSON token, DynamoDB uses an encoded last-evaluated-key,
 Spanner uses a numeric offset). Never parse or construct them manually.
 
@@ -838,7 +838,7 @@ When you need provider-specific features not available in the portable DSL
 with `nativeExpression()`:
 
 ```java
-// Cosmos DB — full SQL capability
+// Cosmos DB - full SQL capability
 QueryRequest cosmosQuery = QueryRequest.builder()
     .nativeExpression(
         "SELECT c.symbol, c.marketValue FROM c " +
@@ -848,7 +848,7 @@ QueryRequest cosmosQuery = QueryRequest.builder()
     .maxPageSize(10)
     .build();
 
-// DynamoDB — PartiQL syntax
+// DynamoDB - PartiQL syntax
 QueryRequest dynamoQuery = QueryRequest.builder()
     .nativeExpression(
         "SELECT * FROM \"acme-risk-db__positions\" " +
@@ -857,7 +857,7 @@ QueryRequest dynamoQuery = QueryRequest.builder()
     .maxPageSize(10)
     .build();
 
-// Spanner — GoogleSQL syntax
+// Spanner - GoogleSQL syntax
 QueryRequest spannerQuery = QueryRequest.builder()
     .nativeExpression(
         "SELECT * FROM positions WHERE STARTS_WITH(symbol, 'AA') " +
@@ -866,7 +866,7 @@ QueryRequest spannerQuery = QueryRequest.builder()
     .build();
 ```
 
-> **Warning**: `expression` and `nativeExpression` are **mutually exclusive** —
+> **Warning**: `expression` and `nativeExpression` are **mutually exclusive** -
 > setting both throws an error. Native expressions break portability: switching
 > providers requires rewriting the query.
 
@@ -891,7 +891,7 @@ pipeline before execution:
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-This is fully transparent — your application code only provides the portable
+This is fully transparent - your application code only provides the portable
 expression string and parameters.
 
 ---
@@ -937,15 +937,15 @@ filtering**. Example: positions within a portfolio.
 #### Approach 1: Entity-per-partition + Full Scan + Client-Side Filter
 
 ```java
-// Key: Key.of(positionId, positionId) — each position in its own partition
+// Key: MulticloudDbKey.of(positionId, positionId) - each position in its own partition
 
 // Query: fetch ALL positions, filter in Java
-List<JsonNode> allPositions = client.query(addr,
+List<Map<String, Object>> allPositions = client.query(addr,
     QueryRequest.builder().maxPageSize(200).build()
 ).items();
 
-List<JsonNode> filtered = allPositions.stream()
-    .filter(p -> "portfolio-alpha".equals(p.path("portfolioId").asText()))
+List<Map<String, Object>> filtered = allPositions.stream()
+    .filter(p -> "portfolio-alpha".equals(p.get("portfolioId")))
     .toList();
 ```
 
@@ -956,26 +956,26 @@ portfolios.
 #### Approach 2: Entity-per-partition + Expression Filter (Better)
 
 ```java
-// Key: Key.of(positionId, positionId) — still entity-per-partition
+// Key: MulticloudDbKey.of(positionId, positionId) - still entity-per-partition
 
-// Query: let the database filter — only matching documents are returned
+// Query: let the database filter - only matching documents are returned
 QueryRequest query = QueryRequest.builder()
     .expression("portfolioId = @pid")
     .parameter("pid", "portfolio-alpha")
     .maxPageSize(50)
     .build();
 
-List<JsonNode> positions = client.query(addr, query).items();
+List<Map<String, Object>> positions = client.query(addr, query).items();
 ```
 
-**Better**: The database applies the filter — you only receive matching
+**Better**: The database applies the filter - you only receive matching
 documents. But this is still a cross-partition scan (the database still reads
 all partitions, it just doesn't return non-matching documents).
 
 #### Approach 3: Partition-per-parent + Expression Filter (Best)
 
 ```java
-// Key: Key.of(portfolioId, positionId) — positions grouped by portfolio
+// Key: MulticloudDbKey.of(portfolioId, positionId) - positions grouped by portfolio
 
 // Query: the database knows to read only the "portfolio-alpha" partition
 QueryRequest query = QueryRequest.builder()
@@ -984,15 +984,15 @@ QueryRequest query = QueryRequest.builder()
     .maxPageSize(50)
     .build();
 
-List<JsonNode> positions = client.query(addr, query).items();
+List<Map<String, Object>> positions = client.query(addr, query).items();
 ```
 
 **Best**: By using `portfolioId` as the partition key (first argument to
-`Key.of`), the database can scope the query to a single partition. Combined with
-the expression filter, this is a **single-partition read** — the most efficient
+`MulticloudDbKey.of`), the database can scope the query to a single partition. Combined with
+the expression filter, this is a **single-partition read** - the most efficient
 pattern possible.
 
-> **Note on DynamoDB**: When documents use `Key.of(portfolioId, positionId)`,
+> **Note on DynamoDB**: When documents use `MulticloudDbKey.of(portfolioId, positionId)`,
 > `portfolioId` becomes the hash key (`"partitionKey"` attribute) and
 > `positionId` becomes the sort key (`"sortKey"` attribute). This gives you
 > efficient single-partition queries by `portfolioId` with range queries on
@@ -1007,8 +1007,8 @@ request. Each provider maps this to its native partition-scoping mechanism:
 
 | Provider | What `.partitionKey(value)` Does |
 |----------|----------------------------------|
-| **Cosmos DB** | Sets `CosmosQueryRequestOptions.setPartitionKey(new PartitionKey(value))` — query reads only that logical partition |
-| **DynamoDB** | Adds a `partitionKey = :pk` equality condition to the scan filter — restricts results to items sharing the given hash key value |
+| **Cosmos DB** | Sets `CosmosQueryRequestOptions.setPartitionKey(new PartitionKey(value))` - query reads only that logical partition |
+| **DynamoDB** | Adds a `partitionKey = :pk` equality condition to the scan filter - restricts results to items sharing the given hash key value |
 | **Spanner** | Adds a `partitionKey = @pk` equality condition to the SQL WHERE clause |
 
 #### Basic Usage
@@ -1040,13 +1040,13 @@ QueryRequest allInPartition = QueryRequest.builder()
 QueryPage page = client.query(positionsAddr, allInPartition);
 ```
 
-This is far more efficient than a full cross-partition scan — it reads only
+This is far more efficient than a full cross-partition scan - it reads only
 the documents belonging to `"portfolio-alpha"`.
 
 #### Cross-Partition Query (Default)
 
 When `partitionKey` is not set (or set to `null`), the query fans out across
-all partitions — the same behavior as before:
+all partitions - the same behavior as before:
 
 ```java
 // No partitionKey → cross-partition scan
@@ -1132,12 +1132,17 @@ portable error category:
 try {
     client.upsert(addr, key, doc);
 } catch (MulticloudDbException e) {
-    switch (e.error().category()) {
-        case THROTTLED -> retryWithBackoff();
-        case NOT_FOUND -> createResource();
-        case CONFLICT -> resolveConflict();
-        case AUTHENTICATION_FAILED -> refreshCredentials();
-        default -> log.error("Unexpected error", e);
+    MulticloudDbErrorCategory cat = e.error().category();
+    if (MulticloudDbErrorCategory.THROTTLED.equals(cat)) {
+        retryWithBackoff();
+    } else if (MulticloudDbErrorCategory.NOT_FOUND.equals(cat)) {
+        createResource();
+    } else if (MulticloudDbErrorCategory.CONFLICT.equals(cat)) {
+        resolveConflict();
+    } else if (MulticloudDbErrorCategory.AUTHENTICATION_FAILED.equals(cat)) {
+        refreshCredentials();
+    } else {
+        log.error("Unexpected error", e);
     }
 }
 ```
@@ -1149,14 +1154,14 @@ table across all providers.
 
 ## Result Set Control
 
-The SDK supports portable `limit` (Top N) and `orderBy` on providers that declare the respective capabilities. Both are **capability-gated** — query silently against non-supporting providers without error, and the SDK enforces the limit client-side when the provider cannot.
+The SDK supports portable `limit` (Top N) and `orderBy` on providers that declare the respective capabilities. Both are **capability-gated**: callers should check provider capabilities before using them. Unsupported options are not guaranteed to be silently ignored; providers may fail fast with `UNSUPPORTED_CAPABILITY` (for example, DynamoDB when `orderBy` is specified). Also note that DynamoDB's `result_limit` support is **per-page**, not a global Top N across the full logical result set.
 
 ### Checking Capabilities
 
 ```java
 CapabilitySet caps = client.capabilities();
-boolean canLimit  = caps.supports(Capability.RESULT_LIMIT);
-boolean canOrder  = caps.supports(Capability.ORDER_BY);
+boolean canLimit  = caps.isSupported(Capability.RESULT_LIMIT);
+boolean canOrder  = caps.isSupported(Capability.ORDER_BY);
 ```
 
 | Capability | Cosmos DB | DynamoDB | Spanner |
@@ -1196,10 +1201,10 @@ QueryRequest q = QueryRequest.builder()
 
 ### Combining with Native Expressions
 
-`orderBy` and `limit` are silently discarded when `nativeExpression` is used — the native query string is passed through unmodified. Use provider-native syntax for full control:
+Handling of `orderBy` and `limit` with `nativeExpression` is provider-specific. For Cosmos DB and Spanner native passthrough, these fields are ignored and the native query string is sent as provided. For DynamoDB `ExecuteStatement`, `limit` is still applied, and setting `orderBy` causes an error. Use provider-native syntax for ordering/limiting when you need exact control over native query execution:
 
 ```java
-// Cosmos DB native — full SQL control
+// Cosmos DB native - full SQL control
 QueryRequest q = QueryRequest.builder()
         .nativeExpression(
             "SELECT TOP 10 c.symbol, c.marketValue FROM c " +
@@ -1221,7 +1226,7 @@ TTL is enforced at the provider level and requires the collection to be configur
 |----------|----------------|
 | Cosmos DB | Enable "Default Time to Live" on the container (set to `-1` for item-level control) |
 | DynamoDB | Enable TTL on the table specifying `ttlExpiry` as the TTL attribute |
-| Spanner | No native row-level TTL — `ROW_LEVEL_TTL=false`; `ttlSeconds` is silently ignored |
+| Spanner | No native row-level TTL - `ROW_LEVEL_TTL=false`; `ttlSeconds` is silently ignored |
 
 ### Writing with TTL
 
@@ -1236,14 +1241,14 @@ client.create(address, key, doc, opts);
 // TTL on upsert (create-or-replace)
 client.upsert(address, key, doc, opts);
 
-// TTL on update — carries TTL forward through the full-replace write
+// TTL on update - carries TTL forward through the full-replace write
 client.update(address, key, updatedDoc, opts);
 ```
 
 ### Checking TTL Support
 
 ```java
-if (client.capabilities().supports(Capability.ROW_LEVEL_TTL)) {
+if (client.capabilities().isSupported(Capability.ROW_LEVEL_TTL)) {
     client.create(address, key, doc, OperationOptions.builder()
             .ttlSeconds(86_400)
             .build());
@@ -1293,7 +1298,7 @@ Fields the provider cannot supply are returned as `null`. Use
 `Capability.WRITE_TIMESTAMP` to check before accessing `metadata()`.
 
 ```java
-if (client.capabilities().supports(Capability.WRITE_TIMESTAMP)) {
+if (client.capabilities().isSupported(Capability.WRITE_TIMESTAMP)) {
     DocumentResult r = client.read(address, key,
             OperationOptions.builder().includeMetadata(true).build());
     System.out.println(r.metadata().lastModified());
@@ -1323,14 +1328,14 @@ Providers inject additional fields (`partitionKey`, `sortKey`, `id`, `ttlExpiry`
 try {
     client.create(address, key, hugeDoc);
 } catch (MulticloudDbException e) {
-    if (e.error().category() == MulticloudDbErrorCategory.INVALID_REQUEST) {
+    if (MulticloudDbErrorCategory.INVALID_REQUEST.equals(e.error().category())) {
         // Document rejected before reaching any provider
         System.out.println("Document too large: " + e.getMessage());
     }
 }
 ```
 
-Oversized documents are rejected **at the SDK layer** — no network call is made.
+Oversized documents are rejected **at the SDK layer** - no network call is made.
 The error category is always `INVALID_REQUEST`.
 
 ---
@@ -1365,11 +1370,11 @@ if (diag != null) {
 
 | Field | Cosmos DB | DynamoDB | Spanner |
 |-------|:---------:|:--------:|:-------:|
-| `requestId` | activityId | x-amzn-RequestId | — |
+| `requestId` | activityId | x-amzn-RequestId | - |
 | `statusCode` | HTTP status | HTTP status | gRPC code |
-| `requestCharge` | RU cost | consumed capacity | — |
-| `etag` | `_etag` | — | commit timestamp |
-| `sessionToken` | session token | — | — |
+| `requestCharge` | RU cost | consumed capacity | - |
+| `etag` | `_etag` | - | commit timestamp |
+| `sessionToken` | session token | - | - |
 | `itemCount` | ✓ | ✓ | ✓ |
 | `duration` | ✓ | ✓ | ✓ |
 
@@ -1414,9 +1419,9 @@ frameworks, or tenants in provider-side telemetry.
 
 ```java
 MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
-    .providerId(ProviderId.COSMOS)
-    .property("endpoint", "https://my-account.documents.azure.com:443/")
-    .authProperty("masterKey", "...")
+    .provider(ProviderId.COSMOS)
+    .connection("endpoint", "https://my-account.documents.azure.com:443/")
+    .connection("key", "...")
     .userAgentSuffix("my-app/1.2.3")
     .build();
 
@@ -1437,11 +1442,11 @@ multiclouddb-sdk-java/0.1.0-beta.1 (17.0.5; Mac OS X 14.4) my-app/1.2.3
 
 Provider-specific notes:
 
-- **Cosmos** — sent as the `User-Agent` HTTP header.
-- **DynamoDB** — contributed via `ClientOverrideConfiguration#putAdvancedOption`
+- **Cosmos** - sent as the `User-Agent` HTTP header.
+- **DynamoDB** - contributed via `ClientOverrideConfiguration#putAdvancedOption`
   with `SdkAdvancedClientOption.USER_AGENT_SUFFIX`. The AWS SDK appends this
   to its own `aws-sdk-java/...` token.
-- **Spanner** — contributed via gax `FixedHeaderProvider` for the gRPC
+- **Spanner** - contributed via gax `FixedHeaderProvider` for the gRPC
   `user-agent` metadata. The gax channel preserves and merges with the
   underlying gRPC default user-agent.
 
@@ -1461,11 +1466,13 @@ Violations throw `IllegalArgumentException` from the builder setter, before
 any client is constructed:
 
 ```java
-// Throws IllegalArgumentException — contains newline
-config.userAgentSuffix("my-app\nv1.0");
+MulticloudDbClientConfig.Builder builder = MulticloudDbClientConfig.builder();
 
-// Throws IllegalArgumentException — too long
-config.userAgentSuffix("x".repeat(257));
+// Throws IllegalArgumentException - contains newline
+builder.userAgentSuffix("my-app\nv1.0");
+
+// Throws IllegalArgumentException - too long
+builder.userAgentSuffix("x".repeat(257));
 ```
 
 If a `null` value is passed, the suffix is cleared and providers send only

@@ -36,7 +36,7 @@ During development, all modules live in a single Maven reactor and resolve
 inter-module dependencies from **source** (reactor build). This means:
 
 - Changes to `multiclouddb-api` are immediately visible to all providers in the
-  same build — no need for a published artifact during development.
+  same build - no need for a published artifact during development.
 - Version properties in the root `pom.xml` (e.g., `multiclouddb-api.version`)
   always reflect the **next release version** (beta or GA). The reactor
   resolves these from the local build.
@@ -64,7 +64,7 @@ Create & push a per-module version tag
       All gates pass?
             │
 ┌───────────▼──────────────┐
-│   Approval gate          │  (manual — production environment reviewers)
+│   Approval gate          │  (manual - production environment reviewers)
 └───────────┬──────────────┘
             │
 ┌───────────▼──────────────┐
@@ -96,9 +96,9 @@ Valid module names in tags:
 - `multiclouddb-provider-spanner`
 
 Tags that do **not** match (and will be ignored):
-- `v1.0.0` — old format, missing module prefix
-- `multiclouddb-conformance-v1.0.0` — not a publishable module
-- `multiclouddb-api-v1.0.0-rc1` — release candidates not supported
+- `v1.0.0` - old format, missing module prefix
+- `multiclouddb-conformance-v1.0.0` - not a publishable module
+- `multiclouddb-api-v1.0.0-rc1` - release candidates not supported
 
 ## Step-by-Step: Releasing a Module
 
@@ -200,10 +200,10 @@ After approval, the publish job:
 
 This project follows [Semantic Versioning](https://semver.org/):
 
-- **Major** (`X.0.0`) — breaking API changes
-- **Minor** (`0.Y.0`) — new features, backward-compatible
-- **Patch** (`0.0.Z`) — bug fixes, backward-compatible
-- **Beta** (`X.Y.Z-beta.N`) — pre-release, may have breaking changes
+- **Major** (`X.0.0`) - breaking API changes
+- **Minor** (`0.Y.0`) - new features, backward-compatible
+- **Patch** (`0.0.Z`) - bug fixes, backward-compatible
+- **Beta** (`X.Y.Z-beta.N`) - pre-release, may have breaking changes
 
 ## Example: Full Release Sequence
 

@@ -41,7 +41,7 @@ runtime dependencies:
     <version>0.1.0-beta.1</version>
 </dependency>
 
-<!-- Pick a provider (runtime scope — swap without recompiling) -->
+<!-- Pick a provider (runtime scope - swap without recompiling) -->
 <dependency>
     <groupId>com.microsoft.multiclouddb</groupId>
     <artifactId>multiclouddb-provider-cosmos</artifactId>
@@ -75,10 +75,8 @@ runtime dependencies:
 ```java
 import com.multiclouddb.api.*;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 
-// Configure — provider selected entirely by config, not code
+// Configure - provider selected entirely by config, not code
 Properties props = new Properties();
 props.load(getClass().getResourceAsStream("/app.properties"));
 
@@ -93,9 +91,9 @@ MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
         .build();
 
 // Create client via ServiceLoader discovery
-MulticloudDbClient client = MulticloudDbClientFactory.create(config);
+try (MulticloudDbClient client = MulticloudDbClientFactory.create(config)) {
 
-// CRUD — same code for every provider
+// CRUD - same code for every provider
 Map<String, Object> doc = Map.of(
         "title", "Buy groceries",
         "completed", false
@@ -108,13 +106,14 @@ client.upsert(todos, key, doc);                  // Create or replace
 DocumentResult result = client.read(todos, key); // Point read
 JsonNode document = result.document();           // The document payload
 client.delete(todos, key);                       // Delete
+}
 ```
 
 ---
 
 ## 4. Query with Portable Expressions
 
-Write a WHERE-clause filter once — the SDK translates it for each provider:
+Write a WHERE-clause filter once - the SDK translates it for each provider:
 
 ```java
 QueryRequest query = QueryRequest.builder()
@@ -124,7 +123,7 @@ QueryRequest query = QueryRequest.builder()
         .build();
 
 QueryPage page = client.query(todos, query);
-for (JsonNode item : page.items()) {
+for (Map<String, Object> item : page.items()) {
     System.out.println(item);
 }
 ```
@@ -174,7 +173,7 @@ When you need provider-specific query syntax, use `nativeExpression()`:
 
 ## 6. Switch Providers
 
-Change **only** the properties file — no code changes required:
+Change **only** the properties file - no code changes required:
 
 !!! warning "Use identity-based authentication in production"
 
@@ -187,7 +186,7 @@ Change **only** the properties file — no code changes required:
 === "Cosmos DB"
 
     ```properties
-    # Local emulator only — do not use key-based auth in production
+    # Local emulator only - do not use key-based auth in production
     multiclouddb.provider=cosmos
     multiclouddb.connection.endpoint=https://localhost:8081
     multiclouddb.connection.key=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==
@@ -196,7 +195,7 @@ Change **only** the properties file — no code changes required:
 === "DynamoDB"
 
     ```properties
-    # Local emulator only — do not use static credentials in production
+    # Local emulator only - do not use static credentials in production
     multiclouddb.provider=dynamo
     multiclouddb.connection.endpoint=http://localhost:8000
     multiclouddb.connection.region=us-east-1
@@ -217,7 +216,7 @@ Change **only** the properties file — no code changes required:
 
 ## Next Steps
 
-- [Configuration Reference](configuration.md) — full connection and auth properties per provider
-- [Developer Guide](guide.md) — keys, CRUD semantics, query DSL, partitioning, multi-tenant patterns
-- [Provider Compatibility](compatibility.md) — capability matrix and error mapping
-- [Samples](https://github.com/microsoft/multiclouddb-sdk-for-java-samples) — TODO app, Risk Analysis Platform, and Portable CRUD + Query sample
+- [Configuration Reference](configuration.md) - full connection and auth properties per provider
+- [Developer Guide](guide.md) - keys, CRUD semantics, query DSL, partitioning, multi-tenant patterns
+- [Provider Compatibility](compatibility.md) - capability matrix and error mapping
+- [Samples](https://github.com/microsoft/multiclouddb-sdk-for-java-samples) - TODO app, Risk Analysis Platform, and Portable CRUD + Query sample
