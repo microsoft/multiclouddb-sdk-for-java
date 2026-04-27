@@ -124,7 +124,7 @@ QueryRequest query = QueryRequest.builder()
         .build();
 
 QueryPage page = client.query(todos, query);
-for (JsonNode item : page.items()) {
+for (Map<String, Object> item : page.items()) {
     System.out.println(item);
 }
 ```
