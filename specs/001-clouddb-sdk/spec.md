@@ -186,6 +186,57 @@ As an application developer, I experience consistent document size limits and qu
 
 ---
 
+### User Story 8 - Change Data Capture / Change Feed Consumption (Priority: P2)
+
+As an application developer, I can consume a chronologically ordered stream of item-level changes (creates, updates, and optionally deletes) from a collection using a portable change feed abstraction, so that I can build event-driven pipelines, audit logs, and downstream synchronization without writing provider-specific change stream code.
+
+**Why this priority**: Change data capture is critical for audit compliance (bi-temporal history), event-driven architectures, and downstream system synchronization (e.g., Kafka integration). All three providers offer native change feed mechanisms (Cosmos DB Change Feed, DynamoDB Streams, Spanner Change Streams), making this a viable portable abstraction.
+
+**Independent Test**: A sample application can subscribe to changes on a collection, write items, and receive a stream of change events containing the item key, change type, and new item state — switching providers by configuration only.
+
+**Acceptance Scenarios**:
+
+1. **Given** a collection with change feed enabled, **When** items are created or updated, **Then** the change feed returns change events in chronological order containing at minimum the item key, change type (create/update), and the new item state.
+2. **Given** a change feed consumer that stores a checkpoint token, **When** the consumer restarts and resumes from the stored token, **Then** it receives only changes that occurred after the checkpoint.
+3. **Given** a change feed request scoped to a specific partition key, **When** changes occur across multiple partitions, **Then** only changes within the specified partition are returned.
+4. **Given** a provider that does not support delete detection in its change feed, **When** the application requests change feed with delete events, **Then** the SDK raises a clear error indicating the capability limitation.
+
+---
+
+### User Story 9 - Bulk Write and Bulk Read Operations (Priority: P2)
+
+As an application developer, I can submit multiple write operations (upserts/deletes) or multiple read-by-key operations in a single SDK call, so that the SDK can optimize throughput by batching requests to the provider, reducing round-trips and improving performance for high-volume data operations.
+
+**Why this priority**: Bulk operations are essential for data migration, batch processing, and any scenario involving large numbers of items. Without bulk support, applications must issue individual requests sequentially, which is slow and cost-inefficient at scale. All three providers offer bulk/batch mechanisms (Cosmos DB bulk execution, DynamoDB BatchWriteItem/BatchGetItem, Spanner mutation batches).
+
+**Independent Test**: A sample application can bulk-upsert 100 items and then bulk-read them by key in two SDK calls, and this works across all providers by changing configuration only.
+
+**Acceptance Scenarios**:
+
+1. **Given** a list of 100 items, **When** the application submits them via a bulk write operation, **Then** all items are persisted and the SDK reports per-item success/failure status.
+2. **Given** a list of 50 keys, **When** the application submits them via a bulk read operation, **Then** the SDK returns the corresponding items (or per-key not-found indicators) in a single call.
+3. **Given** a bulk write where some items exceed the SDK's uniform size limit, **When** the bulk operation is submitted, **Then** oversized items are rejected with per-item errors while valid items are still processed.
+4. **Given** a provider with per-batch size limits (e.g., DynamoDB's 25-item BatchWriteItem limit), **When** a bulk write exceeds the provider's batch limit, **Then** the SDK automatically partitions the request into multiple provider-level batches transparently.
+
+---
+
+### User Story 10 - Read Consistency Level Overrides (Priority: P2)
+
+As an application developer, I can specify a read consistency level (e.g., strong or eventual) on individual read and query operations, so that I can trade off between consistency and latency/cost based on each operation's requirements — without writing provider-specific code.
+
+**Why this priority**: Different read operations within the same application often have different consistency requirements (e.g., strong reads for financial balances, eventual reads for analytics dashboards). All three providers support configurable read consistency, but with different native models. A portable abstraction enables applications to express consistency intent without coupling to provider-specific APIs.
+
+**Independent Test**: A sample application can issue a strongly consistent read and an eventually consistent read against any provider by changing only the consistency parameter on the request, and the SDK maps to the provider's native consistency mechanism.
+
+**Acceptance Scenarios**:
+
+1. **Given** a read operation with consistency level set to STRONG, **When** executed against any provider, **Then** the provider uses its native strongly consistent read mechanism and the returned data reflects all prior acknowledged writes.
+2. **Given** a read operation with consistency level set to EVENTUAL, **When** executed against any provider, **Then** the provider uses its native eventually consistent read mechanism, potentially returning slightly stale data with lower latency.
+3. **Given** a read operation with no consistency override, **When** executed, **Then** the provider's default consistency behavior applies (maintaining backward compatibility).
+4. **Given** a provider that does not support the requested consistency level, **When** the operation is submitted, **Then** the SDK raises a clear error indicating the unsupported consistency level.
+
+---
+
 ### Edge Cases
 
 - What happens when the key model differs by provider (e.g., partitioned keys vs composite primary keys)?
@@ -205,6 +256,10 @@ As an application developer, I experience consistent document size limits and qu
 - What happens when a query with a result limit spans multiple pages? The limit applies to the total result count, not per-page.
 - What happens when ORDER BY is requested on a field that is not indexed by the provider? Performance may degrade; the SDK should allow the query but may log a diagnostic warning.
 - How does the SDK handle multi-tenant isolation patterns? The SDK does not enforce tenant isolation but supports partition key schemes that enable tenant scoping. Applications can use the existing `partitionKey` query scope (FR-039) to restrict queries to a single tenant's data.
+- What happens when a change feed consumer falls behind and the provider has trimmed old changes? The SDK must surface a clear error indicating that the checkpoint is no longer valid and the consumer must restart from a new starting point.
+- What happens when a bulk write includes items spanning multiple partition keys on a provider that requires single-partition batches? The SDK must automatically group items by partition and execute separate provider-level batches.
+- What happens when a bulk operation partially fails (some items succeed, others fail)? The SDK must return per-item results indicating which items succeeded and which failed, with error details for failures.
+- What happens when a consistency level override is requested on a query that also uses partition key scoping? The consistency level and partition scope must be combinable without interference.
 
 ## Portability Defaults
 
@@ -344,6 +399,35 @@ The SDK enforces a strict no-code-escape-hatch policy to preserve portability:
 - **FR-063**: When a provider-specific quota limit is reached (e.g., partition size exceeded, throughput exhausted), the SDK MUST surface the failure through the standard provider-neutral error model with clear categorization and actionable guidance.
 - **FR-064**: The SDK MUST expose the configured uniform document size limit and documented quota limits programmatically so applications can perform pre-validation or display limits to end users.
 
+#### Change Data Capture / Change Feed Requirements
+
+- **FR-065**: The SDK MUST provide a portable change feed abstraction that enables applications to consume a chronologically ordered stream of item-level changes (creates, updates, and optionally deletes) from a collection.
+- **FR-066**: Change feed consumption MUST support starting from: (a) the beginning of available changes, (b) a specific point in time, or (c) a previously stored checkpoint/continuation token.
+- **FR-067**: Each change event MUST include at minimum: the item's key, the change type (create, update, or delete), and the new item state (for creates and updates). Delete events include the key but may not include the deleted item's prior state, depending on provider capabilities.
+- **FR-068**: Change feed MUST be a capability-gated feature. Delete detection within the change feed MUST be a separately gated capability, as not all providers or provider modes surface delete events.
+- **FR-069**: Change feed MUST support partition-scoped consumption, allowing applications to consume changes for a specific partition key value only.
+- **FR-070**: Change feed MUST return a checkpoint/continuation token after each batch of changes. Applications can persist this token and use it to resume consumption from where they left off.
+
+#### Bulk Operation Requirements
+
+- **FR-071**: The SDK MUST provide a bulk write operation that accepts a list of write requests (upserts and/or deletes) and submits them to the provider using the provider's native bulk/batch mechanism to maximize throughput.
+- **FR-072**: The SDK MUST provide a bulk read-by-key operation that accepts a list of keys and returns the corresponding items using the provider's native batch-read mechanism.
+- **FR-073**: Bulk operations MUST enforce the SDK's uniform document size limit (FR-060) on each individual item in a bulk request.
+- **FR-074**: When the number of items in a bulk request exceeds the provider's native batch size limit, the SDK MUST automatically partition the request into multiple provider-level batches and aggregate the results transparently.
+- **FR-075**: Bulk operations MUST return per-item results indicating success or failure for each item in the request, enabling applications to handle partial failures.
+- **FR-076**: Bulk operations MUST be capability-gated features. When a bulk operation variant is not supported by the provider, the SDK MUST raise a clear error.
+
+#### Read Consistency Level Requirements
+
+- **FR-077**: Read operations (`read` and `query`) MUST support an optional consistency level override that specifies the desired read consistency for that individual operation.
+- **FR-078**: The SDK MUST define a portable consistency model with at minimum two levels: `STRONG` (linearizable / strongly consistent read) and `EVENTUAL` (eventually consistent read). Providers MAY support additional provider-specific consistency levels via the capability-gated extension mechanism.
+- **FR-079**: Each provider adapter MUST map the portable consistency levels to the provider's native equivalent:
+  - **Cosmos DB**: `STRONG` → `Strong` consistency level; `EVENTUAL` → `Eventual` consistency level.
+  - **DynamoDB**: `STRONG` → `ConsistentRead = true`; `EVENTUAL` → `ConsistentRead = false`.
+  - **Spanner**: `STRONG` → strong read (default); `EVENTUAL` → stale read with a provider-configured staleness bound.
+- **FR-080**: When a requested consistency level is not supported by the provider (e.g., a provider-specific level on an incompatible provider), the SDK MUST raise a clear, capability-gated error.
+- **FR-081**: When no consistency override is specified on a read operation, the provider's default consistency behavior MUST apply, maintaining backward compatibility with existing behavior.
+
 ### Portable Operator and Function Reference
 
 The following operators and functions form the portable query subset, available on all supported providers:
@@ -372,6 +456,11 @@ The following operators and functions form the portable query subset, available 
 | `TOP N` / result limit | Cosmos DB, DynamoDB, Spanner |
 | Row-level TTL | Cosmos DB, DynamoDB |
 | Write timestamp metadata | Cosmos DB, DynamoDB, Spanner |
+| Change feed (create/update events) | Cosmos DB, DynamoDB, Spanner |
+| Change feed (delete detection) | Cosmos DB (all versions mode), DynamoDB, Spanner |
+| Bulk write | Cosmos DB, DynamoDB, Spanner |
+| Bulk read-by-key | Cosmos DB, DynamoDB, Spanner |
+| Read consistency override (`STRONG`/`EVENTUAL`) | Cosmos DB, DynamoDB, Spanner |
 
 ### Key Entities *(include if feature involves data)*
 
@@ -393,6 +482,9 @@ The following operators and functions form the portable query subset, available 
 - **Result Limit**: An optional constraint on the maximum number of items a query returns (Top N). Applied after filtering and partition scoping.
 - **Sort Order**: An optional specification of one or more fields and their sort direction (ascending or descending) for query results. Capability-gated to providers that support ORDER BY.
 - **Quota Limit**: A provider-neutral constraint on resource usage (e.g., maximum logical partition size, throughput caps) that the SDK documents and surfaces uniformly across all providers.
+- **Change Feed**: A portable abstraction for consuming a chronologically ordered stream of item-level changes (creates, updates, deletes) from a collection. Each change event includes the item key, change type, and new item state. Consumption can be started from the beginning, a point in time, or a checkpoint token. Delete detection is a separately gated capability.
+- **Bulk Operation**: A throughput-optimized operation that accepts multiple items (for writes) or multiple keys (for reads) and executes them using the provider's native batch mechanism. The SDK automatically partitions requests that exceed provider batch limits. Results are reported per-item, enabling partial failure handling.
+- **Consistency Level**: A portable enumeration of read consistency guarantees (`STRONG`, `EVENTUAL`) that can be specified per-operation. Each provider adapter maps these to the provider's native consistency mechanism. When no override is specified, the provider's default applies.
 
 ## Success Criteria *(mandatory)*
 
@@ -423,6 +515,13 @@ The following operators and functions form the portable query subset, available 
 - **SC-023**: A document within the SDK's uniform size limit can be stored and retrieved identically on all supported providers. A document exceeding the uniform limit is rejected with a clear, consistent error on every provider, regardless of individual provider native limits.
 - **SC-024**: When a provider-specific quota limit is reached (e.g., partition size exceeded), the SDK surfaces a provider-neutral error with clear categorization and actionable guidance, consistent across all providers.
 - **SC-025**: Every Java source file (main and test) across all modules carries the standard Microsoft copyright header (`// Copyright (c) Microsoft Corporation. All rights reserved.` / `// Licensed under the MIT License.`) as its first two lines. A `LICENSE` file exists at the repository root with the full MIT license text. Both are verifiable by inspection of any file in the repository.
+- **SC-026**: A change feed consumer can receive a chronologically ordered stream of create and update events from a collection on all providers that support change feed, by changing configuration only.
+- **SC-027**: A change feed consumer that stores a checkpoint token and restarts receives only changes that occurred after the checkpoint on all supported providers.
+- **SC-028**: A bulk write of 100 items completes successfully and reports per-item status on all supported providers, with the SDK automatically partitioning into provider-level batches as needed.
+- **SC-029**: A bulk read of 50 keys returns the corresponding items (or per-key not-found indicators) on all supported providers.
+- **SC-030**: A read operation with consistency level `STRONG` returns data reflecting all prior acknowledged writes on all supported providers.
+- **SC-031**: A read operation with consistency level `EVENTUAL` completes with lower latency than a strongly consistent read under normal operating conditions.
+- **SC-032**: A read or query operation with no consistency override continues to use the provider's default consistency behavior, maintaining backward compatibility.
 
 ## Assumptions
 
@@ -455,6 +554,12 @@ The following operators and functions form the portable query subset, available 
   // Copyright (c) Microsoft Corporation. All rights reserved.
   // Licensed under the MIT License.
   ```
+- **Change feed scope**: The portable change feed abstraction covers consumption of item-level changes only. Change feed configuration (e.g., enabling DynamoDB Streams on a table, defining Spanner Change Streams) is a provisioning concern outside the portable contract. Applications should ensure change feed is enabled on their provider resources before using the SDK's change feed consumer.
+- **Change feed delete detection**: Delete event availability varies by provider and mode. Cosmos DB's "all versions and deletes" mode surfaces deletes; DynamoDB Streams always includes deletes; Spanner Change Streams include deletes. The SDK gates delete detection as a separate capability. Applications relying on delete events should verify the capability before use.
+- **Bulk operation semantics**: Bulk operations are throughput-optimized, not transactional. Individual items within a bulk request may succeed or fail independently. The SDK does not guarantee atomicity across items in a bulk request. Applications requiring atomic multi-item writes should use provider-specific transactional batch mechanisms via provider extensions.
+- **Bulk operation limits**: Provider-level batch size limits vary (e.g., DynamoDB limits `BatchWriteItem` to 25 items, `BatchGetItem` to 100 keys). The SDK automatically partitions larger requests into multiple provider-level batches. Applications should be aware that very large bulk requests may result in multiple provider round-trips.
+- **Read consistency mapping**: The portable `STRONG` and `EVENTUAL` consistency levels are semantic approximations mapped to each provider's native model. Cosmos DB's intermediate consistency levels (Session, Bounded Staleness, Consistent Prefix) are available as provider-specific extensions but are not part of the portable contract. Spanner's "stale read" implementation of `EVENTUAL` uses a provider-configured staleness bound (default: 15 seconds).
+- **Consistency default behavior**: When no consistency override is specified, each provider uses its own default: Cosmos DB uses the account-level consistency setting, DynamoDB defaults to eventually consistent reads, and Spanner defaults to strong reads. The SDK does not normalize these defaults to preserve existing provider behavior for applications that do not opt into consistency overrides.
 
 ## Acceptance Checklist
 
@@ -523,6 +628,31 @@ This checklist is used to accept the feature as “done” at the spec level.
 - [ ] The SDK's uniform document size limit and quota limits are exposed programmatically for application pre-validation.
 - [ ] When a provider-specific quota limit is reached, the SDK surfaces a provider-neutral error with clear categorization and actionable guidance.
 - [ ] Quota-related errors are consistent in format across all providers.
+
+### Change Data Capture / Change Feed
+
+- [ ] A change feed consumer receives create and update events in chronological order on all providers that support change feed.
+- [ ] Change feed consumption can be started from the beginning, a specific point in time, or a stored checkpoint token.
+- [ ] Change feed returns checkpoint tokens that enable resumable consumption across consumer restarts.
+- [ ] Partition-scoped change feed consumption returns only changes within the specified partition.
+- [ ] Delete detection is separately capability-gated and raises a clear error on providers/modes that do not surface delete events.
+- [ ] The same change feed consumer code works across all supported providers by changing configuration only.
+
+### Bulk Operations
+
+- [ ] A bulk write operation persists multiple items and reports per-item success/failure status on all supported providers.
+- [ ] A bulk read operation retrieves multiple items by key in a single call on all supported providers.
+- [ ] Bulk requests exceeding the provider's native batch size limit are automatically partitioned into multiple provider-level batches.
+- [ ] Individual items in a bulk write that exceed the SDK's uniform document size limit are rejected with per-item errors.
+- [ ] Bulk operations are capability-gated and raise clear errors on providers that do not support them.
+
+### Read Consistency Level Overrides
+
+- [ ] A read operation with `STRONG` consistency returns data reflecting all prior acknowledged writes on all supported providers.
+- [ ] A read operation with `EVENTUAL` consistency completes successfully with potentially stale data on all supported providers.
+- [ ] A read or query with no consistency override uses the provider's default consistency behavior (backward compatible).
+- [ ] Requesting an unsupported consistency level on a provider raises a clear, capability-gated error.
+- [ ] Consistency overrides are combinable with partition key scoping and filter expressions.
 
 ### Escape Hatch Policy
 
