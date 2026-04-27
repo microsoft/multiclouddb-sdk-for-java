@@ -2,7 +2,7 @@
 
 The Multicloud DB SDK's portable API surface covers capabilities that work
 identically across all three providers. The features listed below require no
-runtime capability checks — they are guaranteed to work on Azure Cosmos DB,
+runtime capability checks - they are guaranteed to work on Azure Cosmos DB,
 Amazon DynamoDB, and Google Cloud Spanner. Some providers offer additional
 capabilities (e.g., `CROSS_PARTITION_QUERY`, `ORDER_BY`, `LIKE`); use
 `client.capabilities()` to discover what the current provider supports.
@@ -21,13 +21,13 @@ no asterisks, no provider-specific caveats, and no runtime checks required.
 | **Create** | Insert a new document (fails if the key already exists) |
 | **Read** | Point-read by partition key + sort key |
 | **Update** | Replace an existing document (fails if not found) |
-| **Upsert** | Create or replace — always succeeds |
+| **Upsert** | Create or replace - always succeeds |
 | **Delete** | Remove by key (idempotent) |
 
-### Query — Portable Expression DSL
+### Query - Portable Expression DSL
 
 Write a WHERE-clause filter once. The SDK translates it to the native query
-language of whichever provider is configured — Cosmos SQL, DynamoDB PartiQL,
+language of whichever provider is configured - Cosmos SQL, DynamoDB PartiQL,
 or Spanner GoogleSQL.
 
 | Feature | Operators / Functions | Example |
@@ -88,23 +88,23 @@ The raw HTTP or gRPC status code is also available via `error.statusCode()`.
 | `AUTHENTICATION_FAILED`  | HTTP 401  | UnrecognizedClientException, HTTP 401/403  | UNAUTHENTICATED  |
 | `AUTHORIZATION_FAILED`  | HTTP 403  | AccessDeniedException  | PERMISSION_DENIED  |
 | `NOT_FOUND`  | HTTP 404  | ResourceNotFoundException, HTTP 404  | NOT_FOUND  |
-| `CONFLICT` (409 — duplicate key)  | HTTP 409  | `ConditionalCheckFailedException` from `create()` — `attribute_not_exists` guard fails when the item already exists  | ALREADY_EXISTS  |
-| `CONFLICT` (412 — precondition)  | HTTP 412  | `ConditionalCheckFailedException` from `update()`/`upsert()` with a condition expression¹  | ABORTED  |
+| `CONFLICT` (409 - duplicate key)  | HTTP 409  | `ConditionalCheckFailedException` from `create()` - `attribute_not_exists` guard fails when the item already exists  | ALREADY_EXISTS  |
+| `CONFLICT` (412 - precondition)  | HTTP 412  | `ConditionalCheckFailedException` from `update()`/`upsert()` with a condition expression¹  | ABORTED  |
 | `THROTTLED`  | HTTP 429  | ProvisionedThroughputExceededException, ThrottlingException  | RESOURCE_EXHAUSTED  |
 | `TRANSIENT_FAILURE`  | HTTP 449, 500, 502, 503  | HTTP 500–5xx  | UNAVAILABLE  |
-| `PERMANENT_FAILURE`  | —  | ItemCollectionSizeLimitExceededException  | —  |
-| `UNSUPPORTED_CAPABILITY`  | —  | —  | UNIMPLEMENTED  |
+| `PERMANENT_FAILURE`  | -  | ItemCollectionSizeLimitExceededException  | -  |
+| `UNSUPPORTED_CAPABILITY`  | -  | -  | UNIMPLEMENTED  |
 | `PROVIDER_ERROR`  | Other  | Other  | INTERNAL, Other  |
 
 > ¹ DynamoDB uses `ConditionalCheckFailedException` for both the 409 (duplicate-key on `create`) and 412
-> (precondition failure on conditional `update`/`upsert`) cases — both currently map to `CONFLICT`.
+> (precondition failure on conditional `update`/`upsert`) cases - both currently map to `CONFLICT`.
 > The portable API does not yet expose ETag-based conditional updates; when it does, the 412-equivalent
 > path will be split into a dedicated `PRECONDITION_FAILED` category (tracked in issue #29).
 
 ## Default Sort-Key Ordering
 
-Starting from this release, all Cosmos DB and DynamoDB query paths return results
-sorted by the document's sort key ascending.
+All Cosmos DB and DynamoDB query paths return results sorted by the document's
+sort key ascending.
 
 > **Design note:** The default `ORDER BY` is applied to **all** Cosmos queries
 > (both partition-scoped and cross-partition), not just partition-scoped ones.
@@ -119,7 +119,7 @@ Cosmos DB appends `ORDER BY c.id ASC` to every query that does not already carry
 an explicit `ORDER BY` clause (and is not an aggregate / `GROUP BY` query). This
 is applied server-side, so the order is globally consistent across all pages.
 
-> **⚠️ Custom indexing policy — composite index required**
+> **⚠️ Custom indexing policy - composite index required**
 > If your Cosmos container uses a **custom indexing policy** that does not include
 > a composite index on `(filterField ASC, id ASC)`, Cosmos DB will throw a
 > `400 Bad Request` at runtime for cross-partition queries that combine `WHERE` and
@@ -146,7 +146,7 @@ is applied server-side, so the order is globally consistent across all pages.
 DynamoDB results are sorted in memory per page after fetching (client-side).
 Within a single page, items are returned sorted by sort key ascending.
 For multi-page scans the overall order across pages is determined by DynamoDB's
-internal token-based traversal, not sort key — this is a known limitation.
+internal token-based traversal, not sort key - this is a known limitation.
 
 ### Spanner
 
@@ -162,5 +162,5 @@ the Spanner provider until this gap is addressed.
 
 The SDK does not expose a `nativeClient()` method. Direct access to the
 underlying provider client is intentionally omitted to enforce portability
-guarantees — code written against the SDK must remain switchable between
+guarantees - code written against the SDK must remain switchable between
 providers by configuration alone.

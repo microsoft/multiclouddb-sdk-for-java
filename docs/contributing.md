@@ -31,7 +31,7 @@ Sign at: [https://cla.opensource.microsoft.com](https://cla.opensource.microsoft
 |------|----------------|
 | JDK  | 17 (LTS)       |
 | Maven | 3.9+          |
-| Docker | 20+ (optional — Spanner emulator) |
+| Docker | 20+ (optional - Spanner emulator) |
 
 ### Clone and Build
 
@@ -108,7 +108,7 @@ mvn test -pl multiclouddb-conformance -Dtest=SpannerConformanceTest
 
 - **Java 17** language level across all modules.
 - Follow standard Java naming conventions.
-- Prefer immutable value types — use `Map.copyOf()` / `List.copyOf()` for
+- Prefer immutable value types - use `Map.copyOf()` / `List.copyOf()` for
   public API return values.
 - Avoid Jackson or provider-specific types on the public API surface.
 - Keep the public API surface minimal.

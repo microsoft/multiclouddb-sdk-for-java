@@ -14,7 +14,7 @@ contract.
 
 | Type | Description |
 |------|-------------|
-| `MulticloudDbClient` | The main client interface — CRUD, query, provisioning, and capabilities |
+| `MulticloudDbClient` | The main client interface - CRUD, query, provisioning, and capabilities |
 | `MulticloudDbClientFactory` | Creates a client by discovering providers via `ServiceLoader` |
 | `MulticloudDbClientConfig` | Builder-pattern configuration for provider, connection, and auth |
 | `ResourceAddress` | A `(database, collection)` pair targeting a container/table |
@@ -35,7 +35,7 @@ contract.
 | `Expression` | AST node interface for parsed query expressions |
 | `ExpressionParser` | Parses portable expression strings into an AST |
 | `ExpressionValidator` | Validates parameter bindings and function signatures |
-| `ExpressionTranslator` | SPI — translates AST to provider-native query syntax |
+| `ExpressionTranslator` | SPI - translates AST to provider-native query syntax |
 | `TranslatedQuery` | Translation result: query string + bound parameters |
 
 ---
@@ -61,11 +61,11 @@ and search.
 
 ## SPI Package: `com.multiclouddb.spi`
 
-Provider implementors use the SPI interfaces — application code should not
+Provider implementors use the SPI interfaces - application code should not
 import from this package.
 
 | Type | Description |
 |------|-------------|
-| `MulticloudDbProviderAdapter` | Factory SPI — creates a provider client from config |
-| `MulticloudDbProviderClient` | Implementation SPI — CRUD + query + provisioning |
+| `MulticloudDbProviderAdapter` | Factory SPI - creates a provider client from config |
+| `MulticloudDbProviderClient` | Implementation SPI - CRUD + query + provisioning |
 | `SdkUserAgent` | Builds the canonical user-agent header token |
