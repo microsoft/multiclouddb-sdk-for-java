@@ -103,18 +103,21 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         }
 
         String consistencyStr = config.connection().get(CosmosConstants.CONFIG_CONSISTENCY_LEVEL);
-        if (consistencyStr != null && !consistencyStr.isBlank()) {
+        if (consistencyStr != null) {
             this.readConsistencyOverride = CosmosConstants.parseConsistencyLevel(consistencyStr);
-            LOG.info("Cosmos read consistency override: {}", readConsistencyOverride);
         } else {
             this.readConsistencyOverride = null;
-            LOG.info("Cosmos read consistency: using account default");
         }
 
         builder.userAgentSuffix(SdkUserAgent.userAgent(config));
 
         this.cosmosClient = builder.buildClient();
         LOG.info("Cosmos client created for endpoint: {}", endpoint);
+        if (readConsistencyOverride != null) {
+            LOG.info("Cosmos read consistency override: {}", readConsistencyOverride);
+        } else {
+            LOG.info("Cosmos read consistency: using account default");
+        }
     }
 
     /**
@@ -177,8 +180,9 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             CosmosContainer container = getContainer(address);
             PartitionKey pk = resolvePartitionKey(key);
             String cosmosId = key.sortKey() != null ? key.sortKey() : key.partitionKey();
-            CosmosItemResponse<ObjectNode> response = container.readItem(
-                    cosmosId, pk, buildReadOptions(readConsistencyOverride), ObjectNode.class);
+            CosmosItemResponse<ObjectNode> response = readConsistencyOverride != null
+                    ? container.readItem(cosmosId, pk, buildReadOptions(readConsistencyOverride), ObjectNode.class)
+                    : container.readItem(cosmosId, pk, ObjectNode.class);
             logItemDiagnostics(OperationNames.READ, address, response);
             ObjectNode raw = response.getItem();
             if (raw == null) return null;

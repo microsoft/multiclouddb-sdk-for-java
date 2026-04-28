@@ -124,17 +124,23 @@ class CosmosConstantsTest {
     }
 
     @Test
-    @DisplayName("parseConsistencyLevel: blank string throws IllegalArgumentException")
+    @DisplayName("parseConsistencyLevel: blank string throws IllegalArgumentException with <blank> placeholder")
     void parseConsistencyLevelBlankThrows() {
-        assertThrows(IllegalArgumentException.class,
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> CosmosConstants.parseConsistencyLevel("   "));
+        assertTrue(ex.getMessage().contains("<blank>"),
+                "Blank error message should use '<blank>' placeholder; got: " + ex.getMessage());
     }
 
     @Test
-    @DisplayName("parseConsistencyLevel: null throws IllegalArgumentException")
+    @DisplayName("parseConsistencyLevel: null throws IllegalArgumentException with message that does not say 'null'")
     void parseConsistencyLevelNullThrows() {
-        assertThrows(IllegalArgumentException.class,
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> CosmosConstants.parseConsistencyLevel(null));
+        assertFalse(ex.getMessage().contains("'null'"),
+                "Null error message should not interpolate null as a string; got: " + ex.getMessage());
+        assertTrue(ex.getMessage().toLowerCase().contains("must not be null"),
+                "Null error message should say 'must not be null'; got: " + ex.getMessage());
     }
 
     // ── Document field names ──────────────────────────────────────────────────

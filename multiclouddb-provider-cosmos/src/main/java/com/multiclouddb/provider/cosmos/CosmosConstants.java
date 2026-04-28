@@ -71,22 +71,28 @@ public final class CosmosConstants {
      *
      * @param value the raw config value, e.g. {@code "SESSION"} or {@code "eventual"}
      * @return the matching {@link ConsistencyLevel}
-     * @throws IllegalArgumentException if the value is blank or does not match
+     * @throws IllegalArgumentException if the value is {@code null}, blank, or does not match
      *                                  a known consistency level
      */
     public static ConsistencyLevel parseConsistencyLevel(String value) {
-        if (value == null || value.isBlank()) {
+        if (value == null) {
             throw new IllegalArgumentException(
-                    String.format(ERR_INVALID_CONSISTENCY_LEVEL, value));
+                    "Cosmos consistencyLevel must not be null. "
+                    + "Valid values (case-insensitive): STRONG, BOUNDED_STALENESS, SESSION, CONSISTENT_PREFIX, EVENTUAL");
         }
-        return switch (value.strip().toUpperCase()) {
+        if (value.isBlank()) {
+            throw new IllegalArgumentException(
+                    String.format(ERR_INVALID_CONSISTENCY_LEVEL, "<blank>"));
+        }
+        String normalized = value.strip().toUpperCase(java.util.Locale.ROOT);
+        return switch (normalized) {
             case "STRONG"            -> ConsistencyLevel.STRONG;
             case "BOUNDED_STALENESS" -> ConsistencyLevel.BOUNDED_STALENESS;
             case "SESSION"           -> ConsistencyLevel.SESSION;
             case "CONSISTENT_PREFIX" -> ConsistencyLevel.CONSISTENT_PREFIX;
             case "EVENTUAL"          -> ConsistencyLevel.EVENTUAL;
             default -> throw new IllegalArgumentException(
-                    String.format(ERR_INVALID_CONSISTENCY_LEVEL, value));
+                    String.format(ERR_INVALID_CONSISTENCY_LEVEL, normalized));
         };
     }
 
