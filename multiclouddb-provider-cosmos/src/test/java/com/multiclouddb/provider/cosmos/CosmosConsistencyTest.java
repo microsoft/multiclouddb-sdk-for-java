@@ -4,15 +4,30 @@
 package com.multiclouddb.provider.cosmos;
 
 import com.azure.cosmos.ConsistencyLevel;
+import com.azure.cosmos.CosmosClient;
 import com.azure.cosmos.CosmosClientBuilder;
+import com.azure.cosmos.CosmosDatabase;
+import com.azure.cosmos.CosmosContainer;
 import com.azure.cosmos.models.CosmosItemRequestOptions;
+import com.azure.cosmos.models.CosmosItemResponse;
+import com.azure.cosmos.models.CosmosQueryRequestOptions;
+import com.azure.cosmos.models.PartitionKey;
+import com.azure.cosmos.models.SqlQuerySpec;
+import com.azure.cosmos.util.CosmosPagedIterable;
 import com.multiclouddb.api.MulticloudDbClientConfig;
 import com.multiclouddb.api.ProviderId;
+import com.multiclouddb.api.ResourceAddress;
+import com.multiclouddb.api.MulticloudDbKey;
+import com.multiclouddb.api.QueryRequest;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -105,6 +120,24 @@ class CosmosConsistencyTest {
         };
     }
 
+    /**
+     * Builder mock setup that makes {@code buildClient()} return the supplied client mock.
+     * Used for tests that exercise operation methods ({@code read()}, {@code query()}) rather than
+     * just construction.
+     */
+    private MockedConstruction.MockInitializer<CosmosClientBuilder> builderAnswerWithClient(CosmosClient client) {
+        return (mock, ctx) -> {
+            when(mock.endpoint(anyString())).thenReturn(mock);
+            when(mock.key(anyString())).thenReturn(mock);
+            when(mock.contentResponseOnWriteEnabled(anyBoolean())).thenReturn(mock);
+            when(mock.gatewayMode()).thenReturn(mock);
+            when(mock.directMode()).thenReturn(mock);
+            when(mock.userAgentSuffix(anyString())).thenReturn(mock);
+            when(mock.consistencyLevel(any())).thenReturn(mock);
+            when(mock.buildClient()).thenReturn(client);
+        };
+    }
+
     @Test
     @DisplayName("No consistencyLevel in config: CosmosClientBuilder.consistencyLevel() is never called")
     void noConsistencyConfigDoesNotCallBuilderConsistencyLevel() {
@@ -193,6 +226,199 @@ class CosmosConsistencyTest {
         try (MockedConstruction<CosmosClientBuilder> ignored =
                      mockConstruction(CosmosClientBuilder.class, builderDefaultAnswer())) {
             assertDoesNotThrow(() -> new CosmosProviderClient(config));
+        }
+    }
+
+    // ── Blank config validation ───────────────────────────────────────────────
+
+    @Test
+    @DisplayName("blank consistencyLevel in config: construction throws IllegalArgumentException (fail-fast)")
+    void blankConsistencyLevelThrowsOnConstruction() {
+        MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+                .provider(ProviderId.COSMOS)
+                .connection(CosmosConstants.CONFIG_ENDPOINT, DUMMY_ENDPOINT)
+                .connection(CosmosConstants.CONFIG_KEY, DUMMY_KEY)
+                .connection(CosmosConstants.CONFIG_CONSISTENCY_LEVEL, "   ")
+                .build();
+
+        try (MockedConstruction<CosmosClientBuilder> ignored =
+                     mockConstruction(CosmosClientBuilder.class, builderDefaultAnswer())) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> new CosmosProviderClient(config),
+                    "Blank consistencyLevel should throw at construction, not silently use account default");
+        }
+    }
+
+    // ── Operation-level consistency propagation ───────────────────────────────
+
+    @Test
+    @DisplayName("read() with EVENTUAL override: readItem is called with CosmosItemRequestOptions carrying EVENTUAL")
+    @SuppressWarnings("unchecked")
+    void readPassesConsistencyLevelToReadItem() {
+        MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+                .provider(ProviderId.COSMOS)
+                .connection(CosmosConstants.CONFIG_ENDPOINT, DUMMY_ENDPOINT)
+                .connection(CosmosConstants.CONFIG_KEY, DUMMY_KEY)
+                .connection(CosmosConstants.CONFIG_CONSISTENCY_LEVEL, "EVENTUAL")
+                .build();
+
+        CosmosContainer mockContainer = mock(CosmosContainer.class);
+        CosmosDatabase mockDatabase = mock(CosmosDatabase.class);
+        CosmosClient mockClient = mock(CosmosClient.class);
+        when(mockClient.getDatabase(anyString())).thenReturn(mockDatabase);
+        when(mockDatabase.getContainer(anyString())).thenReturn(mockContainer);
+
+        CosmosItemResponse<ObjectNode> mockResponse = mock(CosmosItemResponse.class);
+        when(mockResponse.getItem()).thenReturn(null);
+        when(mockResponse.getStatusCode()).thenReturn(200);
+        when(mockContainer.readItem(anyString(), any(PartitionKey.class),
+                any(CosmosItemRequestOptions.class), eq(ObjectNode.class)))
+                .thenReturn(mockResponse);
+
+        try (MockedConstruction<CosmosClientBuilder> ignored =
+                     mockConstruction(CosmosClientBuilder.class, builderAnswerWithClient(mockClient))) {
+
+            CosmosProviderClient providerClient = new CosmosProviderClient(config);
+            ResourceAddress address = new ResourceAddress("testdb", "testcol");
+            MulticloudDbKey key = MulticloudDbKey.of("partition1");
+            providerClient.read(address, key, null);
+
+            ArgumentCaptor<CosmosItemRequestOptions> captor =
+                    ArgumentCaptor.forClass(CosmosItemRequestOptions.class);
+            verify(mockContainer).readItem(anyString(), any(PartitionKey.class),
+                    captor.capture(), eq(ObjectNode.class));
+            assertEquals(ConsistencyLevel.EVENTUAL, captor.getValue().getConsistencyLevel(),
+                    "read() must pass EVENTUAL consistency override to readItem");
+        }
+    }
+
+    @Test
+    @DisplayName("read() with no override: the 3-arg readItem (no options) is used — no unnecessary allocation")
+    @SuppressWarnings("unchecked")
+    void readWithNoOverrideUsesThreeArgReadItem() {
+        MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+                .provider(ProviderId.COSMOS)
+                .connection(CosmosConstants.CONFIG_ENDPOINT, DUMMY_ENDPOINT)
+                .connection(CosmosConstants.CONFIG_KEY, DUMMY_KEY)
+                .build();
+
+        CosmosContainer mockContainer = mock(CosmosContainer.class);
+        CosmosDatabase mockDatabase = mock(CosmosDatabase.class);
+        CosmosClient mockClient = mock(CosmosClient.class);
+        when(mockClient.getDatabase(anyString())).thenReturn(mockDatabase);
+        when(mockDatabase.getContainer(anyString())).thenReturn(mockContainer);
+
+        CosmosItemResponse<ObjectNode> mockResponse = mock(CosmosItemResponse.class);
+        when(mockResponse.getItem()).thenReturn(null);
+        when(mockResponse.getStatusCode()).thenReturn(200);
+        when(mockContainer.readItem(anyString(), any(PartitionKey.class), eq(ObjectNode.class)))
+                .thenReturn(mockResponse);
+
+        try (MockedConstruction<CosmosClientBuilder> ignored =
+                     mockConstruction(CosmosClientBuilder.class, builderAnswerWithClient(mockClient))) {
+
+            CosmosProviderClient providerClient = new CosmosProviderClient(config);
+            ResourceAddress address = new ResourceAddress("testdb", "testcol");
+            MulticloudDbKey key = MulticloudDbKey.of("partition1");
+            providerClient.read(address, key, null);
+
+            // 3-arg overload was called
+            verify(mockContainer).readItem(anyString(), any(PartitionKey.class), eq(ObjectNode.class));
+            // 4-arg overload was NOT called
+            verify(mockContainer, never()).readItem(anyString(), any(PartitionKey.class),
+                    any(CosmosItemRequestOptions.class), eq(ObjectNode.class));
+        }
+    }
+
+    @Test
+    @DisplayName("query() with EVENTUAL override: queryItems is called with CosmosQueryRequestOptions carrying EVENTUAL")
+    @SuppressWarnings("unchecked")
+    void queryAppliesConsistencyLevelToQueryOptions() {
+        MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+                .provider(ProviderId.COSMOS)
+                .connection(CosmosConstants.CONFIG_ENDPOINT, DUMMY_ENDPOINT)
+                .connection(CosmosConstants.CONFIG_KEY, DUMMY_KEY)
+                .connection(CosmosConstants.CONFIG_CONSISTENCY_LEVEL, "EVENTUAL")
+                .build();
+
+        CosmosContainer mockContainer = mock(CosmosContainer.class);
+        CosmosDatabase mockDatabase = mock(CosmosDatabase.class);
+        CosmosClient mockClient = mock(CosmosClient.class);
+        when(mockClient.getDatabase(anyString())).thenReturn(mockDatabase);
+        when(mockDatabase.getContainer(anyString())).thenReturn(mockContainer);
+
+        CosmosPagedIterable<com.fasterxml.jackson.databind.JsonNode> mockPagedIterable =
+                mock(CosmosPagedIterable.class);
+        when(mockPagedIterable.iterableByPage(anyInt())).thenReturn(Collections.emptyList());
+        when(mockPagedIterable.iterableByPage(anyString(), anyInt())).thenReturn(Collections.emptyList());
+        when(mockContainer.queryItems(any(SqlQuerySpec.class),
+                any(CosmosQueryRequestOptions.class),
+                eq(com.fasterxml.jackson.databind.JsonNode.class)))
+                .thenReturn(mockPagedIterable);
+
+        try (MockedConstruction<CosmosClientBuilder> ignored =
+                     mockConstruction(CosmosClientBuilder.class, builderAnswerWithClient(mockClient))) {
+
+            CosmosProviderClient providerClient = new CosmosProviderClient(config);
+            ResourceAddress address = new ResourceAddress("testdb", "testcol");
+            QueryRequest query = QueryRequest.builder().expression("c.id = '1'").build();
+            providerClient.query(address, query, null);
+
+            ArgumentCaptor<CosmosQueryRequestOptions> captor =
+                    ArgumentCaptor.forClass(CosmosQueryRequestOptions.class);
+            verify(mockContainer).queryItems(any(SqlQuerySpec.class),
+                    captor.capture(), eq(com.fasterxml.jackson.databind.JsonNode.class));
+            assertEquals(ConsistencyLevel.EVENTUAL, captor.getValue().getConsistencyLevel(),
+                    "query() must set EVENTUAL consistency on CosmosQueryRequestOptions");
+        }
+    }
+
+    @Test
+    @DisplayName("queryWithTranslation() with EVENTUAL override: queryItems is called with CosmosQueryRequestOptions carrying EVENTUAL")
+    @SuppressWarnings("unchecked")
+    void queryWithTranslationAppliesConsistencyLevelToQueryOptions() {
+        MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+                .provider(ProviderId.COSMOS)
+                .connection(CosmosConstants.CONFIG_ENDPOINT, DUMMY_ENDPOINT)
+                .connection(CosmosConstants.CONFIG_KEY, DUMMY_KEY)
+                .connection(CosmosConstants.CONFIG_CONSISTENCY_LEVEL, "EVENTUAL")
+                .build();
+
+        CosmosContainer mockContainer = mock(CosmosContainer.class);
+        CosmosDatabase mockDatabase = mock(CosmosDatabase.class);
+        CosmosClient mockClient = mock(CosmosClient.class);
+        when(mockClient.getDatabase(anyString())).thenReturn(mockDatabase);
+        when(mockDatabase.getContainer(anyString())).thenReturn(mockContainer);
+
+        CosmosPagedIterable<com.fasterxml.jackson.databind.JsonNode> mockPagedIterable =
+                mock(CosmosPagedIterable.class);
+        when(mockPagedIterable.iterableByPage(anyInt())).thenReturn(Collections.emptyList());
+        when(mockPagedIterable.iterableByPage(anyString(), anyInt())).thenReturn(Collections.emptyList());
+        when(mockContainer.queryItems(any(SqlQuerySpec.class),
+                any(CosmosQueryRequestOptions.class),
+                eq(com.fasterxml.jackson.databind.JsonNode.class)))
+                .thenReturn(mockPagedIterable);
+
+        try (MockedConstruction<CosmosClientBuilder> ignored =
+                     mockConstruction(CosmosClientBuilder.class, builderAnswerWithClient(mockClient))) {
+
+            CosmosProviderClient providerClient = new CosmosProviderClient(config);
+            ResourceAddress address = new ResourceAddress("testdb", "testcol");
+
+            com.multiclouddb.api.query.TranslatedQuery translated =
+                    com.multiclouddb.api.query.TranslatedQuery.withNamedParameters(
+                            "SELECT * FROM c WHERE c.id = @id ORDER BY c.id ASC",
+                            "c.id = @id",
+                            Map.of("@id", "1"));
+            QueryRequest query = QueryRequest.builder().build();
+            providerClient.queryWithTranslation(address, translated, query, null);
+
+            ArgumentCaptor<CosmosQueryRequestOptions> captor =
+                    ArgumentCaptor.forClass(CosmosQueryRequestOptions.class);
+            verify(mockContainer).queryItems(any(SqlQuerySpec.class),
+                    captor.capture(), eq(com.fasterxml.jackson.databind.JsonNode.class));
+            assertEquals(ConsistencyLevel.EVENTUAL, captor.getValue().getConsistencyLevel(),
+                    "queryWithTranslation() must set EVENTUAL consistency on CosmosQueryRequestOptions");
         }
     }
 }

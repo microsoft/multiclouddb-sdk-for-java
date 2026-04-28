@@ -95,6 +95,15 @@ Writes are unaffected — Cosmos DB write durability is independent of the consi
     `EVENTUAL`, but **not** to `BOUNDED_STALENESS` or `STRONG`. Specifying a stronger level than the
     account default causes a runtime error from the Cosmos DB service.
 
+!!! warning "SESSION default and read-your-own-write guarantees"
+    Cosmos DB uses session tokens to guarantee read-your-own-writes (RYOW) when the
+    account default is `SESSION`. Overriding reads to `EVENTUAL` or `CONSISTENT_PREFIX`
+    abandons session token tracking for those requests — subsequent reads may not reflect
+    writes made in the same client session. This does **not** produce a runtime error
+    (the override is still valid since it is weaker than `SESSION`), making it a silent
+    semantic change. If RYOW semantics are required, keep the override at `SESSION` or
+    omit the property entirely.
+
 **Example** — use eventual consistency for reads while keeping the account default for everything else:
 
 ```properties
