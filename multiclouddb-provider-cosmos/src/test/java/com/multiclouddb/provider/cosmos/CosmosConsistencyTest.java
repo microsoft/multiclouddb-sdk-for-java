@@ -543,4 +543,176 @@ class CosmosConsistencyTest {
                     "queryWithTranslation() must not set a consistency level when no override is configured");
         }
     }
+
+    // ── Write-path consistency invariant ──────────────────────────────────────
+    //
+    // The PR's headline guarantee is that writes are *never* affected by the
+    // consistencyLevel override. The constructor-level test above verifies the
+    // CosmosClientBuilder.consistencyLevel() is never called; these tests close
+    // the loop by verifying that even with an override configured, every write
+    // op (create/update/upsert/delete) builds a CosmosItemRequestOptions with
+    // no consistency level set. A future refactor that consolidates options-
+    // building between read and write paths could silently violate this
+    // invariant — Cosmos does not reject per-request consistency on writes at
+    // runtime — so this contract is enforced here.
+
+    @Test
+    @DisplayName("create() with EVENTUAL override: createItem options carry no consistency level (writes unaffected)")
+    @SuppressWarnings("unchecked")
+    void createDoesNotCarryConsistencyLevel() {
+        MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+                .provider(ProviderId.COSMOS)
+                .connection(CosmosConstants.CONFIG_ENDPOINT, DUMMY_ENDPOINT)
+                .connection(CosmosConstants.CONFIG_KEY, DUMMY_KEY)
+                .connection(CosmosConstants.CONFIG_CONSISTENCY_LEVEL, "EVENTUAL")
+                .build();
+
+        CosmosContainer mockContainer = mock(CosmosContainer.class);
+        CosmosDatabase mockDatabase = mock(CosmosDatabase.class);
+        CosmosClient mockClient = mock(CosmosClient.class);
+        when(mockClient.getDatabase(anyString())).thenReturn(mockDatabase);
+        when(mockDatabase.getContainer(anyString())).thenReturn(mockContainer);
+
+        CosmosItemResponse<ObjectNode> mockResponse = mock(CosmosItemResponse.class);
+        when(mockResponse.getStatusCode()).thenReturn(201);
+        when(mockContainer.createItem(any(ObjectNode.class), any(PartitionKey.class),
+                any(CosmosItemRequestOptions.class)))
+                .thenReturn(mockResponse);
+
+        try (MockedConstruction<CosmosClientBuilder> ignored =
+                     mockConstruction(CosmosClientBuilder.class, builderAnswerWithClient(mockClient))) {
+
+            CosmosProviderClient providerClient = new CosmosProviderClient(config);
+            ResourceAddress address = new ResourceAddress("testdb", "testcol");
+            MulticloudDbKey key = MulticloudDbKey.of("partition1");
+            providerClient.create(address, key, Map.of("name", "alice"), null);
+
+            ArgumentCaptor<CosmosItemRequestOptions> captor =
+                    ArgumentCaptor.forClass(CosmosItemRequestOptions.class);
+            verify(mockContainer).createItem(any(ObjectNode.class), any(PartitionKey.class),
+                    captor.capture());
+            assertNull(captor.getValue().getConsistencyLevel(),
+                    "create() must not carry a consistency level even when an override is configured (writes unaffected)");
+        }
+    }
+
+    @Test
+    @DisplayName("update() with EVENTUAL override: replaceItem options carry no consistency level (writes unaffected)")
+    @SuppressWarnings("unchecked")
+    void updateDoesNotCarryConsistencyLevel() {
+        MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+                .provider(ProviderId.COSMOS)
+                .connection(CosmosConstants.CONFIG_ENDPOINT, DUMMY_ENDPOINT)
+                .connection(CosmosConstants.CONFIG_KEY, DUMMY_KEY)
+                .connection(CosmosConstants.CONFIG_CONSISTENCY_LEVEL, "EVENTUAL")
+                .build();
+
+        CosmosContainer mockContainer = mock(CosmosContainer.class);
+        CosmosDatabase mockDatabase = mock(CosmosDatabase.class);
+        CosmosClient mockClient = mock(CosmosClient.class);
+        when(mockClient.getDatabase(anyString())).thenReturn(mockDatabase);
+        when(mockDatabase.getContainer(anyString())).thenReturn(mockContainer);
+
+        CosmosItemResponse<ObjectNode> mockResponse = mock(CosmosItemResponse.class);
+        when(mockResponse.getStatusCode()).thenReturn(200);
+        when(mockContainer.replaceItem(any(ObjectNode.class), anyString(), any(PartitionKey.class),
+                any(CosmosItemRequestOptions.class)))
+                .thenReturn(mockResponse);
+
+        try (MockedConstruction<CosmosClientBuilder> ignored =
+                     mockConstruction(CosmosClientBuilder.class, builderAnswerWithClient(mockClient))) {
+
+            CosmosProviderClient providerClient = new CosmosProviderClient(config);
+            ResourceAddress address = new ResourceAddress("testdb", "testcol");
+            MulticloudDbKey key = MulticloudDbKey.of("partition1");
+            providerClient.update(address, key, Map.of("name", "bob"), null);
+
+            ArgumentCaptor<CosmosItemRequestOptions> captor =
+                    ArgumentCaptor.forClass(CosmosItemRequestOptions.class);
+            verify(mockContainer).replaceItem(any(ObjectNode.class), anyString(), any(PartitionKey.class),
+                    captor.capture());
+            assertNull(captor.getValue().getConsistencyLevel(),
+                    "update() must not carry a consistency level even when an override is configured (writes unaffected)");
+        }
+    }
+
+    @Test
+    @DisplayName("upsert() with EVENTUAL override: upsertItem options carry no consistency level (writes unaffected)")
+    @SuppressWarnings("unchecked")
+    void upsertDoesNotCarryConsistencyLevel() {
+        MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+                .provider(ProviderId.COSMOS)
+                .connection(CosmosConstants.CONFIG_ENDPOINT, DUMMY_ENDPOINT)
+                .connection(CosmosConstants.CONFIG_KEY, DUMMY_KEY)
+                .connection(CosmosConstants.CONFIG_CONSISTENCY_LEVEL, "EVENTUAL")
+                .build();
+
+        CosmosContainer mockContainer = mock(CosmosContainer.class);
+        CosmosDatabase mockDatabase = mock(CosmosDatabase.class);
+        CosmosClient mockClient = mock(CosmosClient.class);
+        when(mockClient.getDatabase(anyString())).thenReturn(mockDatabase);
+        when(mockDatabase.getContainer(anyString())).thenReturn(mockContainer);
+
+        CosmosItemResponse<ObjectNode> mockResponse = mock(CosmosItemResponse.class);
+        when(mockResponse.getStatusCode()).thenReturn(200);
+        when(mockContainer.upsertItem(any(ObjectNode.class), any(PartitionKey.class),
+                any(CosmosItemRequestOptions.class)))
+                .thenReturn(mockResponse);
+
+        try (MockedConstruction<CosmosClientBuilder> ignored =
+                     mockConstruction(CosmosClientBuilder.class, builderAnswerWithClient(mockClient))) {
+
+            CosmosProviderClient providerClient = new CosmosProviderClient(config);
+            ResourceAddress address = new ResourceAddress("testdb", "testcol");
+            MulticloudDbKey key = MulticloudDbKey.of("partition1");
+            providerClient.upsert(address, key, Map.of("name", "carol"), null);
+
+            ArgumentCaptor<CosmosItemRequestOptions> captor =
+                    ArgumentCaptor.forClass(CosmosItemRequestOptions.class);
+            verify(mockContainer).upsertItem(any(ObjectNode.class), any(PartitionKey.class),
+                    captor.capture());
+            assertNull(captor.getValue().getConsistencyLevel(),
+                    "upsert() must not carry a consistency level even when an override is configured (writes unaffected)");
+        }
+    }
+
+    @Test
+    @DisplayName("delete() with EVENTUAL override: deleteItem options carry no consistency level (writes unaffected)")
+    @SuppressWarnings("unchecked")
+    void deleteDoesNotCarryConsistencyLevel() {
+        MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+                .provider(ProviderId.COSMOS)
+                .connection(CosmosConstants.CONFIG_ENDPOINT, DUMMY_ENDPOINT)
+                .connection(CosmosConstants.CONFIG_KEY, DUMMY_KEY)
+                .connection(CosmosConstants.CONFIG_CONSISTENCY_LEVEL, "EVENTUAL")
+                .build();
+
+        CosmosContainer mockContainer = mock(CosmosContainer.class);
+        CosmosDatabase mockDatabase = mock(CosmosDatabase.class);
+        CosmosClient mockClient = mock(CosmosClient.class);
+        when(mockClient.getDatabase(anyString())).thenReturn(mockDatabase);
+        when(mockDatabase.getContainer(anyString())).thenReturn(mockContainer);
+
+        CosmosItemResponse<Object> mockResponse = mock(CosmosItemResponse.class);
+        when(mockResponse.getStatusCode()).thenReturn(204);
+        when(mockContainer.deleteItem(anyString(), any(PartitionKey.class),
+                any(CosmosItemRequestOptions.class)))
+                .thenReturn(mockResponse);
+
+        try (MockedConstruction<CosmosClientBuilder> ignored =
+                     mockConstruction(CosmosClientBuilder.class, builderAnswerWithClient(mockClient))) {
+
+            CosmosProviderClient providerClient = new CosmosProviderClient(config);
+            ResourceAddress address = new ResourceAddress("testdb", "testcol");
+            MulticloudDbKey key = MulticloudDbKey.of("partition1");
+            providerClient.delete(address, key, null);
+
+            ArgumentCaptor<CosmosItemRequestOptions> captor =
+                    ArgumentCaptor.forClass(CosmosItemRequestOptions.class);
+            verify(mockContainer).deleteItem(anyString(), any(PartitionKey.class),
+                    captor.capture());
+            assertNull(captor.getValue().getConsistencyLevel(),
+                    "delete() must not carry a consistency level even when an override is configured (writes unaffected)");
+        }
+    }
 }
