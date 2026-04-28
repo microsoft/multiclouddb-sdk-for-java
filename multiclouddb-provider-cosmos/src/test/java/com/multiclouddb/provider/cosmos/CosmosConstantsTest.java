@@ -7,6 +7,7 @@ import com.azure.cosmos.ConsistencyLevel;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -141,6 +142,16 @@ class CosmosConstantsTest {
                 "Null error message should not interpolate null as a string; got: " + ex.getMessage());
         assertTrue(ex.getMessage().toLowerCase().contains("must not be null"),
                 "Null error message should say 'must not be null'; got: " + ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("VALID_CONSISTENCY_VALUES_SUFFIX contains all switch arms (sync enforcement)")
+    void validValuesSuffixContainsAllSwitchValues() {
+        List.of("STRONG", "BOUNDED_STALENESS", "SESSION", "CONSISTENT_PREFIX", "EVENTUAL")
+                .forEach(v -> assertTrue(
+                        CosmosConstants.VALID_CONSISTENCY_VALUES_SUFFIX.contains(v),
+                        "VALID_CONSISTENCY_VALUES_SUFFIX should mention " + v
+                                + "; got: " + CosmosConstants.VALID_CONSISTENCY_VALUES_SUFFIX));
     }
 
     // ── Document field names ──────────────────────────────────────────────────

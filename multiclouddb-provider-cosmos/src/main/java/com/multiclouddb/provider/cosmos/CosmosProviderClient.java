@@ -176,9 +176,9 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             CosmosContainer container = getContainer(address);
             PartitionKey pk = resolvePartitionKey(key);
             String cosmosId = key.sortKey() != null ? key.sortKey() : key.partitionKey();
-            CosmosItemResponse<ObjectNode> response = readConsistencyOverride != null
-                    ? container.readItem(cosmosId, pk, buildReadOptions(readConsistencyOverride), ObjectNode.class)
-                    : container.readItem(cosmosId, pk, ObjectNode.class);
+            CosmosItemRequestOptions readOpts = new CosmosItemRequestOptions();
+            applyReadConsistencyTo(readOpts);
+            CosmosItemResponse<ObjectNode> response = container.readItem(cosmosId, pk, readOpts, ObjectNode.class);
             logItemDiagnostics(OperationNames.READ, address, response);
             ObjectNode raw = response.getItem();
             if (raw == null) return null;
@@ -587,14 +587,23 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
     }
 
     /**
+     * Applies the client-level read consistency override to {@code opts} when one
+     * is configured; no-op when {@link #readConsistencyOverride} is {@code null}.
+     * Overloaded for {@link CosmosItemRequestOptions} used by point-reads.
+     */
+    private void applyReadConsistencyTo(CosmosItemRequestOptions opts) {
+        if (readConsistencyOverride != null) {
+            opts.setConsistencyLevel(readConsistencyOverride);
+        }
+    }
+
+    /**
      * Creates {@link CosmosItemRequestOptions} with the given consistency level applied.
      * When {@code consistencyLevel} is {@code null}, the returned options carry no
      * explicit consistency setting and Cosmos DB honours the account default.
      * <p>
-     * Package-private and static for unit testing only — in production the call site
-     * always guards {@code null} with a ternary and calls the 3-arg {@code readItem}
-     * overload instead. The null path here exists solely so tests can exercise
-     * {@code buildReadOptions} directly without constructing a full client.
+     * Package-private and static for direct unit testing of option construction.
+     * Production code uses {@link #applyReadConsistencyTo(CosmosItemRequestOptions)} instead.
      */
     static CosmosItemRequestOptions buildReadOptions(ConsistencyLevel consistencyLevel) {
         CosmosItemRequestOptions opts = new CosmosItemRequestOptions();

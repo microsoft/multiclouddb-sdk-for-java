@@ -62,7 +62,7 @@ public final class CosmosConstants {
     public static final String CONFIG_CONSISTENCY_LEVEL = "consistencyLevel";
 
     /** Shared valid-values suffix reused in both consistency error messages. */
-    private static final String VALID_CONSISTENCY_VALUES_SUFFIX =
+    static final String VALID_CONSISTENCY_VALUES_SUFFIX =
             "Valid values (case-insensitive): STRONG, BOUNDED_STALENESS, SESSION, CONSISTENT_PREFIX, EVENTUAL";
 
     /** Error message for unrecognised consistency level config values. */
@@ -98,7 +98,7 @@ public final class CosmosConstants {
             case "CONSISTENT_PREFIX" -> ConsistencyLevel.CONSISTENT_PREFIX;
             case "EVENTUAL"          -> ConsistencyLevel.EVENTUAL;
             default -> throw new IllegalArgumentException(
-                    String.format(ERR_INVALID_CONSISTENCY_LEVEL, normalized));
+                    String.format(ERR_INVALID_CONSISTENCY_LEVEL, value.strip()));
         };
     }
 

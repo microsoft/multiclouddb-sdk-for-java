@@ -89,6 +89,11 @@ Writes are unaffected — Cosmos DB write durability is independent of the consi
 | `CONSISTENT_PREFIX` | Reads never see out-of-order writes but may lag behind |
 | `EVENTUAL` | Lowest latency; reads may return stale data |
 
+> **Note:** Cross-partition queries always have `ORDER BY c.id ASC` appended automatically
+> (see [Compatibility — Result-set ordering](compatibility.md#result-set-ordering)).
+> Choosing `EVENTUAL` reduces per-item read cost but does **not** eliminate the sort-merge
+> RU overhead on cross-partition queries.
+
 !!! warning "Override must be ≤ account default"
     The request-level override must be **equal to or weaker** than the account's default consistency level.
     For example, if the account is configured for `SESSION`, you may override to `CONSISTENT_PREFIX` or
@@ -104,10 +109,12 @@ Writes are unaffected — Cosmos DB write durability is independent of the consi
     semantic change. If RYOW semantics are required, keep the override at `SESSION` or
     omit the property entirely.
 
-!!! note "Client-level setting"
-    `consistencyLevel` is a client-level setting applied uniformly to all read operations
-    from that client instance — it cannot vary per-call. To use different consistency levels
-    for different reads, create separate client instances with the desired override each.
+!!! note "Connection-config-level setting — not `CosmosClientBuilder.consistencyLevel()`"
+    `consistencyLevel` is applied per-request via `CosmosItemRequestOptions` /
+    `CosmosQueryRequestOptions`. It is **not** set on `CosmosClientBuilder.consistencyLevel()`
+    (which would affect writes as well as reads). The setting is uniform across all read
+    operations from a single client instance — to use different levels for different reads,
+    create separate `MulticloudDbClient` instances with the desired override.
 
 **Example** — use eventual consistency for reads while keeping the account default for everything else:
 

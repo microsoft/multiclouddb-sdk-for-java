@@ -116,24 +116,22 @@ class CosmosConsistencyTest {
             when(mock.directMode()).thenReturn(mock);
             when(mock.userAgentSuffix(anyString())).thenReturn(mock);
             when(mock.consistencyLevel(any())).thenReturn(mock);
-            // buildClient() returns null — construction-only tests don't invoke operations
+            // Explicit no-op client stub: construction-only tests don't invoke operations,
+            // but stubbing explicitly prevents silent NullPointerException if a future test
+            // accidentally calls an operation after construction.
+            CosmosClient noOpClient = mock(CosmosClient.class);
+            when(mock.buildClient()).thenReturn(noOpClient);
         };
     }
 
     /**
      * Builder mock setup that makes {@code buildClient()} return the supplied client mock.
-     * Used for tests that exercise operation methods ({@code read()}, {@code query()}) rather than
-     * just construction.
+     * Composes from {@link #builderDefaultAnswer()} to avoid duplicating the 7 shared stubs —
+     * if a new builder call is added to the constructor, only {@code builderDefaultAnswer} needs updating.
      */
     private MockedConstruction.MockInitializer<CosmosClientBuilder> builderAnswerWithClient(CosmosClient client) {
         return (mock, ctx) -> {
-            when(mock.endpoint(anyString())).thenReturn(mock);
-            when(mock.key(anyString())).thenReturn(mock);
-            when(mock.contentResponseOnWriteEnabled(anyBoolean())).thenReturn(mock);
-            when(mock.gatewayMode()).thenReturn(mock);
-            when(mock.directMode()).thenReturn(mock);
-            when(mock.userAgentSuffix(anyString())).thenReturn(mock);
-            when(mock.consistencyLevel(any())).thenReturn(mock);
+            builderDefaultAnswer().prepare(mock, ctx);
             when(mock.buildClient()).thenReturn(client);
         };
     }
@@ -293,9 +291,9 @@ class CosmosConsistencyTest {
     }
 
     @Test
-    @DisplayName("read() with no override: the 3-arg readItem (no options) is used — no unnecessary allocation")
+    @DisplayName("read() with no override: readItem is called with CosmosItemRequestOptions carrying null consistency (account default)")
     @SuppressWarnings("unchecked")
-    void readWithNoOverrideUsesThreeArgReadItem() {
+    void readWithNoOverrideUsesNullConsistencyInOptions() {
         MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
                 .provider(ProviderId.COSMOS)
                 .connection(CosmosConstants.CONFIG_ENDPOINT, DUMMY_ENDPOINT)
@@ -311,7 +309,8 @@ class CosmosConsistencyTest {
         CosmosItemResponse<ObjectNode> mockResponse = mock(CosmosItemResponse.class);
         when(mockResponse.getItem()).thenReturn(null);
         when(mockResponse.getStatusCode()).thenReturn(200);
-        when(mockContainer.readItem(anyString(), any(PartitionKey.class), eq(ObjectNode.class)))
+        when(mockContainer.readItem(anyString(), any(PartitionKey.class),
+                any(CosmosItemRequestOptions.class), eq(ObjectNode.class)))
                 .thenReturn(mockResponse);
 
         try (MockedConstruction<CosmosClientBuilder> ignored =
@@ -322,11 +321,13 @@ class CosmosConsistencyTest {
             MulticloudDbKey key = MulticloudDbKey.of("partition1");
             providerClient.read(address, key, null);
 
-            // 3-arg overload was called
-            verify(mockContainer).readItem(anyString(), any(PartitionKey.class), eq(ObjectNode.class));
-            // 4-arg overload was NOT called
-            verify(mockContainer, never()).readItem(anyString(), any(PartitionKey.class),
-                    any(CosmosItemRequestOptions.class), eq(ObjectNode.class));
+            // 4-arg overload is always used; when no override is configured, consistency is null (account default)
+            ArgumentCaptor<CosmosItemRequestOptions> captor =
+                    ArgumentCaptor.forClass(CosmosItemRequestOptions.class);
+            verify(mockContainer).readItem(anyString(), any(PartitionKey.class),
+                    captor.capture(), eq(ObjectNode.class));
+            assertNull(captor.getValue().getConsistencyLevel(),
+                    "read() must not set a consistency level when no override is configured");
         }
     }
 
