@@ -292,13 +292,17 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
     /**
      * Deletes a row from Spanner by its composite primary key.
      * <p>
-     * Uses a {@code DELETE} mutation. A {@code NOT_FOUND} Spanner error is silently
-     * swallowed — delete is idempotent.
+     * Uses DML {@code DELETE} via {@code TransactionRunner.executeUpdate} so that
+     * the number of affected rows can be inspected. If zero rows are affected
+     * the row did not exist and a {@link MulticloudDbException} with category
+     * {@link MulticloudDbErrorCategory#NOT_FOUND} is thrown, matching the
+     * cross-provider contract on {@link com.multiclouddb.api.MulticloudDbClient#delete}.
      *
      * @param address the logical database + collection
      * @param key     the document key identifying the row to delete
      * @param options operation options (currently unused by this provider)
-     * @throws com.multiclouddb.api.MulticloudDbException on any non-NOT_FOUND Spanner error
+     * @throws com.multiclouddb.api.MulticloudDbException category {@code NOT_FOUND}
+     *         if no row exists with the given key; other categories on any other Spanner error
      */
     @Override
     public void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
@@ -307,16 +311,30 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
             String partitionKeyVal = key.partitionKey();
             String sortKeyVal = key.sortKey() != null ? key.sortKey() : key.partitionKey();
 
-            com.google.cloud.spanner.Key spannerKey = com.google.cloud.spanner.Key.of(partitionKeyVal, sortKeyVal);
-            Mutation deleteMutation = Mutation.delete(table, KeySet.singleKey(spannerKey));
+            Statement deleteStmt = Statement.newBuilder(
+                    "DELETE FROM " + table + " WHERE partitionKey = @pk AND sortKey = @sk")
+                    .bind("pk").to(partitionKeyVal)
+                    .bind("sk").to(sortKeyVal)
+                    .build();
 
-            databaseClient.write(List.of(deleteMutation));
-            logItemDiagnostics(OperationNames.DELETE, address);
-        } catch (SpannerException e) {
-            // Delete is idempotent — NOT_FOUND is not an error
-            if (e.getErrorCode() == ErrorCode.NOT_FOUND) {
-                return;
+            Long rowsDeleted = databaseClient.readWriteTransaction()
+                    .run(txn -> txn.executeUpdate(deleteStmt));
+
+            if (rowsDeleted == null || rowsDeleted == 0L) {
+                throw new MulticloudDbException(new MulticloudDbError(
+                        MulticloudDbErrorCategory.NOT_FOUND,
+                        "Row not found for delete: partitionKey=" + partitionKeyVal
+                                + ", sortKey=" + sortKeyVal,
+                        ProviderId.SPANNER,
+                        OperationNames.DELETE,
+                        false,
+                        null,
+                        Map.of("table", table)));
             }
+            logItemDiagnostics(OperationNames.DELETE, address);
+        } catch (MulticloudDbException e) {
+            throw e;
+        } catch (SpannerException e) {
             throw SpannerErrorMapper.map(e, OperationNames.DELETE);
         }
     }

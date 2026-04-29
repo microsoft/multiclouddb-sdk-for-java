@@ -98,6 +98,8 @@ public interface MulticloudDbClient extends AutoCloseable {
      * @param address target database + collection
      * @param key     document key
      * @param options operation options
+     * @throws MulticloudDbException with category {@link MulticloudDbErrorCategory#NOT_FOUND}
+     *         if no document exists with the given key
      */
     void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
 

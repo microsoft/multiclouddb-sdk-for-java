@@ -283,13 +283,16 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
     /**
      * Deletes a document by its composite key.
      * <p>
-     * A 404 (item not found) response is treated as a success — delete is idempotent.
-     * All other Cosmos errors are mapped to a {@link com.multiclouddb.api.MulticloudDbException}.
+     * Throws {@link com.multiclouddb.api.MulticloudDbException} with category
+     * {@link com.multiclouddb.api.MulticloudDbErrorCategory#NOT_FOUND} (HTTP 404)
+     * if the item does not exist. All other Cosmos errors are mapped via
+     * {@link CosmosErrorMapper}.
      *
      * @param address the logical database + container
      * @param key     the document key identifying the item to delete
      * @param options operation options (currently unused by this provider)
-     * @throws com.multiclouddb.api.MulticloudDbException on any non-404 Cosmos error
+     * @throws com.multiclouddb.api.MulticloudDbException category {@code NOT_FOUND} (404)
+     *         if the item does not exist; other categories on any other Cosmos error
      */
     @Override
     public void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
@@ -300,9 +303,6 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             CosmosItemResponse<Object> response = container.deleteItem(cosmosId, pk, new CosmosItemRequestOptions());
             logItemDiagnostics(OperationNames.DELETE, address, response);
         } catch (CosmosException e) {
-            if (e.getStatusCode() == 404) {
-                return;
-            }
             logExceptionDiagnostics(OperationNames.DELETE, address, e);
             throw CosmosErrorMapper.map(e, OperationNames.DELETE);
         }

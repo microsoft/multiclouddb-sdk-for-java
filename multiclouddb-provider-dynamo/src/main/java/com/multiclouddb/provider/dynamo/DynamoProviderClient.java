@@ -360,13 +360,16 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
     /**
      * Deletes an item from DynamoDB by its composite key.
      * <p>
-     * Uses a {@code DeleteItem} request. The operation succeeds silently if the item
-     * does not exist — delete is idempotent in DynamoDB.
+     * Uses a {@code DeleteItem} with an {@code attribute_exists} condition guard so
+     * that a delete of a missing key fails with
+     * {@link com.multiclouddb.api.MulticloudDbErrorCategory#NOT_FOUND}, matching the
+     * cross-provider contract on {@link com.multiclouddb.api.MulticloudDbClient#delete}.
      *
      * @param address the logical database + collection
      * @param key     the document key identifying the item to delete
      * @param options operation options (currently unused by this provider)
-     * @throws com.multiclouddb.api.MulticloudDbException on any DynamoDB error
+     * @throws com.multiclouddb.api.MulticloudDbException category {@code NOT_FOUND}
+     *         if the item does not exist; other categories on any other DynamoDB error
      */
     @Override
     public void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
@@ -379,12 +382,28 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
             DeleteItemRequest request = DeleteItemRequest.builder()
                     .tableName(resolveTableName(address))
                     .key(keyMap)
+                    .conditionExpression("attribute_exists(" + DynamoConstants.ATTR_PARTITION_KEY + ")")
                     .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL)
                     .build();
 
             DeleteItemResponse response = dynamoClient.deleteItem(request);
             logItemDiagnostics(OperationNames.DELETE, address, response.responseMetadata().requestId(),
                     response.consumedCapacity());
+        } catch (ConditionalCheckFailedException e) {
+            // attribute_exists() guard failed — item does not exist; map to NOT_FOUND
+            // to match the cross-provider contract.
+            Map<String, String> details = new java.util.LinkedHashMap<>();
+            if (e.awsErrorDetails() != null) {
+                details.put("errorCode", e.awsErrorDetails().errorCode());
+            }
+            throw new MulticloudDbException(new MulticloudDbError(
+                    MulticloudDbErrorCategory.NOT_FOUND,
+                    "Item not found for delete: " + e.getMessage(),
+                    ProviderId.DYNAMO,
+                    OperationNames.DELETE,
+                    false,
+                    e.statusCode(),
+                    details), e);
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.DELETE);
         }

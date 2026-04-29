@@ -28,7 +28,7 @@ portable API surface and error mapping reference, see
   - [read - Point Read](#read---point-read)
   - [update - Replace Existing](#update---replace-existing)
   - [upsert - Create or Replace](#upsert---create-or-replace)
-  - [delete - Idempotent Delete](#delete---idempotent-delete)
+  - [delete - Strict Delete](#delete---strict-delete-not_found-on-missing-key)
   - [Document Field Injection](#document-field-injection)
 - [Query DSL](#query-dsl)
   - [Portable Expressions](#portable-expressions)
@@ -579,23 +579,34 @@ client.upsert(addr, key, doc);   // Creates or replaces the document
 | If not exists | Create | Create | Create |
 | Return value | None (void) | None (void) | None (void) |
 
-### delete - Idempotent Delete
+### delete - Strict Delete (NOT_FOUND on missing key)
 
-`delete()` removes a document by key. If the document doesn't exist, the
-operation **succeeds silently** (no error). This makes delete idempotent and
-safe for retry.
+`delete()` removes a document by key. If the document does not exist, the
+operation throws `MulticloudDbException` with category
+`MulticloudDbErrorCategory.NOT_FOUND`. This is the portable contract — every
+provider behaves identically so that callers can rely on the result.
 
 ```java
-client.delete(addr, MulticloudDbKey.of("customer-456", "order-123"));
-// Succeeds whether or not the document exists
+try {
+    client.delete(addr, MulticloudDbKey.of("customer-456", "order-123"));
+} catch (MulticloudDbException ex) {
+    if (MulticloudDbErrorCategory.NOT_FOUND.equals(ex.error().category())) {
+        // Document didn't exist — caller decides what that means.
+    } else {
+        throw ex;
+    }
+}
 ```
+
+For "delete-if-exists" semantics, catch and ignore `NOT_FOUND` at the call
+site as shown above.
 
 **Key behavior across providers:**
 
 | Behavior | Cosmos DB | DynamoDB | Spanner |
 |----------|-----------|----------|---------|
-| Operation | `deleteItem(id, partitionKey)` | `deleteItem(keyMap)` | `Mutation.delete(key)` |
-| Not found | Silent success (HTTP 404 suppressed) | Silent success | Silent success |
+| Operation | `deleteItem(id, partitionKey)` | `deleteItem` with `attribute_exists` guard | `executeUpdate("DELETE …")` |
+| Not found | Throws `NOT_FOUND` (HTTP 404) | Throws `NOT_FOUND` (condition fails) | Throws `NOT_FOUND` (rowsModified == 0) |
 | Return value | None (void) | None (void) | None (void) |
 
 ### Document Field Injection
