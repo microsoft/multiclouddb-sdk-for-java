@@ -76,8 +76,9 @@ Select a provider and supply its connection and auth properties.
 When `multiclouddb.connection.consistencyLevel` is **not** set, read requests inherit the account's
 configured default consistency level (set in the Azure portal or ARM template).
 
-When the property **is** set, the specified level is applied to every read request (point-reads and queries).
-Writes are unaffected — Cosmos DB write durability is independent of the consistency setting.
+When the property **is** set, the level is configured once on the underlying `CosmosClientBuilder`
+and the Cosmos DB SDK applies it to every read (point-reads and queries) issued from that client
+instance. Writes are unaffected — Cosmos DB write durability is independent of the consistency setting.
 
 **Valid values** (case-insensitive):
 
@@ -97,7 +98,7 @@ Writes are unaffected — Cosmos DB write durability is independent of the consi
 > the sort-merge RU overhead introduced by this default ordering.
 
 !!! warning "Override must be ≤ account default"
-    The request-level override must be **equal to or weaker** than the account's default consistency level.
+    The client-level override must be **equal to or weaker** than the account's default consistency level.
     For example, if the account is configured for `SESSION`, you may override to `CONSISTENT_PREFIX` or
     `EVENTUAL`, but **not** to `BOUNDED_STALENESS` or `STRONG`. Specifying a stronger level than the
     account default causes a runtime error from the Cosmos DB service.
