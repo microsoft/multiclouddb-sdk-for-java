@@ -1,0 +1,107 @@
+/* ── Hero section on landing page ────────────────────── */
+.hero-banner {
+    text-align: center;
+    padding: 2rem 1rem 2.5rem;
+}
+
+.hero-banner img {
+    max-width: 400px;
+    height: auto;
+    border-radius: 8px;
+    margin: 0 auto 0.5rem;
+    display: block;
+}
+
+.hero-banner h1 {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.6rem;
+}
+
+.hero-banner > p {
+    max-width: 640px;
+    margin: 0 auto 1rem;
+    font-size: 1.05rem;
+    line-height: 1.6;
+    color: var(--md-default-fg-color--light);
+}
+
+.hero-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+    flex-wrap: wrap;
+}
+
+/* ── Feature grid ───────────────────────────────────── */
+.feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+}
+
+.feature-grid .card {
+    background: var(--md-default-bg-color);
+    border: 1px solid var(--md-default-fg-color--lightest);
+    border-radius: 0.6rem;
+    padding: 1.25rem 1.5rem;
+    transition: box-shadow 0.25s ease, border-color 0.25s ease, transform 0.15s ease;
+}
+
+.feature-grid .card:hover {
+    border-color: var(--md-primary-fg-color);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.07);
+    transform: translateY(-2px);
+}
+
+.feature-grid .card h3 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.feature-grid .card h3 .twemoji,
+.feature-grid .card h3 .card-icon {
+    margin-right: 0.35rem;
+    vertical-align: -0.1em;
+}
+
+.feature-grid .card p {
+    margin-bottom: 0;
+    font-size: 0.84rem;
+    line-height: 1.55;
+    color: var(--md-default-fg-color--light);
+}
+
+/* ── Tables ─────────────────────────────────────────── */
+.md-typeset table:not([class]) th {
+    white-space: nowrap;
+}
+
+/* ── Provider badges ────────────────────────────────── */
+.provider-badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-right: 0.3rem;
+}
+
+.provider-badge.cosmos  { background: #0078d4; color: #fff; }
+.provider-badge.dynamo  { background: #ff9900; color: #fff; }
+.provider-badge.spanner { background: #4285f4; color: #fff; }
+
+/* ── Mermaid diagram sizing ─────────────────────────── */
+.md-typeset .mermaid {
+    max-width: 600px;
+    margin: 1rem auto;
+}
+
+/* ── Subtle section separators ──────────────────────── */
+.md-typeset hr {
+    border-color: var(--md-default-fg-color--lightest);
+}

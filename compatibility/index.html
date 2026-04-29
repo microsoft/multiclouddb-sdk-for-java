@@ -1,0 +1,1656 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A portable database SDK — write CRUD and query logic once, run against Azure Cosmos DB, Amazon DynamoDB, or Google Cloud Spanner.">
+      
+      
+        <meta name="author" content="Microsoft">
+      
+      
+        <link rel="canonical" href="https://microsoft.github.io/multiclouddb-sdk-for-java/compatibility/">
+      
+      
+        <link rel="prev" href="../guide/">
+      
+      
+        <link rel="next" href="../samples/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Compatibility - Multicloud DB SDK for Java</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="deep-purple">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#portable-api-surface" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Multicloud DB SDK for Java" class="md-header__button md-logo" aria-label="Multicloud DB SDK for Java" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 3C7.58 3 4 4.79 4 7s3.58 4 8 4 8-1.79 8-4-3.58-4-8-4M4 9v3c0 2.21 3.58 4 8 4s8-1.79 8-4V9c0 2.21-3.58 4-8 4s-8-1.79-8-4m0 5v3c0 2.21 3.58 4 8 4s8-1.79 8-4v-3c0 2.21-3.58 4-8 4s-8-1.79-8-4"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Multicloud DB SDK for Java
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Compatibility
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="deep-purple"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="deep-purple"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/microsoft/multiclouddb-sdk-for-java" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    microsoft/multiclouddb-sdk-for-java
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../getting-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../guide/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Developer Guide
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Compatibility
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../samples/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Samples
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../api-reference/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  API Reference
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../contributing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Multicloud DB SDK for Java" class="md-nav__button md-logo" aria-label="Multicloud DB SDK for Java" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 3C7.58 3 4 4.79 4 7s3.58 4 8 4 8-1.79 8-4-3.58-4-8-4M4 9v3c0 2.21 3.58 4 8 4s8-1.79 8-4V9c0 2.21-3.58 4-8 4s-8-1.79-8-4m0 5v3c0 2.21 3.58 4 8 4s8-1.79 8-4v-3c0 2.21-3.58 4-8 4s-8-1.79-8-4"/></svg>
+
+    </a>
+    Multicloud DB SDK for Java
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/microsoft/multiclouddb-sdk-for-java" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    microsoft/multiclouddb-sdk-for-java
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compatibility
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compatibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-works-everywhere" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Works Everywhere
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What Works Everywhere">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#crud-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CRUD Operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#query-portable-expression-dsl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Query - Portable Expression DSL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pagination" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pagination
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Management
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#diagnostics-error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Diagnostics &amp; Error Handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#portable-error-mapping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Portable Error Mapping
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#default-sort-key-ordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Default Sort-Key Ordering
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Default Sort-Key Ordering">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cosmos-db" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cosmos DB
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dynamodb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DynamoDB
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#spanner" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spanner
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#escape-hatch-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Escape Hatch Policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../samples/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Samples
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Samples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../samples/todo-app/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TODO App
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../samples/risk-platform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Risk Analysis Platform
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-works-everywhere" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Works Everywhere
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What Works Everywhere">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#crud-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CRUD Operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#query-portable-expression-dsl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Query - Portable Expression DSL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pagination" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pagination
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Management
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#diagnostics-error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Diagnostics &amp; Error Handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#portable-error-mapping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Portable Error Mapping
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#default-sort-key-ordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Default Sort-Key Ordering
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Default Sort-Key Ordering">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cosmos-db" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cosmos DB
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dynamodb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DynamoDB
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#spanner" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spanner
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#escape-hatch-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Escape Hatch Policy
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="portable-api-surface">Portable API Surface<a class="headerlink" href="#portable-api-surface" title="Permanent link">&para;</a></h1>
+<p>The Multicloud DB SDK's portable API surface covers capabilities that work
+identically across all three providers. The features listed below require no
+runtime capability checks - they are guaranteed to work on Azure Cosmos DB,
+Amazon DynamoDB, and Google Cloud Spanner. Some providers offer additional
+capabilities (e.g., <code>CROSS_PARTITION_QUERY</code>, <code>ORDER_BY</code>, <code>LIKE</code>); use
+<code>client.capabilities()</code> to discover what the current provider supports.</p>
+<hr />
+<h2 id="what-works-everywhere">What Works Everywhere<a class="headerlink" href="#what-works-everywhere" title="Permanent link">&para;</a></h2>
+<p>Every capability listed below is fully supported on <strong>all</strong> providers. There are
+no asterisks, no provider-specific caveats, and no runtime checks required.</p>
+<h3 id="crud-operations">CRUD Operations<a class="headerlink" href="#crud-operations" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Create</strong></td>
+<td>Insert a new document (fails if the key already exists)</td>
+</tr>
+<tr>
+<td><strong>Read</strong></td>
+<td>Point-read by partition key + sort key</td>
+</tr>
+<tr>
+<td><strong>Update</strong></td>
+<td>Replace an existing document (fails if not found)</td>
+</tr>
+<tr>
+<td><strong>Upsert</strong></td>
+<td>Create or replace - always succeeds</td>
+</tr>
+<tr>
+<td><strong>Delete</strong></td>
+<td>Remove by key (idempotent)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="query-portable-expression-dsl">Query - Portable Expression DSL<a class="headerlink" href="#query-portable-expression-dsl" title="Permanent link">&para;</a></h3>
+<p>Write a WHERE-clause filter once. The SDK translates it to the native query
+language of whichever provider is configured - Cosmos SQL, DynamoDB PartiQL,
+or Spanner GoogleSQL.</p>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Operators / Functions</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Comparison</td>
+<td><code>=</code>, <code>!=</code>, <code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code></td>
+<td><code>status = 'active'</code></td>
+</tr>
+<tr>
+<td>Logical</td>
+<td><code>AND</code>, <code>OR</code>, <code>NOT</code></td>
+<td><code>age &gt; 18 AND active = true</code></td>
+</tr>
+<tr>
+<td>String functions</td>
+<td><code>STARTS_WITH</code>, <code>CONTAINS</code></td>
+<td><code>STARTS_WITH(name, 'A')</code></td>
+</tr>
+<tr>
+<td>Field introspection</td>
+<td><code>FIELD_EXISTS</code></td>
+<td><code>FIELD_EXISTS(metadata)</code></td>
+</tr>
+<tr>
+<td>Length functions</td>
+<td><code>STRING_LENGTH</code>, <code>COLLECTION_SIZE</code></td>
+<td><code>STRING_LENGTH(name) &gt; 3</code></td>
+</tr>
+<tr>
+<td>Named parameters</td>
+<td><code>@paramName</code></td>
+<td><code>price &gt; @minPrice</code></td>
+</tr>
+</tbody>
+</table>
+<div class="language-java highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">QueryRequest</span><span class="w"> </span><span class="n">query</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QueryRequest</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span><span class="p">.</span><span class="na">expression</span><span class="p">(</span><span class="s">&quot;STARTS_WITH(name, @prefix) AND age &gt;= @minAge&quot;</span><span class="p">)</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="p">.</span><span class="na">parameter</span><span class="p">(</span><span class="s">&quot;prefix&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;J&quot;</span><span class="p">)</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span><span class="p">.</span><span class="na">parameter</span><span class="p">(</span><span class="s">&quot;minAge&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">21</span><span class="p">)</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span><span class="p">.</span><span class="na">maxPageSize</span><span class="p">(</span><span class="mi">50</span><span class="p">)</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">QueryPage</span><span class="w"> </span><span class="n">page</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">client</span><span class="p">.</span><span class="na">query</span><span class="p">(</span><span class="n">address</span><span class="p">,</span><span class="w"> </span><span class="n">query</span><span class="p">);</span>
+</span></code></pre></div>
+<h3 id="pagination">Pagination<a class="headerlink" href="#pagination" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cursor-based paging</strong></td>
+<td>Continuation-token pagination across all providers</td>
+</tr>
+<tr>
+<td><strong>Page size control</strong></td>
+<td><code>maxPageSize</code> to limit results per page</td>
+</tr>
+</tbody>
+</table>
+<h3 id="data-management">Data Management<a class="headerlink" href="#data-management" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Schema provisioning</strong></td>
+<td><code>provisionSchema()</code> creates databases, containers, and tables portably</td>
+</tr>
+<tr>
+<td><strong>Transactions</strong></td>
+<td>Multi-document transactional operations</td>
+</tr>
+<tr>
+<td><strong>Batch operations</strong></td>
+<td>Batch read/write for throughput efficiency</td>
+</tr>
+<tr>
+<td><strong>Strong consistency</strong></td>
+<td>Strongly-consistent reads</td>
+</tr>
+<tr>
+<td><strong>Change feed</strong></td>
+<td>Change feed / change streams</td>
+</tr>
+</tbody>
+</table>
+<h3 id="diagnostics-error-handling">Diagnostics &amp; Error Handling<a class="headerlink" href="#diagnostics-error-handling" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Structured diagnostics</strong></td>
+<td>Latency, request charge, and provider correlation IDs per operation</td>
+</tr>
+<tr>
+<td><strong>Portable error categories</strong></td>
+<td>All provider exceptions mapped to <code>MulticloudDbErrorCategory</code></td>
+</tr>
+<tr>
+<td><strong>Capability introspection</strong></td>
+<td><code>client.capabilities()</code> reports what the current provider supports</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="portable-error-mapping">Portable Error Mapping<a class="headerlink" href="#portable-error-mapping" title="Permanent link">&para;</a></h2>
+<p>All provider exceptions are mapped to portable <code>MulticloudDbErrorCategory</code> values.
+The raw HTTP or gRPC status code is also available via <code>error.statusCode()</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Cosmos DB</th>
+<th>DynamoDB</th>
+<th>Spanner</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>INVALID_REQUEST</code></td>
+<td>HTTP 400</td>
+<td>ValidationException, HTTP 400</td>
+<td>INVALID_ARGUMENT, FAILED_PRECONDITION</td>
+</tr>
+<tr>
+<td><code>AUTHENTICATION_FAILED</code></td>
+<td>HTTP 401</td>
+<td>UnrecognizedClientException, HTTP 401/403</td>
+<td>UNAUTHENTICATED</td>
+</tr>
+<tr>
+<td><code>AUTHORIZATION_FAILED</code></td>
+<td>HTTP 403</td>
+<td>AccessDeniedException</td>
+<td>PERMISSION_DENIED</td>
+</tr>
+<tr>
+<td><code>NOT_FOUND</code></td>
+<td>HTTP 404</td>
+<td>ResourceNotFoundException, HTTP 404</td>
+<td>NOT_FOUND</td>
+</tr>
+<tr>
+<td><code>CONFLICT</code> (409 - duplicate key)</td>
+<td>HTTP 409</td>
+<td><code>ConditionalCheckFailedException</code> from <code>create()</code> - <code>attribute_not_exists</code> guard fails when the item already exists</td>
+<td>ALREADY_EXISTS</td>
+</tr>
+<tr>
+<td><code>CONFLICT</code> (412 - precondition)</td>
+<td>HTTP 412</td>
+<td><code>ConditionalCheckFailedException</code> from <code>update()</code>/<code>upsert()</code> with a condition expression¹</td>
+<td>ABORTED</td>
+</tr>
+<tr>
+<td><code>THROTTLED</code></td>
+<td>HTTP 429</td>
+<td>ProvisionedThroughputExceededException, ThrottlingException</td>
+<td>RESOURCE_EXHAUSTED</td>
+</tr>
+<tr>
+<td><code>TRANSIENT_FAILURE</code></td>
+<td>HTTP 449, 500, 502, 503</td>
+<td>HTTP 500–5xx</td>
+<td>UNAVAILABLE</td>
+</tr>
+<tr>
+<td><code>PERMANENT_FAILURE</code></td>
+<td>-</td>
+<td>ItemCollectionSizeLimitExceededException</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>UNSUPPORTED_CAPABILITY</code></td>
+<td>-</td>
+<td>-</td>
+<td>UNIMPLEMENTED</td>
+</tr>
+<tr>
+<td><code>PROVIDER_ERROR</code></td>
+<td>Other</td>
+<td>Other</td>
+<td>INTERNAL, Other</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>¹ DynamoDB uses <code>ConditionalCheckFailedException</code> for both the 409 (duplicate-key on <code>create</code>) and 412
+(precondition failure on conditional <code>update</code>/<code>upsert</code>) cases - both currently map to <code>CONFLICT</code>.
+The portable API does not yet expose ETag-based conditional updates; when it does, the 412-equivalent
+path will be split into a dedicated <code>PRECONDITION_FAILED</code> category (tracked in issue #29).</p>
+</blockquote>
+<h2 id="default-sort-key-ordering">Default Sort-Key Ordering<a class="headerlink" href="#default-sort-key-ordering" title="Permanent link">&para;</a></h2>
+<p>All Cosmos DB and DynamoDB query paths return results sorted by the document's
+sort key ascending.</p>
+<blockquote>
+<p><strong>Design note:</strong> The default <code>ORDER BY</code> is applied to <strong>all</strong> Cosmos queries
+(both partition-scoped and cross-partition), not just partition-scoped ones.
+This gives the strongest consistency guarantee: every query, on every provider,
+returns items sorted by sort key. The early PR description mentioned
+partition-scoped only as a starting point; the final implementation was
+intentionally broadened to cover all queries.</p>
+</blockquote>
+<h3 id="cosmos-db">Cosmos DB<a class="headerlink" href="#cosmos-db" title="Permanent link">&para;</a></h3>
+<p>Cosmos DB appends <code>ORDER BY c.id ASC</code> to every query that does not already carry
+an explicit <code>ORDER BY</code> clause (and is not an aggregate / <code>GROUP BY</code> query). This
+is applied server-side, so the order is globally consistent across all pages.</p>
+<blockquote>
+<p><strong>⚠️ Custom indexing policy - composite index required</strong>
+If your Cosmos container uses a <strong>custom indexing policy</strong> that does not include
+a composite index on <code>(filterField ASC, id ASC)</code>, Cosmos DB will throw a
+<code>400 Bad Request</code> at runtime for cross-partition queries that combine <code>WHERE</code> and
+the default <code>ORDER BY c.id ASC</code>. The default indexing policy includes all paths
+and supports this automatically. If you have tuned your indexing policy, add the
+composite index for every field you filter on:
+<div class="language-json highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span><span class="w"> </span><span class="nt">&quot;compositeIndexes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="p">[{</span><span class="w"> </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/filterField&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;order&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ascending&quot;</span><span class="w"> </span><span class="p">},</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">                         </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/id&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;order&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ascending&quot;</span><span class="w"> </span><span class="p">}]</span><span class="w"> </span><span class="p">]</span><span class="w"> </span><span class="p">}</span>
+</span></code></pre></div></p>
+<p><strong>⚠️ RU cost</strong>
+Appending <code>ORDER BY c.id ASC</code> to all Cosmos queries incurs an additional RU
+charge versus unordered queries, proportional to result-set size. This cost is
+the price of cross-provider consistency and is expected behavior.</p>
+<p><strong>⚠️ Aggregates and GROUP BY</strong>
+Cosmos DB rejects <code>ORDER BY</code> on aggregate expressions (<code>COUNT</code>, <code>SUM</code>, <code>MIN</code>,
+<code>MAX</code>, <code>AVG</code>) and <code>GROUP BY</code> queries. The SDK automatically detects these patterns
+and omits the default <code>ORDER BY</code> for them.</p>
+</blockquote>
+<h3 id="dynamodb">DynamoDB<a class="headerlink" href="#dynamodb" title="Permanent link">&para;</a></h3>
+<p>DynamoDB results are sorted in memory per page after fetching (client-side).
+Within a single page, items are returned sorted by sort key ascending.
+For multi-page scans the overall order across pages is determined by DynamoDB's
+internal token-based traversal, not sort key - this is a known limitation.</p>
+<h3 id="spanner">Spanner<a class="headerlink" href="#spanner" title="Permanent link">&para;</a></h3>
+<p>The Spanner provider does not yet implement default sort-key ordering.
+Consumers relying on consistent cross-provider sort behavior should not use
+the Spanner provider until this gap is addressed.</p>
+<blockquote>
+<p><strong>Tracking</strong>: A follow-up issue will be filed to implement default sort-key
+ordering for the Spanner provider. Until resolved, do not mix Spanner with
+Cosmos or DynamoDB in conformance-sensitive workloads.</p>
+</blockquote>
+<h2 id="escape-hatch-policy">Escape Hatch Policy<a class="headerlink" href="#escape-hatch-policy" title="Permanent link">&para;</a></h2>
+<p>The SDK does not expose a <code>nativeClient()</code> method. Direct access to the
+underlying provider client is intentionally omitted to enforce portability
+guarantees - code written against the SDK must remain switchable between
+providers by configuration alone.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; Microsoft Corporation. All rights reserved.
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/microsoft/multiclouddb-sdk-for-java" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.top", "navigation.indexes", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
