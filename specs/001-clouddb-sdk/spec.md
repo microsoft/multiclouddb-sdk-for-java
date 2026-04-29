@@ -237,6 +237,60 @@ As an application developer, I can specify a read consistency level (e.g., stron
 
 ---
 
+### User Story 11 - Transparent Large Object (BLOB) Offloading (Priority: P2)
+
+As an application developer, I can store and retrieve binary payloads (serialized objects, protocol buffers, compressed archives) that exceed the SDK's uniform document size limit, and the SDK transparently offloads the oversized payload to provider-appropriate external object storage while maintaining a reference in the database document — so that my application code treats these as normal document fields without awareness of the offloading mechanism.
+
+**Why this priority**: Applications migrating from Cassandra commonly store large serialized objects inline (e.g., protobuf-encoded aggregated positions, pre-composed cached objects up to 3–4 MB). The SDK's 400 KB uniform document size limit would reject these payloads outright, blocking migration. Transparent offloading enables these workloads without requiring application-level chunking or external storage management code.
+
+**Independent Test**: A sample application stores a 2 MB binary field via the SDK on any supported provider, and reads it back identically. The application code is unchanged between providers — only configuration (storage backend endpoint/credentials) varies.
+
+**Acceptance Scenarios**:
+
+1. **Given** a document with a field annotated as a large object and a payload of 2 MB, **When** the application upserts the document, **Then** the SDK transparently stores the oversized payload in external object storage and persists a reference in the database document.
+2. **Given** a document with a large object reference stored in the database, **When** the application reads the document, **Then** the SDK transparently retrieves the payload from external storage and returns the complete document to the application with the large object field fully materialized.
+3. **Given** a document with a large object that is deleted from the database, **When** the delete operation completes, **Then** the SDK also removes the corresponding object from external storage (or marks it for deferred cleanup).
+4. **Given** a large object field whose payload is within the SDK's uniform size limit (≤ 400 KB), **When** the document is stored, **Then** the SDK stores it inline in the database document without offloading (no external storage overhead for small payloads).
+5. **Given** external object storage that is temporarily unavailable, **When** the application attempts to read a document with an offloaded large object, **Then** the SDK returns a clear error indicating the external storage dependency is unavailable.
+
+---
+
+### User Story 12 - Transparent Document Chunking for Oversized Documents (Priority: P3)
+
+As an application developer, I can store and retrieve structured documents that exceed the SDK's uniform document size limit, and the SDK transparently splits the document into multiple linked chunks stored within the same database collection — so that my application sees a single logical document without managing chunking logic.
+
+**Why this priority**: Some workloads have structured JSON documents that naturally exceed 400 KB (e.g., deeply nested configuration objects, aggregated time-series snapshots). When external object storage is not desired or available, the SDK can transparently chunk within the database itself, keeping all data co-located with the same consistency and query guarantees.
+
+**Independent Test**: A sample application stores a 1.5 MB JSON document via the SDK on any supported provider, reads it back identically, and the application code is unaware of chunking internals.
+
+**Acceptance Scenarios**:
+
+1. **Given** a document exceeding the SDK's uniform size limit with chunking enabled, **When** the application upserts the document, **Then** the SDK transparently splits it into multiple chunk documents stored in the same collection, linked by a common reference key.
+2. **Given** a chunked document stored in the database, **When** the application reads it by key, **Then** the SDK transparently reassembles all chunks and returns the complete document to the application.
+3. **Given** a chunked document, **When** the application deletes it by key, **Then** the SDK removes all associated chunks atomically (where provider supports transactional batch) or with best-effort cleanup.
+4. **Given** a document within the SDK's uniform size limit, **When** chunking is enabled, **Then** the document is stored as a single item without chunking overhead.
+5. **Given** a chunked document, **When** the application queries by a field in the primary chunk (root document), **Then** the query returns the reassembled document in results.
+
+---
+
+### User Story 13 - Composite Partition Key Support (Priority: P2)
+
+As an application developer, I can define and use composite partition keys (partition keys composed of multiple field values) so that I can model data with multi-dimensional partitioning strategies (e.g., tenant + entity type, region + date) without concatenating fields manually in application code.
+
+**Why this priority**: Applications migrating from Cassandra commonly use composite primary keys (multiple columns forming the partition key). All three target providers support some form of composite or hierarchical partitioning (Cosmos DB hierarchical partition keys, DynamoDB composite sort keys, Spanner interleaved tables), but the current SDK's `Key.of(partitionKey, sortKey)` model only supports a single string partition key value. Without composite key support, developers must manually concatenate fields (e.g., `"tenant#entityType"`) which is error-prone, hard to query efficiently, and loses semantic meaning.
+
+**Independent Test**: A sample application creates items with a composite partition key of `(tenantId, entityType)` and queries by the full composite key or by a prefix (tenantId only). The same code works across all providers by configuration only.
+
+**Acceptance Scenarios**:
+
+1. **Given** a collection configured with a composite partition key of two fields, **When** an item is created with both key fields specified, **Then** the item is stored with the correct composite partitioning on any supported provider.
+2. **Given** a composite partition key of `(tenantId, entityType)`, **When** a query specifies both components, **Then** the query is scoped to the exact partition and uses the provider's native efficient mechanism.
+3. **Given** a composite partition key of `(tenantId, entityType)`, **When** a query specifies only the first component (prefix), **Then** the query scopes to the tenant's partitions only (where provider supports hierarchical/prefix queries).
+4. **Given** a composite partition key, **When** a read-by-key operation specifies all components, **Then** the item is retrieved using the full composite key without ambiguity.
+5. **Given** a provider that does not support hierarchical/composite partition keys natively, **When** the SDK is configured with a composite key, **Then** the SDK automatically concatenates the components into a single partition key value using a deterministic separator, and decomposes it transparently on read.
+
+---
+
 ### Edge Cases
 
 - What happens when the key model differs by provider (e.g., partitioned keys vs composite primary keys)?
@@ -260,6 +314,15 @@ As an application developer, I can specify a read consistency level (e.g., stron
 - What happens when a bulk write includes items spanning multiple partition keys on a provider that requires single-partition batches? The SDK must automatically group items by partition and execute separate provider-level batches.
 - What happens when a bulk operation partially fails (some items succeed, others fail)? The SDK must return per-item results indicating which items succeeded and which failed, with error details for failures.
 - What happens when a consistency level override is requested on a query that also uses partition key scoping? The consistency level and partition scope must be combinable without interference.
+- What happens when a large object is offloaded to external storage and the database record is deleted but external storage cleanup fails? The SDK must attempt cleanup and report a partial failure with guidance to manually remove the orphaned object. Deferred cleanup (garbage collection) may be used as an alternative.
+- What happens when external object storage is unavailable during a read of a document with an offloaded large object? The SDK must return a clear error identifying the external dependency failure, not silently return the document without the large object field.
+- What happens when a large object field's payload is exactly at the SDK's uniform size limit boundary (400 KB)? Payloads at or below the limit are stored inline; only payloads exceeding the limit are offloaded.
+- What happens when a chunked document is partially written (some chunks succeed, others fail)? The SDK must clean up partial chunks and report the failure. On providers supporting transactional batch, chunks must be written atomically.
+- What happens when a chunked document's chunks are inconsistent (e.g., a chunk is missing or corrupted)? The SDK must detect the inconsistency and return a clear error rather than returning a partial/corrupted document.
+- What happens when a query matches a chunked document but the query field is in a secondary chunk (not the root)? Only fields in the root/primary chunk are queryable; secondary chunk fields are not indexed or queryable.
+- What happens when a composite partition key has fewer components specified than the full key for a point read? The SDK must raise a clear error indicating all composite key components are required for read-by-key operations.
+- What happens when a composite key component contains the separator character used for internal concatenation? The SDK must use an escaping scheme that prevents ambiguity (e.g., URL-encoding, length-prefixing) so component values can contain any character.
+- What happens when a query specifies a composite key prefix but the provider does not support prefix-based partition scoping? The SDK must fall back to a cross-partition scan with a filter condition on the prefix components, or raise a capability error if performance implications are unacceptable.
 
 ## Portability Defaults
 
@@ -428,6 +491,45 @@ The SDK enforces a strict no-code-escape-hatch policy to preserve portability:
 - **FR-080**: When a requested consistency level is not supported by the provider (e.g., a provider-specific level on an incompatible provider), the SDK MUST raise a clear, capability-gated error.
 - **FR-081**: When no consistency override is specified on a read operation, the provider's default consistency behavior MUST apply, maintaining backward compatibility with existing behavior.
 
+#### Transparent Large Object (BLOB) Offloading Requirements
+
+- **FR-082**: The SDK MUST provide a large object offloading facility that transparently stores binary payloads exceeding the SDK's uniform document size limit (400 KB) in an external object storage backend, while persisting a reference (pointer) in the database document.
+- **FR-083**: Large object offloading MUST be opt-in per field via SDK configuration or annotation. Fields not opted in continue to be stored inline and are subject to the uniform size limit.
+- **FR-084**: When a document with an opted-in large object field is upserted and the field's payload exceeds the inline threshold, the SDK MUST: (1) store the payload in the configured external storage backend, (2) replace the field value in the database document with a structured reference containing the storage location and size metadata, and (3) persist the database document.
+- **FR-085**: When a document with a large object reference is read, the SDK MUST transparently retrieve the payload from external storage and return the fully materialized document to the application, identical to the original write (minus any provider-added metadata).
+- **FR-086**: When a document with a large object reference is deleted, the SDK MUST also remove (or schedule for deferred removal) the corresponding object from external storage. Orphaned objects due to partial failure MUST be detectable and cleanable via a maintenance/cleanup mechanism.
+- **FR-087**: Large object offloading MUST support configurable external storage backends per provider: Azure Blob Storage for Cosmos DB, Amazon S3 for DynamoDB, Google Cloud Storage for Spanner. A provider-neutral configuration interface MUST be used so applications can switch object storage backends alongside the database provider.
+- **FR-088**: Payloads at or below the inline threshold (≤ 400 KB) on opted-in large object fields MUST be stored inline in the database document without offloading, avoiding external storage overhead for small payloads.
+- **FR-089**: Large object offloading MUST be a capability-gated feature. When offloading is configured but the external storage backend is unavailable or misconfigured, the SDK MUST raise a clear error at operation time.
+- **FR-090**: The SDK MUST define a maximum large object size limit (configurable, default 16 MB) and reject payloads exceeding it with a clear error.
+
+#### Transparent Document Chunking Requirements
+
+- **FR-091**: The SDK MUST provide a document chunking facility that transparently splits documents exceeding the SDK's uniform size limit into multiple linked chunk documents stored within the same database collection.
+- **FR-092**: Document chunking MUST be opt-in via SDK configuration at the collection level. When disabled, documents exceeding the size limit are rejected per existing behavior (FR-061).
+- **FR-093**: When a document exceeds the uniform size limit and chunking is enabled, the SDK MUST: (1) split the serialized document into chunks that individually fit within the size limit, (2) store each chunk as a separate database item with a shared linkage key and sequence number, (3) store a root chunk containing the document's queryable fields plus chunk metadata.
+- **FR-094**: When a chunked document is read by key, the SDK MUST transparently retrieve all associated chunks, reassemble them in sequence order, and return the complete deserialized document to the application.
+- **FR-095**: When a chunked document is deleted by key, the SDK MUST remove all associated chunks. On providers supporting transactional batch within a partition, chunk deletion MUST be atomic. On other providers, best-effort cleanup with orphan detection MUST be provided.
+- **FR-096**: Only fields present in the root chunk (the primary/first chunk containing document metadata) are queryable via the SDK's query facilities. Secondary chunk content is not independently queryable.
+- **FR-097**: Document chunking MUST be a capability-gated feature. When chunking is requested but the provider does not support the required batch/transactional write semantics, the SDK MUST raise a clear error.
+- **FR-098**: Chunked documents MUST be compressed (e.g., using GZIP or LZ4) before splitting to minimize the number of chunks and reduce storage overhead. Compression algorithm MUST be configurable.
+- **FR-099**: The SDK MUST store chunk metadata (total chunk count, original document size, compression algorithm, schema version) in the root chunk to enable forward-compatible reassembly.
+
+#### Composite Partition Key Requirements
+
+- **FR-100**: The SDK MUST support composite partition keys consisting of two or more named field values that together define the partition placement of an item.
+- **FR-101**: Composite partition keys MUST be defined via SDK configuration at the collection level, specifying the ordered list of field names that compose the partition key.
+- **FR-102**: The SDK's `Key` abstraction MUST be extended to support composite partition keys: `Key.of(compositePartitionKey, sortKey)` where `compositePartitionKey` can be constructed from multiple named field values (e.g., `CompositeKey.of("tenantId", tenantValue, "entityType", entityValue)`).
+- **FR-103**: Each provider adapter MUST map composite partition keys to the provider's native key model:
+  - **Cosmos DB**: Map to hierarchical partition keys (available in Cosmos DB v4 SDK) when the collection is configured for hierarchical partitioning, or concatenate with a deterministic separator for single-level partition key collections.
+  - **DynamoDB**: Concatenate composite key components into the single partition key attribute value using a deterministic, reversible encoding.
+  - **Spanner**: Map composite key components to the leading columns of the primary key (Spanner natively supports multi-column primary keys).
+- **FR-104**: The concatenation/encoding scheme for providers that require a single partition key value MUST be deterministic, reversible, and safe for arbitrary component values (including values containing the separator character). The SDK MUST use a documented escaping/encoding scheme.
+- **FR-105**: Queries MUST support scoping by the full composite partition key (all components specified) for efficient single-partition execution on all providers.
+- **FR-106**: Queries MUST support scoping by a composite key prefix (leading components only) where the provider supports hierarchical or prefix-based partition scoping. Where not supported, the SDK MUST fall back to cross-partition query with a filter on the prefix components.
+- **FR-107**: Composite partition key prefix queries MUST be a capability-gated feature. When a prefix query is requested on a provider that does not support efficient prefix scoping, the SDK MUST either execute a cross-partition query with appropriate filtering or raise a capability warning, depending on configuration.
+- **FR-108**: The SDK MUST validate that all composite key components are provided for point operations (read-by-key, delete-by-key) and MUST raise a clear error if any component is missing.
+
 ### Portable Operator and Function Reference
 
 The following operators and functions form the portable query subset, available on all supported providers:
@@ -461,6 +563,10 @@ The following operators and functions form the portable query subset, available 
 | Bulk write | Cosmos DB, DynamoDB, Spanner |
 | Bulk read-by-key | Cosmos DB, DynamoDB, Spanner |
 | Read consistency override (`STRONG`/`EVENTUAL`) | Cosmos DB, DynamoDB, Spanner |
+| Large object offloading (transparent BLOB storage) | Cosmos DB, DynamoDB, Spanner (requires external storage config) |
+| Document chunking (transparent oversized doc splitting) | Cosmos DB, DynamoDB, Spanner |
+| Composite partition keys | Cosmos DB (hierarchical PK), DynamoDB (concatenated), Spanner (multi-column PK) |
+| Composite key prefix queries | Cosmos DB (hierarchical PK), Spanner (multi-column PK) |
 
 ### Key Entities *(include if feature involves data)*
 
@@ -485,6 +591,10 @@ The following operators and functions form the portable query subset, available 
 - **Change Feed**: A portable abstraction for consuming a chronologically ordered stream of item-level changes from a collection. Each change event includes the item key and change type, and may include the post-change item state when the provider supports and is configured for full-image emission. Consumption can be started from the beginning, a point in time, or a checkpoint token. Full-image emission and delete detection are separately gated capabilities, and delete events may not include an item image.
 - **Bulk Operation**: A throughput-optimized operation that accepts multiple items (for writes) or multiple keys (for reads) and executes them using the provider's native batch mechanism. The SDK automatically partitions requests that exceed provider batch limits. Results are reported per-item, enabling partial failure handling.
 - **Consistency Level**: A portable enumeration of read consistency guarantees (`STRONG`, `EVENTUAL`) that can be specified per-operation. Each provider adapter maps these to the provider's native consistency mechanism. When no override is specified, the provider's default applies.
+- **Large Object Reference**: A structured pointer stored in a database document field that identifies an offloaded payload in external object storage. Contains the storage backend identifier, object path/key, payload size, and content hash for integrity verification. The reference is opaque to applications; the SDK transparently resolves it to the full payload on read.
+- **External Storage Backend**: A configured object storage service (Azure Blob Storage, Amazon S3, Google Cloud Storage) used by the large object offloading facility to store payloads that exceed the SDK's uniform document size limit. Configuration includes endpoint, container/bucket name, and authentication credentials.
+- **Document Chunk**: A database item representing one segment of a chunked oversized document. Contains a linkage key (shared across all chunks of the same logical document), a sequence number, and a segment of the compressed/serialized document payload. The root chunk (sequence 0) additionally contains queryable fields and chunk metadata (total count, original size, compression algorithm).
+- **Composite Partition Key**: A partition key composed of two or more named field values that together determine partition placement. Defined at the collection level via configuration. The SDK's `Key` abstraction supports constructing composite keys from multiple components. Provider adapters map composite keys to the provider's native key model (hierarchical partition keys, concatenated values, or multi-column primary keys).
 
 ## Success Criteria *(mandatory)*
 
@@ -522,6 +632,16 @@ The following operators and functions form the portable query subset, available 
 - **SC-030**: A read operation with consistency level `STRONG` returns data reflecting all prior acknowledged writes on all supported providers.
 - **SC-031**: A read operation with consistency level `EVENTUAL` is supported on all providers that offer eventual consistency semantics, and the SDK documentation states that choosing `EVENTUAL` may reduce latency or cost depending on provider and workload.
 - **SC-032**: A read or query operation with no consistency override continues to use the provider's default consistency behavior, maintaining backward compatibility.
+- **SC-033**: A 2 MB binary payload stored via the SDK's large object offloading facility is transparently persisted in external storage and retrieved identically on read, without the application being aware of the offloading mechanism. The same application code works across all supported providers by changing only storage backend configuration.
+- **SC-034**: When a document with an offloaded large object is deleted, the corresponding external storage object is also removed (or scheduled for removal) within a configurable cleanup window.
+- **SC-035**: A payload at or below 400 KB on an opted-in large object field is stored inline without incurring external storage overhead, verifiable by observing no external storage call in diagnostics.
+- **SC-036**: When external object storage is unavailable during a read, the SDK returns a clear error identifying the external dependency failure within the standard error model.
+- **SC-037**: A 1.5 MB JSON document stored via the SDK's chunking facility is transparently split, persisted, and reassembled identically on read across all supported providers. The application code is unaware of chunking.
+- **SC-038**: When a chunked document is deleted, all associated chunks are removed. On providers supporting transactional batch, deletion is atomic; on others, eventual consistency of cleanup is documented.
+- **SC-039**: Queries against a collection containing chunked documents return results based on fields in the root chunk, with full document reassembly happening transparently.
+- **SC-040**: An application using composite partition keys of `(tenantId, entityType)` can perform point reads, deletes, and queries scoped to the full composite key on all supported providers by changing configuration only.
+- **SC-041**: A query specifying only the leading prefix of a composite partition key (e.g., `tenantId` only) efficiently scopes to that prefix on providers supporting hierarchical partition keys, and falls back to filtered cross-partition scan with correct results on providers that do not.
+- **SC-042**: Attempting a point read with an incomplete composite partition key (missing one or more components) produces a clear, structured validation error before any provider call is made.
 
 ## Assumptions
 
@@ -560,6 +680,17 @@ The following operators and functions form the portable query subset, available 
 - **Bulk operation limits**: Provider-level batch size limits vary (e.g., DynamoDB limits `BatchWriteItem` to 25 items, `BatchGetItem` to 100 keys). The SDK automatically partitions larger requests into multiple provider-level batches. Applications should be aware that very large bulk requests may result in multiple provider round-trips.
 - **Read consistency mapping**: The portable `STRONG` and `EVENTUAL` consistency levels are semantic approximations mapped to each provider's native model. Cosmos DB's intermediate consistency levels (Session, Bounded Staleness, Consistent Prefix) are available as provider-specific extensions but are not part of the portable contract. Spanner's "stale read" implementation of `EVENTUAL` uses a provider-configured staleness bound (default: 15 seconds).
 - **Consistency default behavior**: When no consistency override is specified, each provider uses its own default: Cosmos DB uses the account-level consistency setting, DynamoDB defaults to eventually consistent reads, and Spanner defaults to strong reads. The SDK does not normalize these defaults to preserve existing provider behavior for applications that do not opt into consistency overrides.
+- **Large object offloading scope**: The large object offloading facility targets opaque binary payloads (serialized objects, protobufs, compressed archives, images) that exceed the 400 KB uniform document size limit. It is not a general-purpose file storage API. Payloads are stored as single objects in external storage; multi-part upload is used for payloads exceeding provider-specific thresholds (e.g., 5 MB for S3/Azure Blob). Maximum supported payload size is configurable (default 16 MB).
+- **Large object storage backend pairing**: Each database provider is paired with a natural object storage backend: Cosmos DB → Azure Blob Storage, DynamoDB → Amazon S3, Spanner → Google Cloud Storage. Cross-pairing (e.g., Cosmos DB with S3) is technically possible but not a v1 priority.
+- **Large object consistency**: The SDK provides best-effort consistency between the database record and the external storage object. The write order is: (1) write to external storage, (2) persist reference in database. On failure between steps, orphaned objects may exist temporarily. A maintenance/garbage-collection mechanism is provided for cleanup. Strong transactional guarantees across database + object storage are not feasible and are outside scope.
+- **Large object lifecycle**: Deleting a database record triggers deletion of the associated external storage object. If external storage deletion fails, the SDK logs a warning and the object becomes an orphan detectable via the maintenance mechanism. Applications requiring strict lifecycle coupling should implement additional monitoring.
+- **Document chunking scope**: Document chunking targets structured JSON documents that exceed 400 KB but are logically single entities (e.g., large configuration objects, aggregated reports). It is not designed for arbitrarily large streaming data. Maximum chunked document size is configurable (default 10 MB).
+- **Document chunking query limitations**: Only fields present in the root chunk (the first chunk, containing document metadata and leading fields) are queryable. Applications requiring full-text search across oversized documents should use dedicated search indexes outside the SDK. The root chunk size is the same as the uniform limit (400 KB), so documents must have queryable fields that fit within this size.
+- **Document chunking and change feed interaction**: Chunked documents appear as multiple items in the change feed (one event per chunk). The SDK does not currently reassemble change feed events for chunked documents into logical document change events. Applications consuming change feed on chunked collections should be aware of per-chunk events.
+- **Composite partition key scope**: The SDK supports composite partition keys of 2–5 components. Keys with more than 5 components are rejected at configuration time. This aligns with Cosmos DB's hierarchical partition key limit (3 levels) and provides headroom for Spanner (which supports larger composite keys natively).
+- **Composite key encoding**: For providers requiring a single partition key value (DynamoDB), composite components are encoded using a reversible URL-encoding scheme with a pipe (`|`) separator between encoded components. This ensures deterministic encoding/decoding and supports arbitrary character values in components. Example: `Key.of(CompositeKey.of("tenantId", "acme", "entityType", "order"), sortKey)` → partition key value `acme|order` (or `acme%7Cbar|order` if a component contains the separator).
+- **Composite key and existing Key.of compatibility**: The existing `Key.of(partitionKey, sortKey)` API remains supported and is equivalent to a single-component composite key. Applications not using composite keys are unaffected. The composite key feature is additive and backward-compatible.
+- **Composite key Cosmos DB mapping**: Cosmos DB hierarchical partition keys (available in SDK v4.25+) support up to 3 levels of sub-partitioning. When a Cosmos DB collection is provisioned with hierarchical partition keys, the SDK maps composite key components directly to hierarchy levels. When the collection uses a traditional single partition key, the SDK concatenates components. Applications should align their Cosmos DB collection configuration with their composite key cardinality.
 
 ## Acceptance Checklist
 
@@ -692,4 +823,37 @@ This checklist is used to accept the feature as “done” at the spec level.
 - [ ] Cleanup scripts (`cleanup-cosmos.sh`, `cleanup-cosmos.ps1`, `cleanup-dynamo.sh`, `cleanup-dynamo.ps1`) exist under `multiclouddb-samples/scripts/` and successfully remove all provider resources created by sample runs.
 - [ ] Every Java source file (main and test) in all modules carries the standard Microsoft copyright header as the first two lines: `// Copyright (c) Microsoft Corporation. All rights reserved.` followed by `// Licensed under the MIT License.`
 - [ ] A `LICENSE` file exists at the repository root containing the full MIT license text with `Copyright (c) Microsoft Corporation. All rights reserved.`
+
+### Transparent Large Object (BLOB) Offloading
+
+- [ ] A binary payload exceeding 400 KB is transparently offloaded to external object storage and a reference is stored in the database document, without application code awareness.
+- [ ] Reading a document with an offloaded large object transparently retrieves the payload from external storage and returns the fully materialized document.
+- [ ] Deleting a document with an offloaded large object also removes (or schedules removal of) the external storage object.
+- [ ] Payloads at or below 400 KB on opted-in fields are stored inline without offloading overhead.
+- [ ] External storage backend configuration (Azure Blob / S3 / GCS) works across all providers by changing configuration only.
+- [ ] Large object offloading is capability-gated and raises a clear error when external storage is unavailable or misconfigured.
+- [ ] Orphaned objects resulting from partial failures are detectable and cleanable via a maintenance mechanism.
+- [ ] The same application code storing and retrieving large objects works across Cosmos DB, DynamoDB, and Spanner by changing configuration only.
+
+### Transparent Document Chunking
+
+- [ ] A structured document exceeding 400 KB is transparently split into multiple linked chunks stored in the same collection, without application awareness.
+- [ ] Reading a chunked document transparently reassembles all chunks and returns the complete document.
+- [ ] Deleting a chunked document removes all associated chunks (atomically where provider supports transactional batch).
+- [ ] Documents within 400 KB are stored as single items without chunking overhead when chunking is enabled.
+- [ ] Only root chunk fields are queryable; queries return correctly reassembled documents.
+- [ ] Chunk writes use compression to minimize chunk count and storage overhead.
+- [ ] Document chunking is capability-gated and raises a clear error on providers lacking required batch semantics.
+- [ ] The same application code works across all supported providers by changing configuration only.
+
+### Composite Partition Keys
+
+- [ ] A composite partition key of 2+ components can be defined via SDK configuration and used for point operations (read, delete, upsert) on all supported providers.
+- [ ] Queries specifying the full composite partition key scope to that partition efficiently on all providers.
+- [ ] Queries specifying a composite key prefix (leading components only) scope efficiently on providers supporting it, and fall back to filtered cross-partition scan on others.
+- [ ] Point operations with incomplete composite key components (missing values) produce a clear validation error.
+- [ ] Composite key component values containing separator characters are safely encoded/decoded without ambiguity.
+- [ ] The existing `Key.of(partitionKey, sortKey)` API continues to work unchanged (backward compatible).
+- [ ] Composite partition key prefix queries are capability-gated and produce a diagnostic warning or error when the provider requires a cross-partition fallback.
+- [ ] The same composite key application code works across Cosmos DB, DynamoDB, and Spanner by changing configuration only.
 
