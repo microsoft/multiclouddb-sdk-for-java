@@ -241,7 +241,13 @@ As an application developer, I can specify a read consistency level (e.g., stron
 
 - What happens when the key model differs by provider (e.g., partitioned keys vs composite primary keys)?
 - How does the SDK behave when a continuation token is expired/invalid or used against a different query?
-- What happens when the provider enforces different default consistency behaviors?
+- ~~What happens when the provider enforces different default consistency behaviors?~~
+  **Resolved (PR #66):** Cosmos DB now uses the account's configured default consistency
+  level when no override is specified, rather than hardcoding SESSION. An optional
+  `consistencyLevel` connection config key allows per-client-instance read overrides
+  (≤ account default). DynamoDB and other providers use their own native defaults;
+  consistency configuration is intentionally provider-specific at this time. A portable
+  consistency hint via `OperationOptions` is deferred to a future release.
 - How does the SDK handle throttling, quota exhaustion, and rate limits across providers?
 - What happens when a collection/database does not exist, or exists with incompatible settings? The SDK provides `ensureDatabase` and `ensureContainer` methods that create resources idempotently, but does not handle incompatible settings (e.g., different partition key paths on an existing container).
 - What happens when `ensureContainer` is called concurrently from multiple processes? Each provider implementation must handle race conditions gracefully (e.g., catching "already exists" exceptions).
@@ -420,6 +426,7 @@ The SDK enforces a strict no-code-escape-hatch policy to preserve portability:
 #### Read Consistency Level Requirements
 
 - **FR-077**: Read operations (`read` and `query`) MUST support an optional consistency level override that specifies the desired read consistency for that individual operation.
+  - *Implementation status (2026-04):* delivered as a per-client-instance override via Cosmos DB connection config (`consistencyLevel`); a portable per-call override on `OperationOptions` is tracked as deferred future work (see Edge Cases — *default consistency behaviors*).
 - **FR-078**: The SDK MUST define a portable consistency model with at minimum two levels: `STRONG` (linearizable / strongly consistent read) and `EVENTUAL` (eventually consistent read). Providers MAY also expose additional provider-specific consistency levels, but those levels are non-portable and MUST be selectable only through provider-specific configuration so that applications using only the portable SDK surface remain switchable by configuration only.
 - **FR-079**: Each provider adapter MUST map the portable consistency levels to the provider's native equivalent:
   - **Cosmos DB**: `STRONG` → `Strong` consistency level; `EVENTUAL` → `Eventual` consistency level.

@@ -7,6 +7,7 @@ import com.azure.cosmos.ConsistencyLevel;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -68,9 +69,89 @@ class CosmosConstantsTest {
     // ── Consistency ───────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("CONSISTENCY_LEVEL_DEFAULT is SESSION")
-    void consistencyLevelDefaultIsSession() {
-        assertEquals(ConsistencyLevel.SESSION, CosmosConstants.CONSISTENCY_LEVEL_DEFAULT);
+    @DisplayName("CONFIG_CONSISTENCY_LEVEL key value")
+    void configConsistencyLevelKey() {
+        assertEquals("consistencyLevel", CosmosConstants.CONFIG_CONSISTENCY_LEVEL);
+    }
+
+    @Test
+    @DisplayName("parseConsistencyLevel: SESSION (upper-case)")
+    void parseConsistencyLevelSession() {
+        assertEquals(ConsistencyLevel.SESSION, CosmosConstants.parseConsistencyLevel("SESSION"));
+    }
+
+    @Test
+    @DisplayName("parseConsistencyLevel: EVENTUAL (lower-case)")
+    void parseConsistencyLevelEventualLowerCase() {
+        assertEquals(ConsistencyLevel.EVENTUAL, CosmosConstants.parseConsistencyLevel("eventual"));
+    }
+
+    @Test
+    @DisplayName("parseConsistencyLevel: STRONG (mixed-case)")
+    void parseConsistencyLevelStrongMixedCase() {
+        assertEquals(ConsistencyLevel.STRONG, CosmosConstants.parseConsistencyLevel("Strong"));
+    }
+
+    @Test
+    @DisplayName("parseConsistencyLevel: BOUNDED_STALENESS")
+    void parseConsistencyLevelBoundedStaleness() {
+        assertEquals(ConsistencyLevel.BOUNDED_STALENESS,
+                CosmosConstants.parseConsistencyLevel("BOUNDED_STALENESS"));
+    }
+
+    @Test
+    @DisplayName("parseConsistencyLevel: CONSISTENT_PREFIX")
+    void parseConsistencyLevelConsistentPrefix() {
+        assertEquals(ConsistencyLevel.CONSISTENT_PREFIX,
+                CosmosConstants.parseConsistencyLevel("CONSISTENT_PREFIX"));
+    }
+
+    @Test
+    @DisplayName("parseConsistencyLevel: leading/trailing whitespace is stripped")
+    void parseConsistencyLevelStripsWhitespace() {
+        assertEquals(ConsistencyLevel.SESSION, CosmosConstants.parseConsistencyLevel("  SESSION  "));
+    }
+
+    @Test
+    @DisplayName("parseConsistencyLevel: unknown value throws IllegalArgumentException with helpful message")
+    void parseConsistencyLevelUnknownThrows() {
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> CosmosConstants.parseConsistencyLevel("LINEARIZABLE"));
+        assertTrue(ex.getMessage().contains("LINEARIZABLE"),
+                "Error message should include the bad value");
+        assertTrue(ex.getMessage().toLowerCase().contains("valid"),
+                "Error message should mention valid values");
+    }
+
+    @Test
+    @DisplayName("parseConsistencyLevel: blank string throws IllegalArgumentException with <blank> placeholder")
+    void parseConsistencyLevelBlankThrows() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> CosmosConstants.parseConsistencyLevel("   "));
+        assertTrue(ex.getMessage().contains("<blank>"),
+                "Blank error message should use '<blank>' placeholder; got: " + ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("parseConsistencyLevel: null throws IllegalArgumentException with message that does not say 'null'")
+    void parseConsistencyLevelNullThrows() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> CosmosConstants.parseConsistencyLevel(null));
+        assertFalse(ex.getMessage().contains("'null'"),
+                "Null error message should not interpolate null as a string; got: " + ex.getMessage());
+        assertTrue(ex.getMessage().toLowerCase().contains("must not be null"),
+                "Null error message should say 'must not be null'; got: " + ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("VALID_CONSISTENCY_VALUES_SUFFIX contains all switch arms (sync enforcement)")
+    void validValuesSuffixContainsAllSwitchValues() {
+        List.of("STRONG", "BOUNDED_STALENESS", "SESSION", "CONSISTENT_PREFIX", "EVENTUAL")
+                .forEach(v -> assertTrue(
+                        CosmosConstants.VALID_CONSISTENCY_VALUES_SUFFIX.contains(v),
+                        "VALID_CONSISTENCY_VALUES_SUFFIX should mention " + v
+                                + "; got: " + CosmosConstants.VALID_CONSISTENCY_VALUES_SUFFIX));
     }
 
     // ── Document field names ──────────────────────────────────────────────────

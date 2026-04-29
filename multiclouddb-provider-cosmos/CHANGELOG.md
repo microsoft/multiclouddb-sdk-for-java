@@ -7,6 +7,31 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- `consistencyLevel` connection config key for opt-in client-level read consistency
+  override (applied uniformly to every read from a given client instance; per-operation
+  overrides via `OperationOptions` are deferred to a future release per spec edge-case
+  resolution). Valid values (case-insensitive): `STRONG`, `BOUNDED_STALENESS`, `SESSION`,
+  `CONSISTENT_PREFIX`, `EVENTUAL`. When absent, read requests inherit the Cosmos DB
+  account's configured default. See `docs/configuration.md` — *Consistency Level*.
+
+### Changed
+
+- Removed the hardcoded `ConsistencyLevel.SESSION` override from `CosmosClientBuilder`.
+  Previously all reads were forced to `SESSION` regardless of the account's configured
+  default. **Migration note:** accounts with a default of `STRONG` or `BOUNDED_STALENESS`
+  will now serve reads at their configured level (higher latency / higher RU cost than
+  before). Accounts configured to `SESSION` are unaffected. To restore the previous
+  behaviour explicitly, set `multiclouddb.connection.consistencyLevel=SESSION`.
+
+### Removed
+
+- `CosmosConstants.CONSISTENCY_LEVEL_DEFAULT` (`public static final ConsistencyLevel`,
+  previously `ConsistencyLevel.SESSION`) — removed without a deprecation cycle; the project
+  is pre-release. Callers referencing this constant should use `ConsistencyLevel.SESSION`
+  directly.
+
 ## [0.1.0-beta.1] — 2026-04-23
 
 ### Added

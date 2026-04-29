@@ -4,6 +4,7 @@
 package com.multiclouddb.provider.cosmos;
 
 import com.azure.cosmos.ConsistencyLevel;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -46,11 +47,60 @@ public final class CosmosConstants {
     // ── Consistency ───────────────────────────────────────────────────────────
 
     /**
-     * Default consistency level.
-     * SESSION guarantees read-your-own-writes within a session and is the
-     * recommended default for most application workloads.
+     * Connection config key for the read consistency level override.
+     * <p>
+     * When absent, the Cosmos DB account's default consistency level is used.
+     * When present, its value must be one of (case-insensitive):
+     * {@code STRONG}, {@code BOUNDED_STALENESS}, {@code SESSION},
+     * {@code CONSISTENT_PREFIX}, {@code EVENTUAL}.
+     * <p>
+     * <b>Constraint:</b> the override must be equal to or weaker than the
+     * account's default consistency level.  Setting a stronger consistency
+     * (e.g. {@code STRONG} against a {@code SESSION} account) will result
+     * in a runtime error from Cosmos DB.
      */
-    public static final ConsistencyLevel CONSISTENCY_LEVEL_DEFAULT = ConsistencyLevel.SESSION;
+    public static final String CONFIG_CONSISTENCY_LEVEL = "consistencyLevel";
+
+    /** Shared valid-values suffix reused in both consistency error messages. */
+    static final String VALID_CONSISTENCY_VALUES_SUFFIX =
+            "Valid values (case-insensitive): STRONG, BOUNDED_STALENESS, SESSION, CONSISTENT_PREFIX, EVENTUAL";
+
+    /** Error message for unrecognised consistency level config values. */
+    static final String ERR_INVALID_CONSISTENCY_LEVEL =
+            "Invalid Cosmos consistencyLevel '%s'. " + VALID_CONSISTENCY_VALUES_SUFFIX;
+
+    /** Error message when a {@code null} value is passed to {@link #parseConsistencyLevel}. */
+    static final String ERR_NULL_CONSISTENCY_LEVEL =
+            "Cosmos consistencyLevel must not be null. " + VALID_CONSISTENCY_VALUES_SUFFIX;
+
+    /**
+     * Parses a consistency level string (case-insensitive, whitespace-trimmed)
+     * to the matching {@link ConsistencyLevel} enum constant.
+     *
+     * @param value the raw config value, e.g. {@code "SESSION"} or {@code "eventual"}
+     * @return the matching {@link ConsistencyLevel}
+     * @throws IllegalArgumentException if the value is {@code null}, blank, or does not match
+     *                                  a known consistency level
+     */
+    static ConsistencyLevel parseConsistencyLevel(String value) {
+        if (value == null) {
+            throw new IllegalArgumentException(ERR_NULL_CONSISTENCY_LEVEL);
+        }
+        if (value.isBlank()) {
+            throw new IllegalArgumentException(
+                    String.format(ERR_INVALID_CONSISTENCY_LEVEL, "<blank>"));
+        }
+        String normalized = value.strip().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "STRONG"            -> ConsistencyLevel.STRONG;
+            case "BOUNDED_STALENESS" -> ConsistencyLevel.BOUNDED_STALENESS;
+            case "SESSION"           -> ConsistencyLevel.SESSION;
+            case "CONSISTENT_PREFIX" -> ConsistencyLevel.CONSISTENT_PREFIX;
+            case "EVENTUAL"          -> ConsistencyLevel.EVENTUAL;
+            default -> throw new IllegalArgumentException(
+                    String.format(ERR_INVALID_CONSISTENCY_LEVEL, value.strip()));
+        };
+    }
 
     // ── Document field names ──────────────────────────────────────────────────
 
