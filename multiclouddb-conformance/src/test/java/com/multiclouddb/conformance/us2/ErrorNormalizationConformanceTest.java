@@ -8,7 +8,6 @@ import com.multiclouddb.conformance.ConformanceConfig;
 import com.multiclouddb.conformance.ConformanceHarness;
 import org.junit.jupiter.api.*;
 
-import java.time.Duration;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
