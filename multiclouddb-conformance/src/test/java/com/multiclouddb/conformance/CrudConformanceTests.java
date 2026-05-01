@@ -211,22 +211,36 @@ public abstract class CrudConformanceTests {
     @Test @Order(12)
     @DisplayName("partitionKey null falls back to cross-partition query (returns items from multiple partitions)")
     void queryWithoutPartitionKey() {
-        client.upsert(getAddress(), MulticloudDbKey.of("cross-a", "pk-cross-a"), Map.of("title", "Cross-A", "marker", "cross-conf"));
-        client.upsert(getAddress(), MulticloudDbKey.of("cross-b", "pk-cross-b"), Map.of("title", "Cross-B", "marker", "cross-conf"));
+        // Per-run unique marker so a long-lived emulator (or leftover items
+        // from a previously failed run) cannot interfere with the assertion:
+        // we only ever see items seeded by *this* invocation.
+        String marker = "cross-conf-" + java.util.UUID.randomUUID();
+        client.upsert(getAddress(), MulticloudDbKey.of("cross-a", "pk-cross-a"), Map.of("title", "Cross-A", "marker", marker));
+        client.upsert(getAddress(), MulticloudDbKey.of("cross-b", "pk-cross-b"), Map.of("title", "Cross-B", "marker", marker));
 
-        QueryPage page = client.query(getAddress(),
-                QueryRequest.builder()
-                        .expression("marker = @m")
-                        .parameter("m", "cross-conf")
-                        .maxPageSize(200).build());
-        assertNotNull(page);
-        // Cross-partition query must return items from BOTH partitions, not just one.
+        // Iterate continuation tokens so we evaluate the *full* result set
+        // for this marker, not just the first page. With a fixed marker we
+        // could otherwise be fooled by leftover rows pushing the seeded items
+        // past page-1.
         Set<String> seenPartitions = new HashSet<>();
-        for (Map<String, Object> item : page.items()) {
-            String t = str(item, "title");
-            if ("Cross-A".equals(t)) seenPartitions.add("cross-a");
-            else if ("Cross-B".equals(t)) seenPartitions.add("cross-b");
-        }
+        String continuation = null;
+        do {
+            QueryRequest.Builder qb = QueryRequest.builder()
+                    .expression("marker = @m")
+                    .parameter("m", marker)
+                    .maxPageSize(200);
+            if (continuation != null) qb.continuationToken(continuation);
+            QueryPage page = client.query(getAddress(), qb.build());
+            assertNotNull(page);
+            for (Map<String, Object> item : page.items()) {
+                String t = str(item, "title");
+                if ("Cross-A".equals(t)) seenPartitions.add("cross-a");
+                else if ("Cross-B".equals(t)) seenPartitions.add("cross-b");
+            }
+            continuation = page.continuationToken();
+        } while (continuation != null);
+
+        // Cross-partition query must return items from BOTH partitions, not just one.
         assertTrue(seenPartitions.size() >= 2,
                 "Cross-partition query should surface items from at least 2 distinct partitions; saw: "
                         + seenPartitions);
@@ -314,7 +328,12 @@ public abstract class CrudConformanceTests {
     @Test @Order(15)
     @DisplayName("create of duplicate key throws MulticloudDbException with CONFLICT")
     void createDuplicateKeyThrowsConflict() {
-        MulticloudDbKey key = MulticloudDbKey.of("conf-dup", "conf-dup");
+        // Per-run unique key. A fixed key would make this test flaky: a
+        // previous failed run (or a long-lived emulator) could leave the row
+        // behind, causing the *first* create() to spuriously throw CONFLICT
+        // before the second call (the actual subject of the assertion) runs.
+        String unique = "conf-dup-" + java.util.UUID.randomUUID();
+        MulticloudDbKey key = MulticloudDbKey.of(unique, unique);
         try {
             client.create(getAddress(), key, Map.of("title", "first"));
             MulticloudDbException ex = assertThrows(MulticloudDbException.class,

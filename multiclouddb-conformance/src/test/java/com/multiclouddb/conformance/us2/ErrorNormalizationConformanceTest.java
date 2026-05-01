@@ -41,29 +41,27 @@ public abstract class ErrorNormalizationConformanceTest {
      * provisioned in this JVM. ensure* is idempotent on every provider, but
      * Spanner DDL still costs an information_schema query per call, and Cosmos
      * issues a control-plane RPC. Memoising once per provider keeps the
-     * @BeforeEach cost flat for the rest of the suite.
+     * @BeforeEach cost flat for the rest of the suite. We use
+     * {@code computeIfAbsent} so the provisioning runs atomically — under
+     * parallel test execution, only one thread per provider performs the
+     * ensure* calls; others wait on the map's segment lock and observe the
+     * cached marker. A failure inside the lambda propagates and leaves the
+     * map empty for that provider, so the next attempt retries (rather than
+     * masking the failure with a stale "provisioned" marker).
      */
-    private static final java.util.Set<ProviderId> PROVISIONED =
-            java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final java.util.concurrent.ConcurrentMap<ProviderId, Boolean> PROVISIONED =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     @BeforeEach
     void setUp() {
         MulticloudDbClientConfig config = ConformanceConfig.forProvider(providerId());
         client = MulticloudDbClientFactory.create(config);
         address = ConformanceHarness.defaultAddress(providerId());
-        // Provision the database/container exactly once per provider per JVM.
-        // This suite can run independently of CrudConformanceTests subclasses
-        // (which provision the table in their own @BeforeAll); on subsequent
-        // tests the resources are already there. We only mark the provider as
-        // provisioned AFTER ensure* succeeds, so a transient failure on the
-        // first attempt is retried by the next test rather than silently
-        // skipped — masking it would turn into a confusing cascade of
-        // "table not found" errors in later tests.
-        if (!PROVISIONED.contains(providerId())) {
+        PROVISIONED.computeIfAbsent(providerId(), pid -> {
             client.ensureDatabase(address.database());
             client.ensureContainer(address);
-            PROVISIONED.add(providerId());
-        }
+            return Boolean.TRUE;
+        });
     }
 
     @AfterEach
