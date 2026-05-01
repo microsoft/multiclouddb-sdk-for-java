@@ -94,10 +94,24 @@ public interface MulticloudDbClient extends AutoCloseable {
 
     /**
      * Delete a document by key.
+     * <p>
+     * Idempotent: deleting a key that does not exist is a silent no-op on every
+     * provider. This is the LCD across Cosmos (404 swallowed), DynamoDB
+     * ({@code DeleteItem} naturally no-ops) and Spanner ({@code Mutation.delete}
+     * naturally no-ops).
+     * <p>
+     * Callers that need to detect whether a key exists should use
+     * {@link #read(ResourceAddress, MulticloudDbKey, OperationOptions)} — it
+     * returns {@code null} on every provider when the key does not exist, and
+     * does not mutate state. {@code update()} also throws {@code NOT_FOUND} on
+     * a missing key, but it requires a document body and <strong>overwrites</strong>
+     * the existing document on hit, so it is not a safe pure existence probe.
      *
      * @param address target database + collection
      * @param key     document key
      * @param options operation options
+     * @throws MulticloudDbException for any provider error; a missing key is
+     *         silently ignored and does not throw
      */
     void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
 

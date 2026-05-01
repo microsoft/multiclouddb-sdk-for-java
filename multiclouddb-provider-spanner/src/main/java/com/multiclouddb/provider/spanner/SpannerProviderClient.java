@@ -28,7 +28,7 @@ import com.google.cloud.spanner.DatabaseAdminClient;
 import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.DatabaseId;
 import com.google.cloud.spanner.ErrorCode;
-import com.google.cloud.spanner.KeySet;
+import com.google.cloud.spanner.Key;
 import com.google.cloud.spanner.Mutation;
 import com.google.cloud.spanner.ResultSet;
 import com.google.cloud.spanner.Spanner;
@@ -292,13 +292,15 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
     /**
      * Deletes a row from Spanner by its composite primary key.
      * <p>
-     * Uses a {@code DELETE} mutation. A {@code NOT_FOUND} Spanner error is silently
-     * swallowed — delete is idempotent.
+     * Idempotent: uses a Spanner {@code Mutation.delete} which silently no-ops
+     * when no row matches the given key. This matches the LCD cross-provider
+     * contract on {@link com.multiclouddb.api.MulticloudDbClient#delete}, where
+     * DynamoDB {@code DeleteItem} naturally no-ops and Cosmos swallows 404.
      *
      * @param address the logical database + collection
      * @param key     the document key identifying the row to delete
      * @param options operation options (currently unused by this provider)
-     * @throws com.multiclouddb.api.MulticloudDbException on any non-NOT_FOUND Spanner error
+     * @throws com.multiclouddb.api.MulticloudDbException on any Spanner error
      */
     @Override
     public void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
@@ -307,16 +309,10 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
             String partitionKeyVal = key.partitionKey();
             String sortKeyVal = key.sortKey() != null ? key.sortKey() : key.partitionKey();
 
-            com.google.cloud.spanner.Key spannerKey = com.google.cloud.spanner.Key.of(partitionKeyVal, sortKeyVal);
-            Mutation deleteMutation = Mutation.delete(table, KeySet.singleKey(spannerKey));
-
-            databaseClient.write(List.of(deleteMutation));
+            databaseClient.write(List.of(
+                    Mutation.delete(table, Key.of(partitionKeyVal, sortKeyVal))));
             logItemDiagnostics(OperationNames.DELETE, address);
         } catch (SpannerException e) {
-            // Delete is idempotent — NOT_FOUND is not an error
-            if (e.getErrorCode() == ErrorCode.NOT_FOUND) {
-                return;
-            }
             throw SpannerErrorMapper.map(e, OperationNames.DELETE);
         }
     }

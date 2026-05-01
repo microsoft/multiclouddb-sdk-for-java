@@ -283,8 +283,11 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
     /**
      * Deletes a document by its composite key.
      * <p>
-     * A 404 (item not found) response is treated as a success — delete is idempotent.
-     * All other Cosmos errors are mapped to a {@link com.multiclouddb.api.MulticloudDbException}.
+     * Idempotent: a 404 (item not found) response is treated as success and the
+     * call returns silently. This matches the natural behaviour of DynamoDB
+     * {@code DeleteItem} and Spanner {@code Mutation.delete}, giving the SDK a
+     * portable LCD contract: deleting a missing key is a no-op on every backend.
+     * All other Cosmos errors are mapped via {@link CosmosErrorMapper}.
      *
      * @param address the logical database + container
      * @param key     the document key identifying the item to delete

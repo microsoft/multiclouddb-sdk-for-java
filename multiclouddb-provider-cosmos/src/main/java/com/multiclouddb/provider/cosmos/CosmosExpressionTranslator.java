@@ -77,10 +77,15 @@ public final class CosmosExpressionTranslator implements ExpressionTranslator {
             sb.append(')');
 
         } else if (expr instanceof BetweenExpression between) {
-            sb.append("c.").append(between.field().name()).append(" BETWEEN ");
+            // Wrap in parentheses so the inner BETWEEN ... AND ... binds correctly
+            // when this expression is combined with an outer logical AND.
+            // Without parens Cosmos NoSQL rejects "BETWEEN @lo AND @hi AND ..." with
+            // a syntax error near the second AND.
+            sb.append("(c.").append(between.field().name()).append(" BETWEEN ");
             appendValue(between.low(), sb, srcParams, outParams);
             sb.append(" AND ");
             appendValue(between.high(), sb, srcParams, outParams);
+            sb.append(')');
         }
     }
 

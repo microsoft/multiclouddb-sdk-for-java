@@ -7,6 +7,23 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Documentation
+
+- **`delete()` of a missing key remains a silent no-op (idempotent).** The
+  Cosmos provider continues to swallow the native 404 from
+  `deleteItem(...)`, matching the LCD behaviour of DynamoDB
+  (`DeleteItem` is idempotent natively) and Spanner (`Mutation.delete` is
+  idempotent natively). Documented in the API Javadoc on
+  `MulticloudDbClient.delete(...)` and in `docs/guide.md`. No caller-visible
+  behaviour change. Callers needing to detect a missing key should use `read()`, which
+  returns `null` on every provider when the key does not exist.
+- *Audit trail*: an earlier draft of this PR introduced a strict
+  NOT_FOUND-on-delete contract (Cosmos retained the 404 throw; DynamoDB
+  added an `attribute_exists` guard; Spanner used a DML `DELETE` with a
+  rows-affected check). After review, that contract was abandoned in
+  favour of the LCD interpretation documented above; the strict-delete
+  code was reverted in this same PR before merge.
+
 ### Added
 
 - `consistencyLevel` connection config key for opt-in client-level read consistency
@@ -31,6 +48,17 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   previously `ConsistencyLevel.SESSION`) — removed without a deprecation cycle; the project
   is pre-release. Callers referencing this constant should use `ConsistencyLevel.SESSION`
   directly.
+
+### Fixed
+
+- **`BETWEEN` translation now wraps in parentheses** (`(c.field BETWEEN @lo AND @hi)`).
+  Without the wrapping parens, Cosmos NoSQL's parser greedily binds the
+  `BETWEEN`'s inner `AND` together with any trailing logical `AND`, producing
+  a *"Syntax error, incorrect syntax near 'AND'"* `BadRequest` for predicates
+  like `age BETWEEN @lo AND @hi AND marker = @m`. The output of
+  `TranslatedQuery.whereClause()` is now parenthesised — backward-compatible
+  at the query-execution level, but consumers that string-match the where
+  clause should update their expectations.
 
 ## [0.1.0-beta.1] — 2026-04-23
 

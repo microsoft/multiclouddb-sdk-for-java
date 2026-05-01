@@ -22,7 +22,7 @@ no asterisks, no provider-specific caveats, and no runtime checks required.
 | **Read** | Point-read by partition key + sort key |
 | **Update** | Replace an existing document (fails if not found) |
 | **Upsert** | Create or replace - always succeeds |
-| **Delete** | Remove by key (idempotent) |
+| **Delete** | Remove by key (idempotent — silent on missing; use `read()` to detect a missing key, since `read()` returns `null` on every provider) |
 
 ### Query - Portable Expression DSL
 

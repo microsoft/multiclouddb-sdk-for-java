@@ -28,7 +28,7 @@ portable API surface and error mapping reference, see
   - [read - Point Read](#read---point-read)
   - [update - Replace Existing](#update---replace-existing)
   - [upsert - Create or Replace](#upsert---create-or-replace)
-  - [delete - Idempotent Delete](#delete---idempotent-delete)
+  - [delete - Idempotent Delete](#delete---idempotent-delete-silent-on-missing-key)
   - [Document Field Injection](#document-field-injection)
 - [Query DSL](#query-dsl)
   - [Portable Expressions](#portable-expressions)
@@ -579,24 +579,35 @@ client.upsert(addr, key, doc);   // Creates or replaces the document
 | If not exists | Create | Create | Create |
 | Return value | None (void) | None (void) | None (void) |
 
-### delete - Idempotent Delete
+### delete - Idempotent Delete (silent on missing key)
 
-`delete()` removes a document by key. If the document doesn't exist, the
-operation **succeeds silently** (no error). This makes delete idempotent and
-safe for retry.
+`delete()` removes a document by key. If the document does not exist the
+operation is a **silent no-op** — no exception is thrown. This is the LCD
+across the supported providers: DynamoDB `DeleteItem` and Spanner
+`Mutation.delete` are both idempotent natively, and the Cosmos provider
+swallows the 404 to match. Callers can therefore retry deletes safely
+without bespoke "ignore NOT_FOUND" handling.
 
 ```java
 client.delete(addr, MulticloudDbKey.of("customer-456", "order-123"));
-// Succeeds whether or not the document exists
+// Safe to call again — second invocation is also a no-op.
+client.delete(addr, MulticloudDbKey.of("customer-456", "order-123"));
 ```
+
+If you need to detect whether a key exists, use `read()` — it returns
+`null` on every provider when the key does not exist, and does not mutate
+state. `update()` also throws `NOT_FOUND` on a missing key, but it
+requires a document body and **overwrites the existing document on hit**,
+so it is not a safe pure existence probe.
 
 **Key behavior across providers:**
 
 | Behavior | Cosmos DB | DynamoDB | Spanner |
 |----------|-----------|----------|---------|
-| Operation | `deleteItem(id, partitionKey)` | `deleteItem(keyMap)` | `Mutation.delete(key)` |
-| Not found | Silent success (HTTP 404 suppressed) | Silent success | Silent success |
+| Operation | `deleteItem(id, partitionKey)` | `deleteItem` (no condition) | `Mutation.delete(table, key)` |
+| Not found | 404 swallowed (silent) | Silent (native) | Silent (native) |
 | Return value | None (void) | None (void) | None (void) |
+
 
 ### Document Field Injection
 

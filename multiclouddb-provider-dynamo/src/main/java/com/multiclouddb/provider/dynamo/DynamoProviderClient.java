@@ -360,8 +360,11 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
     /**
      * Deletes an item from DynamoDB by its composite key.
      * <p>
-     * Uses a {@code DeleteItem} request. The operation succeeds silently if the item
-     * does not exist — delete is idempotent in DynamoDB.
+     * Idempotent: DynamoDB {@code DeleteItem} returns success even when the
+     * target item does not exist, so a delete of a missing key is a silent
+     * no-op. This matches the LCD cross-provider contract on
+     * {@link com.multiclouddb.api.MulticloudDbClient#delete}, where Cosmos
+     * swallows 404 and Spanner {@code Mutation.delete} naturally no-ops.
      *
      * @param address the logical database + collection
      * @param key     the document key identifying the item to delete
