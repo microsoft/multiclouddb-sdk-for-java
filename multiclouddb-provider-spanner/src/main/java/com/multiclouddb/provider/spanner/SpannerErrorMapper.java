@@ -73,7 +73,7 @@ public final class SpannerErrorMapper {
             case PERMISSION_DENIED -> MulticloudDbErrorCategory.AUTHORIZATION_FAILED;
             case RESOURCE_EXHAUSTED -> MulticloudDbErrorCategory.THROTTLED;
             case FAILED_PRECONDITION -> MulticloudDbErrorCategory.INVALID_REQUEST;
-            case ABORTED -> MulticloudDbErrorCategory.CONFLICT;
+            case ABORTED -> MulticloudDbErrorCategory.TRANSIENT_FAILURE;
             case UNIMPLEMENTED -> MulticloudDbErrorCategory.UNSUPPORTED_CAPABILITY;
             case INTERNAL -> MulticloudDbErrorCategory.PROVIDER_ERROR;
             case UNAVAILABLE -> MulticloudDbErrorCategory.TRANSIENT_FAILURE;
