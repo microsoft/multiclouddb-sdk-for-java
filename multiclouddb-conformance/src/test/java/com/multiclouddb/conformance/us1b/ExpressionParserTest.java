@@ -346,6 +346,28 @@ class ExpressionParserTest {
     // ---- Error cases ----
 
     @Test
+    @DisplayName("expression length over limit throws")
+    void expressionLengthOverLimitThrows() {
+        String longExpression = "a = 1 AND ".repeat(900) + "b = 2";
+
+        ExpressionParseException ex = assertThrows(ExpressionParseException.class,
+                () -> ExpressionParser.parse(longExpression));
+
+        assertTrue(ex.getMessage().contains("Expression length must be <="));
+    }
+
+    @Test
+    @DisplayName("deeply nested expression throws")
+    void deeplyNestedExpressionThrows() {
+        String nestedExpression = "(".repeat(101) + "a = 1" + ")".repeat(101);
+
+        ExpressionParseException ex = assertThrows(ExpressionParseException.class,
+                () -> ExpressionParser.parse(nestedExpression));
+
+        assertTrue(ex.getMessage().contains("Expression recursion depth must be <="));
+    }
+
+    @Test
     @DisplayName("null input throws ExpressionParseException")
     void nullInput() {
         assertThrows(ExpressionParseException.class, () -> ExpressionParser.parse(null));
