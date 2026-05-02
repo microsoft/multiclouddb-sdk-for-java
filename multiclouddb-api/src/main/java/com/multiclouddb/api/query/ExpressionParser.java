@@ -82,12 +82,12 @@ public final class ExpressionParser {
     // ---- Recursive descent ----
 
     private void enterRecursion() {
-        recursionDepth++;
-        if (recursionDepth > MAX_RECURSION_DEPTH) {
+        if (recursionDepth >= MAX_RECURSION_DEPTH) {
             throw new ExpressionParseException(
                     "Expression recursion depth must be <= " + MAX_RECURSION_DEPTH,
                     pos < tokens.size() ? tokens.get(pos).position : input.length());
         }
+        recursionDepth++;
     }
 
     private void exitRecursion() {
@@ -122,16 +122,16 @@ public final class ExpressionParser {
     }
 
     private Expression parseNotExpression() {
-        enterRecursion();
-        try {
-            if (matchKeyword("NOT")) {
+        if (matchKeyword("NOT")) {
+            enterRecursion();
+            try {
                 Expression child = parseNotExpression();
                 return new NotExpression(child);
+            } finally {
+                exitRecursion();
             }
-            return parsePrimary();
-        } finally {
-            exitRecursion();
         }
+        return parsePrimary();
     }
 
     private Expression parsePrimary() {

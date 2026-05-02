@@ -357,6 +357,14 @@ class ExpressionParserTest {
     }
 
     @Test
+    @DisplayName("expression at recursion depth limit parses")
+    void expressionAtRecursionDepthLimitParses() {
+        String nestedExpression = "(".repeat(100) + "a = 1" + ")".repeat(100);
+
+        assertDoesNotThrow(() -> ExpressionParser.parse(nestedExpression));
+    }
+
+    @Test
     @DisplayName("deeply nested expression throws")
     void deeplyNestedExpressionThrows() {
         String nestedExpression = "(".repeat(101) + "a = 1" + ")".repeat(101);
