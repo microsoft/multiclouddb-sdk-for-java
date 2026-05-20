@@ -40,6 +40,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.regex.Pattern;
 
 /**
  * Google Cloud Spanner provider client implementing CRUD + query operations.
@@ -64,6 +65,8 @@ import java.util.*;
 public class SpannerProviderClient implements MulticloudDbProviderClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(SpannerProviderClient.class);
+    private static final Pattern ORDER_BY_CLAUSE_PATTERN =
+            Pattern.compile("\\bORDER\\s+BY\\b", Pattern.CASE_INSENSITIVE);
 
     private final Spanner spanner;
     private final DatabaseClient databaseClient;
@@ -597,9 +600,10 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      * Appends ORDER BY and LIMIT N clauses for result-set control.
      * ORDER BY is appended before LIMIT/OFFSET is applied in {@link #executeStatement}.
      */
-    private String appendResultSetControl(String sql, QueryRequest query) {
+    private static String appendResultSetControl(String sql, QueryRequest query) {
         StringBuilder result = new StringBuilder(sql);
-        if (query != null && query.orderBy() != null && !query.orderBy().isEmpty()) {
+        if (query != null && query.orderBy() != null && !query.orderBy().isEmpty()
+                && !ORDER_BY_CLAUSE_PATTERN.matcher(sql).find()) {
             result.append(" ORDER BY ");
             for (int i = 0; i < query.orderBy().size(); i++) {
                 SortOrder so = query.orderBy().get(i);
