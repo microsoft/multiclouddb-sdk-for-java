@@ -14,6 +14,8 @@ import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
+import com.multiclouddb.api.changefeed.ChangeFeedPage;
+import com.multiclouddb.api.changefeed.ChangeFeedRequest;
 import com.multiclouddb.api.query.TranslatedQuery;
 
 import java.util.ArrayList;
@@ -227,6 +229,21 @@ public interface MulticloudDbProviderClient extends AutoCloseable {
                         false,
                         Map.of("exceptionType", primary.getClass().getName())),
                 primary);
+    }
+
+    /**
+     * Read a page of changes from the collection's change feed.
+     * <p>
+     * Default implementation throws {@link MulticloudDbException} with category
+     * {@link MulticloudDbErrorCategory#UNSUPPORTED_CAPABILITY}. Providers that
+     * support the change feed must override this method.
+     */
+    default ChangeFeedPage readChanges(ChangeFeedRequest request, OperationOptions options) {
+        throw new MulticloudDbException(new MulticloudDbError(
+                MulticloudDbErrorCategory.UNSUPPORTED_CAPABILITY,
+                "readChanges is not supported by provider " + providerId().id(),
+                providerId(), "readChanges", false,
+                java.util.Map.of("capability", "change_feed")));
     }
 
     /**

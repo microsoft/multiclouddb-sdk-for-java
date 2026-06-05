@@ -201,6 +201,52 @@ multiclouddb.connection.consistencyLevel=EVENTUAL
 
 ---
 
+## Change Feed Provisioning
+
+The portable change-feed API (`MulticloudDbClient.readChanges`) requires
+out-of-band provisioning on every provider before reads will succeed. The SDK
+itself does **not** create the underlying CDC resource — gate calls with
+`client.capabilities().isSupported(Capability.CHANGE_FEED)` and provision once during
+deployment.
+
+### Cosmos DB
+
+The container must be created with the `AllVersionsAndDeletes` change-feed
+mode to receive distinct CREATE / UPDATE / DELETE events. Containers created
+without it surface only the *latest* version of each document and never emit
+DELETE events. No SDK-level config key is required.
+
+### DynamoDB
+
+The table must have `StreamSpecification.StreamEnabled=true` and a
+`StreamViewType` of `NEW_AND_OLD_IMAGES` (or `NEW_IMAGE` if old values are not
+required). Streams expose `TRIM_HORIZON` / `LATEST` / sequence-number
+iterators, which map to `StartPosition.beginning()`, `StartPosition.now()`,
+and `StartPosition.fromContinuationToken(...)` respectively. The SDK fans
+out across shards internally via `FeedScope.entireCollection()`.
+
+### Google Cloud Spanner
+
+A change stream must be created via DDL ahead of time:
+
+```sql
+CREATE CHANGE STREAM events_changes FOR events
+  OPTIONS (value_capture_type = 'NEW_ROW');
+```
+
+| Key | Description |
+|-----|-------------|
+| `multiclouddb.connection.changeStream.<collection>` | Optional. Override the change-stream name to read for `<collection>`. Defaults to `<collection>_changes`. |
+
+`value_capture_type` should be `NEW_ROW` or `NEW_ROW_AND_OLD_VALUES` for
+`newItemStateMode = INCLUDE_IF_AVAILABLE` to populate event payloads;
+otherwise `data()` is `null`. The SDK fans out across Spanner partition
+tokens internally. The Spanner emulator
+does **not** support change streams — exercise the feature against a real
+Spanner instance.
+
+---
+
 ## Programmatic Configuration
 
 You can also configure the client programmatically using the builder:

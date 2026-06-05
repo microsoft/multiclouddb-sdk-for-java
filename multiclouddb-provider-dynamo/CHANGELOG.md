@@ -7,6 +7,31 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking change:** removed public `listPhysicalPartitions` support and `FeedScope` from the portable change-feed API. DynamoDB still performs internal multi-shard fan-out; the change feed always reads the entire collection.
+
+### Added
+
+- **Change feed (User Story 8)** — `DynamoProviderClient.readChanges`
+  implemented via DynamoDB Streams + the DynamoDB Streams Adapter for
+  internal multi-shard fan-out. Capability advertised: `CHANGE_FEED`.
+  Start positions map as follows:
+  `StartPosition.beginning()` → `TRIM_HORIZON`, `StartPosition.now()` →
+  `LATEST`, `StartPosition.fromContinuationToken(...)` → sequence-number
+  iterator.
+- **Provisioning prerequisite:** the table must have
+  `StreamSpecification.StreamEnabled=true` with a `StreamViewType` of
+  `NEW_AND_OLD_IMAGES` (or `NEW_IMAGE` when old values are not required).
+
+### Changed
+
+- **`BETWEEN` translation now wraps in parentheses** (`(field BETWEEN ? AND ?)`).
+  Mirrors the parenthesised form emitted by sibling translators so cross-provider
+  query stitching is uniform. PartiQL parses both forms correctly, so this is
+  not a correctness fix on Dynamo — purely a consistency improvement. The
+  output of `TranslatedQuery.whereClause()` is now parenthesised.
+
 ### Documentation
 
 - **`delete()` of a missing key remains a silent no-op (idempotent).** The
@@ -18,14 +43,6 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `MulticloudDbClient.delete(...)` and in `docs/guide.md`. Callers needing to detect a
   missing key should use `read()`, which returns `null` on every provider
   when the key does not exist.
-
-### Changed
-
-- **`BETWEEN` translation now wraps in parentheses** (`(field BETWEEN ? AND ?)`).
-  Mirrors the parenthesised form emitted by sibling translators so cross-provider
-  query stitching is uniform. PartiQL parses both forms correctly, so this is
-  not a correctness fix on Dynamo — purely a consistency improvement. The
-  output of `TranslatedQuery.whereClause()` is now parenthesised.
 
 ## [0.1.0-beta.1] — 2026-04-23
 

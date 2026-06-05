@@ -112,6 +112,43 @@ Each run exercises the full CRUD surface on a `products` collection:
 
 ---
 
+## Change Feed test
+
+A second runnable (`ChangeFeedMain`) exercises the portable Change Feed API
+end-to-end. It runs four phases against the configured provider and fails
+loudly if any of them break the portable contract:
+
+1. **entireCollection round-trip + replay** — anchors at `StartPosition.now()`,
+   seeds one CREATE / UPDATE / DELETE, drains forward until all three are
+   observed, then replays from the *original* anchor token and asserts every
+   event re-delivers (at-least-once contract).
+2. **NewItemStateMode.OMIT** — seeds a CREATE and asserts the surfaced event
+   has `data() == null`.
+3. **maxPageSize=1 paging** — seeds 3 CREATEs and asserts the cursor returns
+   at most one event per page while still surfacing every seeded key.
+
+It skips cleanly when the configured provider does not advertise
+`CHANGE_FEED`.
+
+```bash
+# Cosmos DB (default config). Container must be created with
+# changeFeedPolicy = AllVersionsAndDeletes — see docs/configuration.md.
+mvn -pl multiclouddb-e2e process-resources exec:java \
+    -Dexec.mainClass=com.microsoft.multiclouddb.e2e.ChangeFeedMain
+
+# DynamoDB (table must have StreamSpecification = NEW_AND_OLD_IMAGES)
+mvn -pl multiclouddb-e2e process-resources exec:java \
+    -Dexec.mainClass=com.microsoft.multiclouddb.e2e.ChangeFeedMain \
+    -Dmulticlouddb.config=dynamo.properties
+
+# Spanner (a `CHANGE STREAM <collection>_changes FOR <collection>` must exist)
+mvn -pl multiclouddb-e2e process-resources exec:java \
+    -Dexec.mainClass=com.microsoft.multiclouddb.e2e.ChangeFeedMain \
+    -Dmulticlouddb.config=spanner.properties
+```
+
+---
+
 ## Switching providers
 
 Edit the corresponding properties file in `src/main/resources/`, then pass it
@@ -144,7 +181,8 @@ multiclouddb-e2e/
 ├── README.md
 └── src/main/
     ├── java/com/microsoft/multiclouddb/e2e/
-    │   ├── Main.java                    ← Entry point; orchestrates the E2E run
+    │   ├── Main.java                    ← CRUD/query E2E entry point
+    │   ├── ChangeFeedMain.java          ← Change Feed E2E entry point
     │   └── ConfigLoader.java            ← Loads *.properties, builds SDK config
     └── resources/
         ├── cosmos.properties.template   ← Cosmos DB config template (committed)

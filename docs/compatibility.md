@@ -65,7 +65,11 @@ QueryPage page = client.query(address, query);
 | **Transactions** | Multi-document transactional operations |
 | **Batch operations** | Batch read/write for throughput efficiency |
 | **Strong consistency** | Strongly-consistent reads |
-| **Change feed** | Change feed / change streams |
+| **Change feed** | Change-data-capture (`MulticloudDbClient.readChanges`) — portable across all providers |
+
+The change-feed API surface is identical for all providers: every
+`StartPosition` variant works on Cosmos, Dynamo, and
+Spanner. The SDK handles physical-partition fan-out internally.
 
 ### Diagnostics & Error Handling
 

@@ -15,6 +15,14 @@ module com.multiclouddb.api {
     // Public API — what app developers use
     exports com.multiclouddb.api;
     exports com.multiclouddb.api.query;
+    exports com.multiclouddb.api.changefeed;
+
+    // Internal change-feed helpers exported only to provider modules.
+    exports com.multiclouddb.api.changefeed.internal to
+        com.multiclouddb.provider.cosmos,
+        com.multiclouddb.provider.dynamo,
+        com.multiclouddb.provider.spanner,
+        com.multiclouddb.conformance;
 
     // SPI — only to provider modules and the conformance test suite, not to app code.
     // NOTE: multiclouddb-conformance currently has no module-info.java and runs on

@@ -4,6 +4,7 @@
 package com.multiclouddb.provider.dynamo;
 
 import com.multiclouddb.api.OperationNames;
+import com.multiclouddb.api.ResourceAddress;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.dynamodb.model.BillingMode;
@@ -77,6 +78,18 @@ class DynamoConstantsTest {
     @DisplayName("TABLE_NAME_SEPARATOR is double underscore")
     void tableNameSeparator() {
         assertEquals("__", DynamoConstants.TABLE_NAME_SEPARATOR);
+    }
+
+    @Test
+    @DisplayName("tableNameFor encodes (database, collection) with the separator")
+    void tableNameForEncodesDatabaseAndCollection() {
+        // The provider stores logical (database, collection) pairs as a single
+        // physical Dynamo table. Every read/write call site (CRUD, query,
+        // change-feed stream lookup) MUST go through this helper so they all
+        // resolve the same physical name; a divergence (e.g. using the bare
+        // collection) was the cause of the round-2 change-feed regression.
+        ResourceAddress addr = new ResourceAddress("orders_db", "line_items");
+        assertEquals("orders_db__line_items", DynamoConstants.tableNameFor(addr));
     }
 
     @Test

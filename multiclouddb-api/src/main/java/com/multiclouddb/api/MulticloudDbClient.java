@@ -3,6 +3,10 @@
 
 package com.multiclouddb.api;
 
+import com.multiclouddb.api.changefeed.ChangeFeedPage;
+import com.multiclouddb.api.changefeed.ChangeFeedRequest;
+
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -138,6 +142,30 @@ public interface MulticloudDbClient extends AutoCloseable {
      */
     default QueryPage query(ResourceAddress address, QueryRequest query) {
         return query(address, query, OperationOptions.defaults());
+    }
+
+    /**
+     * Read a page of changes from the change feed of the addressed collection.
+     * <p>
+     * Capability gates:
+     * <ul>
+     *   <li>{@link Capability#CHANGE_FEED} — must be supported by the provider.</li>
+     * </ul>
+     * Returns {@link ChangeFeedPage#events()} (possibly empty) with a
+     * resumption {@link ChangeFeedPage#continuationToken()}.
+     *
+     * @throws MulticloudDbException with category UNSUPPORTED_CAPABILITY when
+     *                               the provider does not support the change
+     *                               feed, INVALID_REQUEST for malformed/
+     *                               cross-provider tokens, or
+     *                               CHECKPOINT_EXPIRED when the cursor has
+     *                               been trimmed
+     */
+    ChangeFeedPage readChanges(ChangeFeedRequest request, OperationOptions options);
+
+    /** Read changes using default options. */
+    default ChangeFeedPage readChanges(ChangeFeedRequest request) {
+        return readChanges(request, OperationOptions.defaults());
     }
 
     /**

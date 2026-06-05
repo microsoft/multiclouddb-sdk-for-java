@@ -7,6 +7,10 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking change:** removed public `listPhysicalPartitions` support and `FeedScope` from the portable change-feed API. Cosmos still manages feed ranges internally; the change feed always reads the entire collection.
+
 ### Documentation
 
 - **`delete()` of a missing key remains a silent no-op (idempotent).** The
@@ -20,6 +24,13 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **Change feed (User Story 8)** — `CosmosProviderClient.readChanges`
+  implemented via `CosmosContainer.queryChangeFeed`. Capability advertised:
+  `CHANGE_FEED`. **Provisioning prerequisite:** containers must be created
+  with the `AllVersionsAndDeletes` change-feed mode to receive distinct
+  CREATE / UPDATE / DELETE events; containers in the default
+  (`LatestVersion`) mode emit only the latest snapshot of each document
+  and never surface DELETE events.
 - `consistencyLevel` connection config key for opt-in client-level read consistency
   override (applied uniformly to every read from a given client instance). Valid values (case-insensitive): `STRONG`, `BOUNDED_STALENESS`, `SESSION`,
   `CONSISTENT_PREFIX`, `EVENTUAL`. When absent, read requests inherit the Cosmos DB

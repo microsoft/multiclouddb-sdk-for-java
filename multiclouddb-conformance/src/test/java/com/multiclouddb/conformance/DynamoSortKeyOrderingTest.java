@@ -76,6 +76,10 @@ class DynamoSortKeyOrderingTest extends SortKeyOrderingConformanceTest {
                                     .attributeName("sortKey")
                                     .attributeType(ScalarAttributeType.S).build())
                     .billingMode(BillingMode.PAY_PER_REQUEST)
+                    .streamSpecification(StreamSpecification.builder()
+                            .streamEnabled(true)
+                            .streamViewType(StreamViewType.NEW_AND_OLD_IMAGES)
+                            .build())
                     .build());
         }
     }

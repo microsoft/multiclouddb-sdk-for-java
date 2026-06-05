@@ -3,6 +3,7 @@
 
 package com.multiclouddb.provider.dynamo;
 
+import com.multiclouddb.api.ResourceAddress;
 import software.amazon.awssdk.services.dynamodb.model.BillingMode;
 import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
 
@@ -62,6 +63,17 @@ public final class DynamoConstants {
      * Table names follow the pattern: {@code database + TABLE_NAME_SEPARATOR + collection}.
      */
     public static final String TABLE_NAME_SEPARATOR = "__";
+
+    /**
+     * Resolve the physical DynamoDB table name for a logical
+     * {@link ResourceAddress}. Table names are encoded as
+     * {@code database + TABLE_NAME_SEPARATOR + collection}; every Dynamo
+     * provider call site (CRUD, query, change-feed) must use this helper so
+     * the encoding stays consistent.
+     */
+    public static String tableNameFor(ResourceAddress address) {
+        return address.database() + TABLE_NAME_SEPARATOR + address.collection();
+    }
 
     // ── Table schema ─────────────────────────────────────────────────────────
 

@@ -87,6 +87,8 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
 
     private final MulticloudDbClientConfig config;
     private final DynamoDbClient dynamoClient;
+    private volatile software.amazon.awssdk.services.dynamodb.streams.DynamoDbStreamsClient streamsClient;
+    private volatile DynamoChangeFeed changeFeed;
 
     /**
      * Constructs a DynamoDB provider client from the supplied configuration.
@@ -818,7 +820,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      * @return the physical DynamoDB table name
      */
     private String resolveTableName(ResourceAddress address) {
-        return address.database() + DynamoConstants.TABLE_NAME_SEPARATOR + address.collection();
+        return DynamoConstants.tableNameFor(address);
     }
 
     /**
@@ -908,12 +910,49 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
     }
 
     @Override
+    public com.multiclouddb.api.changefeed.ChangeFeedPage readChanges(
+            com.multiclouddb.api.changefeed.ChangeFeedRequest request,
+            OperationOptions options) {
+        return changeFeed().readChanges(request, options);
+    }
+
+    private synchronized DynamoChangeFeed changeFeed() {
+        if (changeFeed == null) {
+            // Build streams client mirroring the data-plane client config.
+            String region   = config.connection().getOrDefault(DynamoConstants.CONFIG_REGION, DynamoConstants.REGION_DEFAULT);
+            String endpoint = config.connection().get(DynamoConstants.CONFIG_ENDPOINT);
+            software.amazon.awssdk.services.dynamodb.streams.DynamoDbStreamsClientBuilder b =
+                    software.amazon.awssdk.services.dynamodb.streams.DynamoDbStreamsClient.builder()
+                            .region(Region.of(region))
+                            .overrideConfiguration(ClientOverrideConfiguration.builder()
+                                    .putAdvancedOption(SdkAdvancedClientOption.USER_AGENT_SUFFIX,
+                                            SdkUserAgent.userAgent(config))
+                                    .build());
+            if (endpoint != null && !endpoint.isBlank()) {
+                b.endpointOverride(URI.create(endpoint));
+            }
+            String accessKey = config.auth().get(DynamoConstants.CONFIG_ACCESS_KEY_ID);
+            String secretKey = config.auth().get(DynamoConstants.CONFIG_SECRET_ACCESS_KEY);
+            if (accessKey != null && secretKey != null) {
+                b.credentialsProvider(StaticCredentialsProvider.create(
+                        AwsBasicCredentials.create(accessKey, secretKey)));
+            }
+            this.streamsClient = b.build();
+            this.changeFeed = new DynamoChangeFeed(dynamoClient, streamsClient);
+        }
+        return changeFeed;
+    }
+
+    @Override
     public ProviderId providerId() {
         return ProviderId.DYNAMO;
     }
 
     @Override
     public void close() {
+        if (streamsClient != null) {
+            try { streamsClient.close(); } catch (Exception ignored) { }
+        }
         dynamoClient.close();
     }
 

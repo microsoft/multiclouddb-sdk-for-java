@@ -17,6 +17,8 @@ import software.amazon.awssdk.services.dynamodb.model.KeySchemaElement;
 import software.amazon.awssdk.services.dynamodb.model.KeyType;
 import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
 import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
+import software.amazon.awssdk.services.dynamodb.model.StreamSpecification;
+import software.amazon.awssdk.services.dynamodb.model.StreamViewType;
 
 import java.net.URI;
 import java.util.List;
@@ -68,6 +70,10 @@ class DynamoQueryIntegrationTest {
                             AttributeDefinition.builder().attributeName("partitionKey").attributeType(ScalarAttributeType.S).build(),
                             AttributeDefinition.builder().attributeName("sortKey").attributeType(ScalarAttributeType.S).build())
                     .billingMode(BillingMode.PAY_PER_REQUEST)
+                    .streamSpecification(StreamSpecification.builder()
+                            .streamEnabled(true)
+                            .streamViewType(StreamViewType.NEW_AND_OLD_IMAGES)
+                            .build())
                     .build());
             System.out.println("[DynamoDB] Created table: " + TABLE);
         }

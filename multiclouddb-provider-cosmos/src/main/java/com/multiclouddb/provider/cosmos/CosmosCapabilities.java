@@ -23,7 +23,7 @@ public final class CosmosCapabilities {
             Capability.BATCH_OPERATIONS_CAP.withNotes("Bulk and transactional batch"),
             Capability.STRONG_CONSISTENCY_CAP.withNotes("Configurable consistency levels including Strong"),
             Capability.NATIVE_SQL_QUERY_CAP.withNotes("SQL-like query language"),
-            Capability.CHANGE_FEED_CAP.withNotes("Change feed processor for real-time changes"),
+            Capability.CHANGE_FEED_CAP.withNotes("Change feed via queryChangeFeed; for distinct CREATE/UPDATE/DELETE events, container must be configured with AllVersionsAndDeletes mode"),
             // Query DSL capabilities
             Capability.PORTABLE_QUERY_EXPRESSION_CAP.withNotes("Portable expression translation to Cosmos SQL"),
             Capability.LIKE_OPERATOR_CAP.withNotes("LIKE operator supported via Cosmos SQL"),

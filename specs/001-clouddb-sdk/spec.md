@@ -769,12 +769,12 @@ This checklist is used to accept the feature as “done” at the spec level.
 
 ### Change Data Capture / Change Feed
 
-- [ ] A change feed consumer receives create and update events in chronological order on all providers that support change feed.
-- [ ] Change feed consumption can be started from the beginning, a specific point in time, or a stored checkpoint token.
-- [ ] Change feed returns checkpoint tokens that enable resumable consumption across consumer restarts.
-- [ ] Partition-scoped change feed consumption returns only changes within the specified partition.
-- [ ] Delete detection is separately capability-gated and raises a clear error on providers/modes that do not surface delete events.
-- [ ] The same change feed consumer code works across all supported providers by changing configuration only.
+- [x] A change feed consumer receives create and update events in chronological order on all providers that support change feed.
+- [x] Change feed consumption can be started from the beginning, a specific point in time, or a stored checkpoint token.
+- [x] Change feed returns checkpoint tokens that enable resumable consumption across consumer restarts.
+- [x] Partition-scoped change feed consumption returns only changes within the specified partition.
+- [x] Delete detection is part of the base `CHANGE_FEED` capability; providers or modes that cannot surface delete events fail provisioning (or report `UNSUPPORTED_CAPABILITY`) with a clear error before the consumer reads.
+- [x] The same change feed consumer code works across all supported providers by changing configuration only.
 
 ### Bulk Operations
 

@@ -11,6 +11,19 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### [Unreleased]
 
+**Added (Change feed — User Story 8):**
+
+- New `com.multiclouddb.api.changefeed` package with
+  `MulticloudDbClient.readChanges`,
+  `ChangeFeedRequest` / `ChangeFeedPage` / `ChangeEvent`, and sealed
+  `StartPosition`
+  (Beginning / Now / FromContinuationToken) types. The API surface is
+  **fully portable**: every option combination works identically on every
+  provider.
+- New capability token: `change_feed` — introspectable via
+  `client.capabilities()`.
+- New SPI hook `MulticloudDbProviderClient.readChanges`.
+
 **Documentation:**
 
 - `MulticloudDbClient.delete(...)` is documented as idempotent — silent on
@@ -70,6 +83,16 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   Cosmos DB account's configured default. See `docs/configuration.md` —
   *Consistency Level*.
 
+**Added (Change feed — User Story 8):**
+
+- `CosmosProviderClient.readChanges` via
+  `CosmosContainer.queryChangeFeed` with `FeedRange`. Capability:
+  `change_feed`.
+- **Provisioning:** containers must be created with the
+  `AllVersionsAndDeletes` mode for distinct CREATE / UPDATE / DELETE
+  events; `LatestVersion` containers emit only the latest snapshot and
+  never surface DELETE events.
+
 **Changed:**
 
 - Removed the hardcoded `ConsistencyLevel.SESSION` override from
@@ -80,17 +103,6 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   before). Accounts configured to `SESSION` are unaffected. To restore the
   previous behaviour explicitly, set
   `multiclouddb.connection.consistencyLevel=SESSION`.
-
-**Removed:**
-
-- `CosmosConstants.CONSISTENCY_LEVEL_DEFAULT`
-  (`public static final ConsistencyLevel`, previously
-  `ConsistencyLevel.SESSION`) — removed without a deprecation cycle; the
-  project is pre-release. Callers referencing this constant should use
-  `ConsistencyLevel.SESSION` directly.
-
-**Changed:**
-
 - `BETWEEN` translation now wraps in parentheses
   (`(c.field BETWEEN @lo AND @hi)`). Without the wrapping parens, Cosmos
   NoSQL's parser greedily binds the `BETWEEN`'s inner `AND` together with any
@@ -100,6 +112,14 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   `TranslatedQuery.whereClause()` is now parenthesised — backward-compatible
   at the query-execution level, but consumers that string-match the where
   clause should update their expectations.
+
+**Removed:**
+
+- `CosmosConstants.CONSISTENCY_LEVEL_DEFAULT`
+  (`public static final ConsistencyLevel`, previously
+  `ConsistencyLevel.SESSION`) — removed without a deprecation cycle; the
+  project is pre-release. Callers referencing this constant should use
+  `ConsistencyLevel.SESSION` directly.
 
 **Documentation:**
 
@@ -133,6 +153,17 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ## multiclouddb-provider-dynamo
 
 ### [Unreleased]
+
+**Added (Change feed — User Story 8):**
+
+- `DynamoProviderClient.readChanges` via
+  DynamoDB Streams + the DynamoDB Streams Adapter
+  (shard-iterator-based fan-out). Capability: `change_feed`.
+  `StartPosition.beginning()` maps to `TRIM_HORIZON`, `now()` to
+  `LATEST`, `fromContinuationToken(...)` to a sequence-number iterator.
+- **Provisioning:** the table must have
+  `StreamSpecification.StreamEnabled=true` with `StreamViewType` of
+  `NEW_AND_OLD_IMAGES` (or `NEW_IMAGE`).
 
 **Changed:**
 
@@ -173,6 +204,22 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ## multiclouddb-provider-spanner
 
 ### [Unreleased]
+
+**Added (Change feed — User Story 8):**
+
+- `SpannerProviderClient.readChanges` via
+  Spanner Change Streams using the
+  `READ_<stream>(start, end, partition_token, hb)` SQL TVF; parses
+  `data_change_record` and `child_partitions_record`. Capability:
+  `change_feed`.
+- New connection key `connection.changeStream.<collection>` (defaults to
+  `<collection>_changes`).
+- **Provisioning:** `CREATE CHANGE STREAM <name> FOR <table> OPTIONS
+  (value_capture_type='NEW_ROW')` must be run out-of-band.
+  `value_capture_type` should be `NEW_ROW` or `NEW_ROW_AND_OLD_VALUES`
+  for `newItemStateMode = INCLUDE_IF_AVAILABLE` to populate event
+  payloads; otherwise `data()` is `null`. The Spanner emulator
+  does **not** support change streams.
 
 **Changed:**
 

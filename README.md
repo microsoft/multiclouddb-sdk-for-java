@@ -472,7 +472,7 @@ for (Capability cap : caps.all()) {
 | Transactions | ✓ | ✓ | ✓ |
 | Batch operations | ✓ | ✓ | ✓ |
 | Strong consistency | ✓ | ✓ | ✓ |
-| Change feed | ✓ | ✓ | ✓ |
+| **Change feed (CDC)** | ✓ | ✓ | ✓ |
 | **Result limit** (`Top N`) | ✓ | ✓ (per-page) | ✓ |
 | **ORDER BY** | ✓ | ✗ | ✓ |
 | **Row-level TTL** | ✓ | ✓ | ✗ |

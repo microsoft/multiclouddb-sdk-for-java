@@ -294,6 +294,13 @@
             <id>emulator-cosmos</id>
             <properties>
                 <test.includedGroups>cosmos</test.includedGroups>
+                <!--
+                    Exclude changefeed tests from emulator runs: the Cosmos DB Emulator
+                    does not support AllVersionsAndDeletes change feed mode.
+                    Re-enable once the emulator adds support for this feature.
+                    Change feed tests run against live services in the e2e workflow.
+                -->
+                <test.excludedGroups>changefeed</test.excludedGroups>
             </properties>
             <build>
                 <plugins>

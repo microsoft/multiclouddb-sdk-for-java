@@ -23,7 +23,7 @@ public final class SpannerCapabilities {
             Capability.BATCH_OPERATIONS_CAP.withNotes("Spanner mutation batches"),
             Capability.STRONG_CONSISTENCY_CAP.withNotes("External consistency (linearizability)"),
             Capability.NATIVE_SQL_QUERY_CAP.withNotes("Full GoogleSQL or PostgreSQL-dialect SQL"),
-            Capability.CHANGE_FEED_CAP.withNotes("Change Streams"),
+            Capability.CHANGE_FEED_CAP.withNotes("Change Streams via TVF; requires CREATE CHANGE STREAM <name> FOR <table>(...) DDL ahead of time. Stream name resolved from connection key 'changeStream.<collection>' (defaults to '<collection>_changes')"),
             // Query DSL capabilities
             Capability.PORTABLE_QUERY_EXPRESSION_CAP.withNotes("Portable expression translation to Spanner GoogleSQL"),
             Capability.LIKE_OPERATOR_CAP.withNotes("LIKE operator supported in GoogleSQL"),

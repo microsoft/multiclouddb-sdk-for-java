@@ -47,6 +47,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
 
     private final CosmosClient cosmosClient;
     private final MulticloudDbClientConfig config;
+    private final String endpoint;
 
 
     /**
@@ -73,6 +74,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         if (endpoint == null || endpoint.isBlank()) {
             throw new IllegalArgumentException(CosmosConstants.ERR_ENDPOINT_REQUIRED);
         }
+        this.endpoint = endpoint;
 
         CosmosClientBuilder builder = new CosmosClientBuilder()
                 .endpoint(endpoint)
@@ -491,6 +493,13 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
     }
 
     @Override
+    public com.multiclouddb.api.changefeed.ChangeFeedPage readChanges(
+            com.multiclouddb.api.changefeed.ChangeFeedRequest request,
+            OperationOptions options) {
+        return new CosmosChangeFeed(this).readChanges(request, options);
+    }
+
+    @Override
     public ProviderId providerId() {
         return ProviderId.COSMOS;
     }
@@ -565,6 +574,19 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
     private CosmosContainer getContainer(ResourceAddress address) {
         CosmosDatabase database = cosmosClient.getDatabase(address.database());
         return database.getContainer(address.collection());
+    }
+
+    /**
+     * Package-private accessor for the change-feed adapter
+     * ({@link CosmosChangeFeed}). Mirrors the private helper used elsewhere.
+     */
+    CosmosContainer getContainerInternal(ResourceAddress address) {
+        return getContainer(address);
+    }
+
+    /** Account endpoint URL — used by {@link CosmosChangeFeed} to scope its caches. */
+    String endpoint() {
+        return endpoint;
     }
 
     /**

@@ -7,6 +7,37 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking change:** removed public `listPhysicalPartitions` support and `FeedScope` from the portable change-feed API. Spanner still traverses child partitions internally; the change feed always reads the entire collection.
+
+### Added
+
+- **Change feed (User Story 8)** — `SpannerProviderClient.readChanges`
+  implemented via Spanner Change Streams using the
+  `READ_<stream>(start_timestamp, end_timestamp, partition_token,
+  heartbeat_milliseconds)` SQL TVF. Parses `data_change_record` (mods →
+  CREATE / UPDATE / DELETE) and `child_partitions_record` for internal
+  partition-queue fan-out. Capability advertised: `CHANGE_FEED`.
+- New connection key `connection.changeStream.<collection>` to override the
+  change-stream name read for `<collection>`. When unset, the SDK falls
+  back to the convention `<collection>_changes`.
+- **Provisioning prerequisite:** create the change stream out-of-band:
+  `CREATE CHANGE STREAM <name> FOR <table> OPTIONS
+  (value_capture_type = 'NEW_ROW')`. `value_capture_type` should be
+  `NEW_ROW` or `NEW_ROW_AND_OLD_VALUES` for
+  `newItemStateMode = INCLUDE_IF_AVAILABLE` to populate event payloads;
+  otherwise `data()` is `null`. The Spanner emulator does **not** support
+  change streams — exercise this feature against a real Spanner instance.
+
+### Changed
+
+- **`BETWEEN` translation now wraps in parentheses** (`(field BETWEEN @lo AND @hi)`).
+  Mirrors the parenthesised form emitted by sibling translators so cross-provider
+  query stitching is uniform. GoogleSQL parses both forms correctly, so this is
+  not a correctness fix on Spanner — purely a consistency improvement. The
+  output of `TranslatedQuery.whereClause()` is now parenthesised.
+
 ### Documentation
 
 - **`delete()` of a missing key remains a silent no-op (idempotent).** The
@@ -18,14 +49,6 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `MulticloudDbClient.delete(...)` and in `docs/guide.md`. Callers needing to detect a
   missing key should use `read()`, which returns `null` on every provider
   when the key does not exist.
-
-### Changed
-
-- **`BETWEEN` translation now wraps in parentheses** (`(field BETWEEN @lo AND @hi)`).
-  Mirrors the parenthesised form emitted by sibling translators so cross-provider
-  query stitching is uniform. GoogleSQL parses both forms correctly, so this is
-  not a correctness fix on Spanner — purely a consistency improvement. The
-  output of `TranslatedQuery.whereClause()` is now parenthesised.
 
 ## [0.1.0-beta.1] — 2026-04-23
 

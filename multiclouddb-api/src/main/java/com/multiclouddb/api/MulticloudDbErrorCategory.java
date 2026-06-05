@@ -124,6 +124,17 @@ public final class MulticloudDbErrorCategory {
     public static final MulticloudDbErrorCategory UNSUPPORTED_CAPABILITY =
             fromString("UNSUPPORTED_CAPABILITY");
 
+    /**
+     * The continuation cursor presented to a change-feed read has been trimmed
+     * by the provider (e.g. Dynamo's 24-hour stream retention has elapsed,
+     * Cosmos has aged out the LSN, or Spanner's change-stream retention window
+     * has passed). The caller must restart from a fresh
+     * {@link com.multiclouddb.api.changefeed.StartPosition#beginning()} or
+     * {@link com.multiclouddb.api.changefeed.StartPosition#now()}.
+     */
+    public static final MulticloudDbErrorCategory CHECKPOINT_EXPIRED =
+            fromString("CHECKPOINT_EXPIRED");
+
 
     // ── Factory ──────────────────────────────────────────────────────────────
 
