@@ -146,9 +146,6 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             ObjectNode doc = toObjectNode(document);
             doc.put(CosmosConstants.FIELD_ID, key.sortKey() != null ? key.sortKey() : key.partitionKey());
             doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
-            if (options != null && options.ttlSeconds() != null) {
-                doc.put(CosmosConstants.FIELD_TTL, options.ttlSeconds());
-            }
             PartitionKey pk = resolvePartitionKey(key);
             CosmosItemResponse<ObjectNode> response = container.createItem(doc, pk, new CosmosItemRequestOptions());
             logItemDiagnostics(OperationNames.CREATE, address, response);
@@ -190,20 +187,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             ObjectNode item = raw.deepCopy();
             CosmosConstants.SYSTEM_FIELDS.forEach(item::remove);
 
-            DocumentMetadata metadata = null;
-            if (options != null && options.includeMetadata()) {
-                DocumentMetadata.Builder metaBuilder = DocumentMetadata.builder();
-                if (response.getETag() != null) {
-                    metaBuilder.version(response.getETag());
-                }
-                // _ts is a Unix epoch second — expose as lastModified
-                JsonNode tsNode = raw.get(CosmosConstants.SYS_TIMESTAMP);
-                if (tsNode != null && tsNode.isNumber()) {
-                    metaBuilder.lastModified(Instant.ofEpochSecond(tsNode.longValue()));
-                }
-                metadata = metaBuilder.build();
-            }
-            return new DocumentResult(item, metadata);
+            return new DocumentResult(item);
         } catch (CosmosException e) {
             if (e.getStatusCode() == 404) {
                 return null;
@@ -236,9 +220,6 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             String cosmosId = key.sortKey() != null ? key.sortKey() : key.partitionKey();
             doc.put(CosmosConstants.FIELD_ID, cosmosId);
             doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
-            if (options != null && options.ttlSeconds() != null) {
-                doc.put(CosmosConstants.FIELD_TTL, options.ttlSeconds());
-            }
             PartitionKey pk = resolvePartitionKey(key);
             CosmosItemResponse<ObjectNode> response = container.replaceItem(doc, cosmosId, pk, new CosmosItemRequestOptions());
             logItemDiagnostics(OperationNames.UPDATE, address, response);
@@ -268,9 +249,6 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             ObjectNode doc = toObjectNode(document);
             doc.put(CosmosConstants.FIELD_ID, key.sortKey() != null ? key.sortKey() : key.partitionKey());
             doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
-            if (options != null && options.ttlSeconds() != null) {
-                doc.put(CosmosConstants.FIELD_TTL, options.ttlSeconds());
-            }
             PartitionKey pk = resolvePartitionKey(key);
             CosmosItemResponse<ObjectNode> response = container.upsertItem(doc, pk, new CosmosItemRequestOptions());
             logItemDiagnostics(OperationNames.UPSERT, address, response);
@@ -314,27 +292,13 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
     /**
      * Executes a query and returns a single page of results.
      * <p>
-     * Query routing logic (evaluated in order):
-     * <ol>
-     *   <li>If {@link QueryRequest#nativeExpression()} is set, it is used as-is as the
-     *       Cosmos SQL string (native passthrough).</li>
-     *   <li>If {@link QueryRequest#expression()} is set, it is used as the Cosmos SQL
-     *       WHERE expression.</li>
-     *   <li>If neither is set, {@code SELECT * FROM c} is used (full container scan).</li>
-     * </ol>
-     * Named parameters ({@code @name} syntax) from {@link QueryRequest#parameters()} are
-     * bound as {@link SqlParameter} values. Parameter names that do not already start with
-     * {@code @} are prefixed automatically.
-     * <p>
-     * If {@link QueryRequest#partitionKey()} is set, the query is scoped to a single
-     * logical partition via {@link CosmosQueryRequestOptions#setPartitionKey}, avoiding
-     * a cross-partition fan-out.
-     * <p>
-     * Only the first page of results is returned; pass the returned
-     * {@link QueryPage#continuationToken()} in the next request to page forward.
+     * Used by the SDK when no portable filter expression is set (partition scan).
+     * If {@link QueryRequest#partitionKey()} is set, the query is scoped to that
+     * single logical partition. The portable expression pipeline is invoked
+     * directly via {@link #queryWithTranslation} when an expression is present.
      *
      * @param address the logical database + container to query
-     * @param query   query request containing expression, parameters, page size, and
+     * @param query   query request containing partition key, page size, and
      *                optional continuation token
      * @param options operation options (currently unused by this provider)
      * @return a page of results; {@link QueryPage#continuationToken()} is non-null when
@@ -346,22 +310,13 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         try {
             CosmosContainer container = getContainer(address);
             CosmosQueryRequestOptions queryOptions = new CosmosQueryRequestOptions();
-            if (query.partitionKey() != null) {
-                queryOptions.setPartitionKey(new PartitionKey(query.partitionKey()));
-            }
+            queryOptions.setPartitionKey(new PartitionKey(query.partitionKey()));
             if (query.maxPageSize() != null) {
                 queryOptions.setMaxBufferedItemCount(query.maxPageSize());
             }
 
-            String expression = query.nativeExpression() != null ? query.nativeExpression() : query.expression();
-            if (expression == null || expression.isBlank()) {
-                expression = CosmosConstants.QUERY_SELECT_ALL;
-            }
-
-            // Apply TOP N and ORDER BY for non-native expressions
-            if (query.nativeExpression() == null) {
-                expression = applyResultSetControl(expression, query);
-            }
+            String expression = CosmosConstants.QUERY_SELECT_ALL;
+            expression = applyResultSetControl(expression, query);
 
             List<SqlParameter> sqlParams = new ArrayList<>();
             if (query.parameters() != null) {
@@ -436,9 +391,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         try {
             CosmosContainer container = getContainer(address);
             CosmosQueryRequestOptions queryOptions = new CosmosQueryRequestOptions();
-            if (query.partitionKey() != null) {
-                queryOptions.setPartitionKey(new PartitionKey(query.partitionKey()));
-            }
+            queryOptions.setPartitionKey(new PartitionKey(query.partitionKey()));
             if (query.maxPageSize() != null) {
                 queryOptions.setMaxBufferedItemCount(query.maxPageSize());
             }
@@ -631,21 +584,20 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
     }
 
     /**
-     * Applies TOP N (limit) and ORDER BY from the query request to a Cosmos SQL string.
+     * Applies ORDER BY from the query request to a Cosmos SQL string.
      * <p>
-     * For TOP N: rewrites {@code SELECT} to {@code SELECT TOP N} when limit is set.
+     * Under strict LCD, the public API restricts {@code orderBy} to the
+     * {@code "sortKey"} field — this method translates it to {@code ORDER BY c.id}
+     * (Cosmos uses the {@code id} field as the document identifier, which the
+     * SDK populates from {@link MulticloudDbKey#sortKey()}).
      * <p>
-     * For ORDER BY: appends {@code ORDER BY c.field ASC/DESC} when an explicit
-     * {@code orderBy} is set, or appends {@code ORDER BY c.id ASC} as a default for
-     * all queries without an explicit order (to match DynamoDB's implicit sort behavior).
-     * <p>
-     * The default {@code ORDER BY} is <b>skipped</b> when:
+     * When no explicit {@code orderBy} is supplied a default {@code ORDER BY c.id ASC}
+     * is appended to match DynamoDB's implicit sort-key ordering. The default is
+     * skipped when:
      * <ul>
-     *   <li>The SQL already contains an {@code ORDER BY} clause (idempotency guard —
-     *       uses a word-boundary regex so string literals containing "order by" are
-     *       not mistakenly detected).</li>
+     *   <li>The SQL already contains an {@code ORDER BY} clause (idempotency guard).</li>
      *   <li>The SQL contains an aggregate function ({@code COUNT}, {@code SUM},
-     *       {@code MIN}, {@code MAX}, {@code AVG}) or a {@code GROUP BY} clause —
+     *       {@code MIN}, {@code MAX}, {@code AVG}) or {@code GROUP BY} —
      *       Cosmos DB rejects {@code ORDER BY} on aggregate queries.</li>
      * </ul>
      * <p>
@@ -654,61 +606,22 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
     static String applyResultSetControl(String sql, QueryRequest query) {
         String result = sql;
 
-        // Apply TOP N — rewrite SELECT to SELECT TOP N using a boolean flag to
-        // track success, avoiding false positives from field names that contain
-        // the substring "TOP" (e.g. "topic", "topology", "stopper").
-        if (query.limit() != null) {
-            boolean topApplied = false;
-
-            // Pattern 1: "SELECT VALUE c ..." — Cosmos scalar projection
-            String r1 = result.replaceFirst("(?i)^SELECT\\s+VALUE\\s+c\\b",
-                    "SELECT TOP " + query.limit() + " VALUE c");
-            if (!r1.equals(result)) {
-                result = r1;
-                topApplied = true;
-            }
-
-            // Pattern 2: "SELECT * ..." — full document projection
-            if (!topApplied) {
-                String r2 = result.replaceFirst("(?i)^SELECT\\s+\\*",
-                        "SELECT TOP " + query.limit() + " *");
-                if (!r2.equals(result)) {
-                    result = r2;
-                    topApplied = true;
-                }
-            }
-
-            // Pattern 3: any other SELECT (custom projections, aliases, etc.)
-            if (!topApplied) {
-                result = result.replaceFirst("(?i)^SELECT\\b",
-                        "SELECT TOP " + query.limit());
-            }
-        }
-
-        // Apply ORDER BY
         if (query.orderBy() != null && !query.orderBy().isEmpty()) {
             StringBuilder orderClause = new StringBuilder(" ORDER BY ");
             for (int i = 0; i < query.orderBy().size(); i++) {
                 SortOrder so = query.orderBy().get(i);
                 if (i > 0) orderClause.append(", ");
-                orderClause.append("c.").append(so.field()).append(" ").append(so.direction().name());
+                // sortKey → c.id mapping (validated at QueryRequest level).
+                orderClause.append("c.").append(CosmosConstants.FIELD_ID)
+                        .append(" ").append(so.direction().name());
             }
             result = result + orderClause;
         } else if (!containsOrderBy(result) && !containsAggregate(result)) {
-            // DynamoDB Query implicitly sorts by range key within a partition; DynamoDB
-            // Scan sorts per-page in memory. Cosmos has no implicit ordering, so always
-            // append ORDER BY c.id ASC to ensure sorted results on every query.
-            // For single-page results both providers return identically sorted output.
-            // For multi-page cross-partition queries Cosmos is globally sorted server-side,
-            // which is strictly better than DynamoDB's per-page sort — this is a documented
-            // capability difference, not a bug.
-            // Guards:
-            //  1. Skip if SQL already has ORDER BY (prevents double-ORDER BY on native exprs).
-            //     Uses word-boundary regex — plain contains() would falsely match string
-            //     literals like WHERE c.note = 'place order by friday'.
-            //  2. Skip if SQL is an aggregate query (COUNT/SUM/MIN/MAX/AVG, GROUP BY) —
-            //     Cosmos DB rejects ORDER BY on aggregate expressions at runtime.
-            result = result + " ORDER BY c.id ASC";
+            // Match DynamoDB's implicit sort-key ordering on every query.
+            // Guards skip the default when:
+            //   1. SQL already has ORDER BY (prevents duplicate clause).
+            //   2. SQL contains aggregates (Cosmos forbids ORDER BY with aggregates).
+            result = result + " ORDER BY c." + CosmosConstants.FIELD_ID + " ASC";
         }
 
         return result;

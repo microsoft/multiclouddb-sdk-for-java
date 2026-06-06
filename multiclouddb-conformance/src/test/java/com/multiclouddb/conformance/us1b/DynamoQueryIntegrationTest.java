@@ -243,20 +243,6 @@ class DynamoQueryIntegrationTest {
     }
 
     @Test @Order(9)
-    @DisplayName("native expression passthrough: PartiQL SELECT")
-    void nativeExpressionPassthrough() {
-        QueryPage page = client.query(address, QueryRequest.builder()
-                .nativeExpression("SELECT * FROM \"" + TABLE + "\" WHERE begins_with(title, 'Ship')")
-                .maxPageSize(50).build());
-        List<Map<String, Object>> items = page.items();
-        System.out.println("[DynamoDB] native PartiQL returned " + items.size() + " items");
-        items.forEach(item -> System.out.println("  -> " + str(item, "sortKey") + ": " + str(item, "title")));
-        assertFalse(items.isEmpty(), "Should find items starting with 'Ship'");
-        for (Map<String, Object> item : items)
-            assertTrue(str(item, "title").startsWith("Ship"));
-    }
-
-    @Test @Order(10)
     @DisplayName("all data visible: full scan returns all 6 test items")
     void fullScanShowsAllData() {
         QueryPage page = client.query(address, QueryRequest.builder()

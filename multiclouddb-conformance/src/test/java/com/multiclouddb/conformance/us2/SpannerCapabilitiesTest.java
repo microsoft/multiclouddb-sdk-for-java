@@ -23,14 +23,16 @@ public class SpannerCapabilitiesTest extends CapabilitiesConformanceTest {
     }
 
     @Test
-    void spannerSupportsAllQueryDsl() throws Exception {
+    void spannerSupportsAllLcdCapabilities() throws Exception {
         try (var client = com.multiclouddb.conformance.ConformanceHarness.createClient(ProviderId.SPANNER)) {
             var caps = client.capabilities();
-            assertTrue(caps.isSupported(Capability.LIKE_OPERATOR));
+            assertTrue(caps.isSupported(Capability.CONTINUATION_TOKEN_PAGING));
+            assertTrue(caps.isSupported(Capability.TRANSACTIONS));
+            assertTrue(caps.isSupported(Capability.BATCH_OPERATIONS));
+            assertTrue(caps.isSupported(Capability.STRONG_CONSISTENCY));
+            assertTrue(caps.isSupported(Capability.CHANGE_FEED));
+            assertTrue(caps.isSupported(Capability.PORTABLE_QUERY_EXPRESSION));
             assertTrue(caps.isSupported(Capability.ORDER_BY));
-            assertTrue(caps.isSupported(Capability.ENDS_WITH));
-            assertTrue(caps.isSupported(Capability.REGEX_MATCH));
-            assertTrue(caps.isSupported(Capability.CASE_FUNCTIONS));
         }
     }
 }

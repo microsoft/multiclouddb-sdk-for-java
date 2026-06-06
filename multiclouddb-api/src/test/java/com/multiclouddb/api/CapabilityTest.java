@@ -21,8 +21,8 @@ class CapabilityTest {
     @Test
     @DisplayName("Well-known unsupported singletons are the same instance via of() and the constant")
     void wellKnownUnsupportedSingleton() {
-        assertSame(Capability.CROSS_PARTITION_QUERY_UNSUPPORTED,
-                Capability.of(Capability.CROSS_PARTITION_QUERY, false));
+        assertSame(Capability.BATCH_OPERATIONS_UNSUPPORTED,
+                Capability.of(Capability.BATCH_OPERATIONS, false));
     }
 
     @Test
@@ -82,16 +82,20 @@ class CapabilityTest {
     }
 
     @Test
-    @DisplayName("All 13 well-known singletons appear in registeredValues()")
+    @DisplayName("All 7 LCD well-known singletons appear in registeredValues() (supported+unsupported = 14)")
     void registeredValuesContainsWellKnownSingletons() {
         var registered = Capability.registeredValues();
         assertTrue(registered.contains(Capability.TRANSACTIONS_CAP));
         assertTrue(registered.contains(Capability.TRANSACTIONS_UNSUPPORTED));
-        assertTrue(registered.contains(Capability.CROSS_PARTITION_QUERY_CAP));
-        assertTrue(registered.contains(Capability.CROSS_PARTITION_QUERY_UNSUPPORTED));
-        // 13 well-known names × 2 (supported + unsupported) = at least 26
-        assertTrue(registered.size() >= 26,
-                "expected at least 26 entries (13 × 2), got " + registered.size());
+        assertTrue(registered.contains(Capability.ORDER_BY_CAP));
+        assertTrue(registered.contains(Capability.ORDER_BY_UNSUPPORTED));
+        assertTrue(registered.contains(Capability.CHANGE_FEED_CAP));
+        assertTrue(registered.contains(Capability.BATCH_OPERATIONS_CAP));
+        assertTrue(registered.contains(Capability.STRONG_CONSISTENCY_CAP));
+        assertTrue(registered.contains(Capability.CONTINUATION_TOKEN_PAGING_CAP));
+        assertTrue(registered.contains(Capability.PORTABLE_QUERY_EXPRESSION_CAP));
+        assertTrue(registered.size() >= 14,
+                "expected at least 14 entries (7 × 2), got " + registered.size());
     }
 
     @Test
@@ -103,4 +107,3 @@ class CapabilityTest {
         assertTrue(s.contains("detail"));
     }
 }
-

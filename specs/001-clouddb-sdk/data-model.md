@@ -2,6 +2,12 @@
 
 This is a technology-agnostic model for the portable contract.
 
+> **Strict LCD Portability**: As of the strict-LCD release, fields like
+> `nativeExpression`, `limit`, arbitrary-field `orderBy`,
+> `OperationOptions.ttlSeconds` / `includeMetadata`, and `DocumentMetadata`
+> have been removed from the public API. References below are historical;
+> see `multiclouddb-api/CHANGELOG.md` for the current model.
+
 ## Entities
 
 ### Provider

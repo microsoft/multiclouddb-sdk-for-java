@@ -8,6 +8,13 @@ info:
     Note: CloudDB is a client SDK, not an HTTP service. This contract models SDK calls as request/response
     shapes to enable conformance testing across providers and future language implementations.
 
+    NOTE (Strict LCD Portability): As of the strict-LCD release, any schema field
+    in this document referring to nativeExpression, limit, arbitrary-field
+    orderBy, OperationOptions.ttlSeconds / includeMetadata, DocumentMetadata, or
+    the removed Capability constants is historical and no longer reflects the
+    implemented surface. See `multiclouddb-api/CHANGELOG.md` for the current
+    portable schema.
+
 servers: []
 
 paths:

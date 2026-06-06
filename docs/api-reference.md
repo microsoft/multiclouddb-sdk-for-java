@@ -21,11 +21,10 @@ contract.
 | `MulticloudDbKey` | A `(partitionKey, sortKey)` identity for every document |
 | `QueryRequest` | Query input with expression, parameters, pagination, and partition scoping |
 | `QueryPage` | Query result: items, continuation token, and diagnostics |
-| `DocumentResult` | Read result: document payload and optional metadata |
-| `DocumentMetadata` | Write timestamps, TTL expiry, and version/ETag |
+| `DocumentResult` | Read result wrapping the document payload as an `ObjectNode` |
 | `CapabilitySet` | Runtime introspection of supported provider capabilities |
 | `MulticloudDbException` | Structured error with portable error category |
-| `OperationOptions` | Per-operation timeout, TTL, and metadata controls |
+| `OperationOptions` | Per-operation request controls (e.g., consistency level) |
 | `OperationDiagnostics` | Latency, request charge, request ID, and item count |
 
 ### Query Expression Types

@@ -8,73 +8,75 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Immutable, portable query request.
  * <p>
- * Encapsulates an optional filter expression, named parameters, a maximum page
- * size hint, an opaque continuation token for paging, and an optional partition
- * key for provider-native scoping.
+ * Encapsulates an optional portable filter expression, named parameters,
+ * a maximum page size hint, an opaque continuation token for paging, and a
+ * <strong>required</strong> partition key for provider-native scoping.
  * <p>
  * All map accessors return <em>unmodifiable</em> views — any attempt to mutate
  * them will throw {@link UnsupportedOperationException}.
  * Use {@link #builder()} to construct instances.
+ *
+ * <h3>Portability contract (strict LCD)</h3>
+ * <ul>
+ *   <li>{@link #partitionKey()} is <strong>required</strong> on every query
+ *       (no cross-partition scans — DynamoDB does not support them natively).</li>
+ *   <li>{@link #expression()} must be a portable expression that all providers
+ *       can translate (no provider-native SQL passthrough).</li>
+ *   <li>{@link #orderBy()} is restricted to the {@code sortKey} field —
+ *       arbitrary-field ordering is not supported by DynamoDB across pages.</li>
+ *   <li>{@link #maxResults()} caps the <em>total</em> number of items returned
+ *       across paginated calls. Providers paginate normally; the cap is
+ *       enforced client-side by the SDK.</li>
+ * </ul>
  */
 public final class QueryRequest {
 
     private final String expression;
-    private final String nativeExpression;
     private final Map<String, Object> parameters;
     private final Integer maxPageSize;
     private final String continuationToken;
     private final String partitionKey;
-    private final Integer limit;
+    private final Integer maxResults;
     private final List<SortOrder> orderBy;
 
     private QueryRequest(Builder builder) {
-        if (builder.expression != null && builder.nativeExpression != null) {
+        if (builder.partitionKey == null || builder.partitionKey.isBlank()) {
             throw new IllegalArgumentException(
-                    "expression and nativeExpression are mutually exclusive; set only one");
+                    "partitionKey is required — cross-partition queries are not portable across providers");
         }
-        if (builder.limit != null && builder.limit < 1) {
-            throw new IllegalArgumentException("limit must be >= 1 when set");
+        if (builder.maxResults != null && builder.maxResults < 1) {
+            throw new IllegalArgumentException("maxResults must be >= 1 when set");
+        }
+        if (builder.orderBy != null) {
+            for (SortOrder so : builder.orderBy) {
+                if (!"sortKey".equals(so.field())) {
+                    throw new IllegalArgumentException(
+                            "orderBy is restricted to the 'sortKey' field for portability; got: " + so.field());
+                }
+            }
         }
         this.expression = builder.expression;
-        this.nativeExpression = builder.nativeExpression;
         this.parameters = builder.parameters != null ? Map.copyOf(builder.parameters) : Collections.emptyMap();
         this.maxPageSize = builder.maxPageSize;
         this.continuationToken = builder.continuationToken;
         this.partitionKey = builder.partitionKey;
-        this.limit = builder.limit;
+        this.maxResults = builder.maxResults;
         this.orderBy = builder.orderBy != null ? List.copyOf(builder.orderBy) : Collections.emptyList();
     }
 
     /**
-     * The portable filter expression, or {@code null} for a full scan.
+     * The portable filter expression, or {@code null} for a full partition scan.
      * <p>
-     * Mutually exclusive with {@link #nativeExpression()}.
+     * Must be parsable by the portable expression grammar. Provider-specific SQL
+     * is not supported.
      */
     public String expression() {
         return expression;
-    }
-
-    /**
-     * A provider-native query expression that bypasses portable translation
-     * entirely.
-     * <p>
-     * <strong>Warning — this breaks portability.</strong> A native expression
-     * is specific to one provider's query language (Cosmos SQL, DynamoDB PartiQL,
-     * Spanner GoogleSQL). Code using this field cannot be switched to a different
-     * provider by configuration alone. Use it only as a last resort when the
-     * portable {@link #expression()} cannot express what you need.
-     * <p>
-     * Mutually exclusive with {@link #expression()} — setting both throws
-     * {@link IllegalArgumentException} at build time.
-     *
-     * @return the provider-native expression string, or {@code null}
-     */
-    public String nativeExpression() {
-        return nativeExpression;
     }
 
     /**
@@ -97,12 +99,9 @@ public final class QueryRequest {
      * <ul>
      *   <li>Providers <em>will not</em> return more items than this value.</li>
      *   <li>Providers <em>may</em> return fewer — for example, DynamoDB caps
-     *       pages by byte size regardless of item count, and any provider may
-     *       apply its own internal limits.</li>
+     *       pages by byte size regardless of item count.</li>
      * </ul>
      * When {@code null} the provider uses its own default page size.
-     * Check {@link QueryPage#continuationToken()} to determine whether more
-     * pages are available regardless of how many items were returned.
      *
      * @return the requested upper bound on items per page, or {@code null}
      */
@@ -119,37 +118,38 @@ public final class QueryRequest {
     }
 
     /**
-     * Optional partition key value to scope the query.
-     * <p>When set, each provider uses its native mechanism to restrict the query
+     * The partition key value to scope the query (required).
+     * <p>Every provider uses its native mechanism to restrict the query
      * to items sharing this partition key value:
      * <ul>
-     *   <li>Cosmos&nbsp;DB &ndash; {@code CosmosQueryRequestOptions.setPartitionKey()}</li>
-     *   <li>DynamoDB &ndash; adds a {@code partitionKey} equality condition</li>
-     *   <li>Spanner &ndash; adds a {@code partitionKey} equality condition</li>
+     *   <li>Cosmos&nbsp;DB — {@code CosmosQueryRequestOptions.setPartitionKey()}</li>
+     *   <li>DynamoDB — adds a {@code partitionKey} equality condition</li>
+     *   <li>Spanner — adds a {@code partitionKey} equality condition</li>
      * </ul>
-     * <p>When {@code null} (the default), the query is sent cross-partition.
      *
-     * @return partition key value, or {@code null}
+     * @return non-null partition key value
      */
     public String partitionKey() {
         return partitionKey;
     }
 
     /**
-     * Optional maximum number of items to return (Top N).
-     * Applied after filtering and partition scoping.
-     * {@code null} means no limit.
+     * Optional total cap on the number of items returned across all pages.
+     * <p>
+     * Enforced client-side by the SDK: pagination stops once the cumulative
+     * item count reaches this value. {@code null} means no cap.
      *
-     * @return result limit, or {@code null}
+     * @return the maximum total items, or {@code null}
      */
-    public Integer limit() {
-        return limit;
+    public Integer maxResults() {
+        return maxResults;
     }
 
     /**
-     * Optional list of sort specifications for ORDER BY.
-     * Empty list means no ordering.
-     * <p>ORDER BY is capability-gated — check {@link Capability#ORDER_BY} before use.
+     * Optional list of sort specifications. Restricted to the {@code sortKey}
+     * field for portability — arbitrary-field ordering is not supported by
+     * DynamoDB across pages. Empty list means provider default ordering
+     * (partition key, then sort key ascending).
      *
      * @return unmodifiable list of sort orders, never null
      */
@@ -161,11 +161,12 @@ public final class QueryRequest {
     public String toString() {
         return "QueryRequest{"
                 + "expression='" + expression + '\''
-                + ", nativeExpression='" + nativeExpression + '\''
                 + ", partitionKey='" + partitionKey + '\''
                 + ", maxPageSize=" + maxPageSize
+                + ", maxResults=" + maxResults
                 + ", continuationToken='" + continuationToken + '\''
                 + ", parameters=" + parameters
+                + ", orderBy=" + orderBy
                 + '}';
     }
 
@@ -175,32 +176,19 @@ public final class QueryRequest {
 
     public static final class Builder {
         private String expression;
-        private String nativeExpression;
         private Map<String, Object> parameters;
         private Integer maxPageSize;
         private String continuationToken;
         private String partitionKey;
-        private Integer limit;
+        private Integer maxResults;
         private List<SortOrder> orderBy;
 
         /**
-         * Set the portable filter expression.
-         * Mutually exclusive with {@link #nativeExpression(String)}.
+         * Set the portable filter expression. The expression must parse with the
+         * portable expression grammar; provider-specific SQL is not supported.
          */
         public Builder expression(String expression) {
             this.expression = expression;
-            return this;
-        }
-
-        /**
-         * Set a provider-native expression that bypasses portable translation.
-         * <p>
-         * <strong>Warning — this breaks portability.</strong> Use only when the
-         * portable {@link #expression(String)} cannot express what you need.
-         * Mutually exclusive with {@link #expression(String)}.
-         */
-        public Builder nativeExpression(String nativeExpression) {
-            this.nativeExpression = nativeExpression;
             return this;
         }
 
@@ -252,9 +240,9 @@ public final class QueryRequest {
         }
 
         /**
-         * Scope the query to items sharing this partition key value.
+         * Scope the query to items sharing this partition key value. Required.
          *
-         * @param partitionKey the partition key value ({@code null} for cross-partition)
+         * @param partitionKey the partition key value (non-null, non-blank)
          */
         public Builder partitionKey(String partitionKey) {
             this.partitionKey = partitionKey;
@@ -262,22 +250,23 @@ public final class QueryRequest {
         }
 
         /**
-         * Limit the number of results returned (Top N).
+         * Cap the total number of items returned across all pages. Enforced
+         * client-side by the SDK.
          *
-         * @param limit maximum number of items (must be >= 1)
+         * @param maxResults maximum total items (must be >= 1)
          * @return this builder
          */
-        public Builder limit(int limit) {
-            this.limit = limit;
+        public Builder maxResults(int maxResults) {
+            this.maxResults = maxResults;
             return this;
         }
 
         /**
-         * Append a sort specification to the ORDER BY clause.
-         * May be called multiple times for multi-field sorting.
-         * ORDER BY is capability-gated — check {@link Capability#ORDER_BY} before use.
+         * Append a sort specification. Restricted to the {@code sortKey} field
+         * for portability — passing any other field name throws
+         * {@link IllegalArgumentException} at {@link #build()}.
          *
-         * @param field     the field name to sort on
+         * @param field     must be {@code "sortKey"}
          * @param direction the sort direction
          * @return this builder
          */
@@ -285,7 +274,7 @@ public final class QueryRequest {
             if (this.orderBy == null) {
                 this.orderBy = new ArrayList<>();
             }
-            this.orderBy.add(SortOrder.of(field, direction));
+            this.orderBy.add(SortOrder.of(Objects.requireNonNull(field), direction));
             return this;
         }
 

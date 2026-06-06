@@ -3,6 +3,18 @@
 **Branch**: `001-clouddb-sdk` | **Date**: 2026-01-24 | **Spec**: [spec.md](spec.md)
 **Input**: Feature specification from `/specs/001-clouddb-sdk/spec.md` (FR-022 through FR-038, SC-006 through SC-012)
 
+> **Strict LCD Portability supersedes earlier asymmetric-capability content.**
+> As of the strict-LCD release, any feature not supported by **all three**
+> providers (Cosmos, DynamoDB, Spanner) has been removed from the public API.
+> References below to `nativeExpression`, `nativeClient`, `limit()`, arbitrary-
+> field `orderBy`, `OperationOptions.ttlSeconds` / `includeMetadata`,
+> `DocumentMetadata`, and the `CROSS_PARTITION_QUERY` / `NATIVE_SQL_QUERY` /
+> `RESULT_LIMIT` / `LIKE_OPERATOR` / `ENDS_WITH` / `REGEX_MATCH` /
+> `CASE_FUNCTIONS` / `ROW_LEVEL_TTL` / `WRITE_TIMESTAMP` capabilities are
+> historical and no longer reflect the implemented surface. See
+> `multiclouddb-api/CHANGELOG.md` "Strict LCD Portability" for the authoritative
+> migration list and `docs/compatibility.md` for the current capability matrix.
+
 ## Summary
 
 Add a portable query expression language to the Multicloud DB SDK. Developers write WHERE-clause filters using a SQL-subset syntax with named `@param` parameters and five portable functions (`starts_with`, `contains`, `field_exists`, `string_length`, `collection_size`). Each provider adapter translates portable expressions into the provider's native query format:

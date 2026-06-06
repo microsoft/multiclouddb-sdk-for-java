@@ -2,6 +2,11 @@
 
 This quickstart describes intended usage of the SDK’s portable contract in Java.
 
+> **Strict LCD Portability**: As of the strict-LCD release, any feature not
+> supported by all three providers has been removed from the public API. The
+> examples in this file are historical; refer to `docs/getting-started.md` and
+> `multiclouddb-api/CHANGELOG.md` for the current portable surface.
+
 ## Goal
 Run the same application code against Cosmos DB, DynamoDB, or Spanner by changing configuration only.
 

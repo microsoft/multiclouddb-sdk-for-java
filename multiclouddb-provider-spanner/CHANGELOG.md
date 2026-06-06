@@ -7,6 +7,41 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed — strict Lowest-Common-Denominator (LCD) portability
+
+The Spanner provider has been updated to align with the strict LCD contract in
+the `multiclouddb-api` module. See the API CHANGELOG for the full
+breaking-change list.
+
+#### Removed query-translation paths
+
+- The `nativeExpression()` passthrough (formerly `SELECT … FROM <table>` issued
+  verbatim) is removed.
+- `query.limit(int)` (`Top N`) translation is removed; the portable
+  `QueryRequest.maxResults(int)` cap is enforced client-side by
+  `DefaultMulticloudDbClient` via single-page truncation.
+- `orderBy(<arbitrary field>, …)` translation is removed. Only
+  `orderBy("sortKey", ASC|DESC)` is accepted; the Spanner provider maps this to
+  `ORDER BY sortKey ASC|DESC` on the underlying `Statement`. The default
+  ordering is ASC.
+
+#### Removed type usage
+
+- `DocumentMetadata` extraction (formerly populated from `_lastUpdateTime`/
+  `_ttlExpiry` virtual fields when `OperationOptions.includeMetadata(true)` was
+  set) is removed because the type itself is gone from the API. `read()` now
+  returns the raw document only.
+
+#### Removed capability declarations
+
+The following capabilities are no longer declared by `SpannerCapabilities`
+because the corresponding API surface has been removed from `multiclouddb-api`:
+`NATIVE_SQL_QUERY`, `RESULT_LIMIT`, `LIKE_OPERATOR`, `ENDS_WITH`, `REGEX_MATCH`,
+`CASE_FUNCTIONS`, `ROW_LEVEL_TTL`, `WRITE_TIMESTAMP`, `CROSS_PARTITION_QUERY`.
+(`ROW_LEVEL_TTL` previously declared `supported=false` for Spanner;
+`WRITE_TIMESTAMP` declared `supported=false`. Removal of those entries
+reflects that no asymmetric capability is exposed any more.)
+
 ### Documentation
 
 - **`delete()` of a missing key remains a silent no-op (idempotent).** The

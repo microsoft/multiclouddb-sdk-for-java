@@ -107,19 +107,4 @@ class DynamoSortKeyOrderingTest extends SortKeyOrderingConformanceTest {
         // DynamoDB stores the sort key as the "sortKey" attribute
         return "sortKey";
     }
-
-    /**
-     * Returns a DynamoDB-native filter expression using {@code :param} notation.
-     * This routes through {@code executeScanWithFilter} (DynamoDB Scan with
-     * FilterExpression) when no partitionKey is set — the legacy expression path.
-     */
-    @Override
-    protected String legacyFilterExpression() {
-        return "legacy_batch = :legacy_batch";
-    }
-
-    @Override
-    protected Map<String, Object> legacyFilterParameters() {
-        return Map.of(":legacy_batch", "lf-sort-test");
-    }
 }

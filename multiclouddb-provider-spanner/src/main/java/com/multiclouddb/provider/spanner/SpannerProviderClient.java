@@ -4,7 +4,6 @@
 package com.multiclouddb.provider.spanner;
 
 import com.multiclouddb.api.CapabilitySet;
-import com.multiclouddb.api.DocumentMetadata;
 import com.multiclouddb.api.DocumentResult;
 import com.multiclouddb.api.MulticloudDbClientConfig;
 import com.multiclouddb.api.MulticloudDbError;
@@ -274,13 +273,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
                                 ProviderId.SPANNER, OperationNames.READ, false, null));
                     }
 
-                    DocumentMetadata metadata = null;
-                    if (options != null && options.includeMetadata()) {
-                        // Spanner does not expose per-row commit timestamps via query unless
-                        // the table has allow_commit_timestamp=true. Return empty shell.
-                        metadata = DocumentMetadata.builder().build();
-                    }
-                    return new DocumentResult(item, metadata);
+                    return new DocumentResult(item);
                 }
                 return null;
             }
@@ -322,16 +315,15 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      * <p>
      * Query routing logic (evaluated in order):
      * <ol>
-     *   <li><b>Native GoogleSQL passthrough</b> — if {@link QueryRequest#nativeExpression()}
-     *       is set, it is executed as-is.</li>
      *   <li><b>Full scan</b> — if expression is null/blank or equals the Cosmos-style
      *       {@code "SELECT * FROM c"} sentinel, a {@code SELECT * FROM <table>} is
      *       executed.</li>
      *   <li><b>Legacy expression</b> — the expression is passed through to
      *       {@link #executeStatement} as-is (backward-compatible path).</li>
      * </ol>
-     * If {@link QueryRequest#partitionKey()} is set, a {@code WHERE partitionKey = @_pkval}
-     * (or {@code AND partitionKey = @_pkval}) condition is appended automatically.
+     * A {@code WHERE partitionKey = @_pkval} (or {@code AND partitionKey = @_pkval})
+     * condition is always appended automatically — {@link QueryRequest} requires
+     * {@code partitionKey} to be set under the strict-LCD contract.
      * <p>
      * Pagination uses integer OFFSET encoding via {@link SpannerContinuationToken}.
      * Note: OFFSET-based pagination is not ideal for large datasets — it rescans all
@@ -351,48 +343,25 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
             String table = address.collection();
             long offset = SpannerContinuationToken.decode(query.continuationToken());
 
-            // Native expression passthrough
-            if (query.nativeExpression() != null && !query.nativeExpression().isBlank()) {
-                String stmt = query.nativeExpression();
-                Map<String, Object> params = query.parameters();
-                if (query.partitionKey() != null) {
-                    stmt = appendPartitionKeyConditionSQL(stmt);
-                    Map<String, Object> combined = new LinkedHashMap<>();
-                    if (params != null) {
-                        combined.putAll(params);
-                    }
-                    combined.put(SpannerConstants.PARAM_PK_VAL, query.partitionKey());
-                    params = combined;
-                }
-                return executeStatement(stmt, params, query.maxPageSize(), offset);
-            }
-
             // Expression-based query or full scan
             String expression = query.expression();
             if (expression == null || expression.isBlank()
                     || expression.trim().equalsIgnoreCase(SpannerConstants.QUERY_SELECT_ALL_COSMOS)) {
-                if (query.partitionKey() != null) {
-                    // Scope scan to items with matching partitionKey
-                    return executeStatement(
-                            String.format(SpannerConstants.QUERY_SCOPED_FULL_SCAN, table),
-                            Map.of(SpannerConstants.PARAM_PK_VAL, query.partitionKey()),
-                            query.maxPageSize(), offset, query);
-                }
-                // Full scan
-                return executeStatement(SpannerConstants.QUERY_SELECT_ALL_PREFIX + table, null, query.maxPageSize(), offset, query);
+                // Scope scan to items with matching partitionKey (always required)
+                return executeStatement(
+                        String.format(SpannerConstants.QUERY_SCOPED_FULL_SCAN, table),
+                        Map.of(SpannerConstants.PARAM_PK_VAL, query.partitionKey()),
+                        query.maxPageSize(), offset, query);
             }
 
-            // Legacy: pass through as-is
-            if (query.partitionKey() != null) {
-                String stmt = appendPartitionKeyConditionSQL(expression);
-                Map<String, Object> combined = new LinkedHashMap<>();
-                if (query.parameters() != null) {
-                    combined.putAll(query.parameters());
-                }
-                combined.put(SpannerConstants.PARAM_PK_VAL, query.partitionKey());
-                return executeStatement(stmt, combined, query.maxPageSize(), offset, query);
+            // Legacy: pass through as-is with partition key condition appended
+            String stmt = appendPartitionKeyConditionSQL(expression);
+            Map<String, Object> combined = new LinkedHashMap<>();
+            if (query.parameters() != null) {
+                combined.putAll(query.parameters());
             }
-            return executeStatement(expression, query.parameters(), query.maxPageSize(), offset, query);
+            combined.put(SpannerConstants.PARAM_PK_VAL, query.partitionKey());
+            return executeStatement(stmt, combined, query.maxPageSize(), offset, query);
         } catch (SpannerException e) {
             throw SpannerErrorMapper.map(e, OperationNames.QUERY);
         }
@@ -427,16 +396,9 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
         try {
             long offset = SpannerContinuationToken.decode(query.continuationToken());
             int pageSize = query.maxPageSize() != null ? query.maxPageSize() : SpannerConstants.PAGE_SIZE_DEFAULT;
-            // Respect Top N limit
-            if (query.limit() != null) {
-                pageSize = Math.min(pageSize, query.limit());
-            }
 
-            // Inject partition key condition before ORDER BY / pagination
-            String sql = translated.queryString();
-            if (query.partitionKey() != null) {
-                sql = appendPartitionKeyConditionSQL(sql);
-            }
+            // Inject partition key condition before ORDER BY / pagination (always required)
+            String sql = appendPartitionKeyConditionSQL(translated.queryString());
 
             // Apply ORDER BY before LIMIT/OFFSET
             sql = appendResultSetControl(sql, query);
@@ -456,10 +418,8 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
                 bindParameter(stmtBuilder, paramName, entry.getValue());
             }
 
-            // Bind partition key parameter if present
-            if (query.partitionKey() != null) {
-                stmtBuilder.bind(SpannerConstants.PARAM_PK_VAL).to(query.partitionKey());
-            }
+            // Bind partition key parameter (always required under strict-LCD)
+            stmtBuilder.bind(SpannerConstants.PARAM_PK_VAL).to(query.partitionKey());
 
             Statement stmt = stmtBuilder.build();
 
@@ -594,20 +554,18 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
     }
 
     /**
-     * Appends ORDER BY and LIMIT N clauses for result-set control.
-     * ORDER BY is appended before LIMIT/OFFSET is applied in {@link #executeStatement}.
+     * Appends an ORDER BY {@code sortKey ASC|DESC} clause when the request specifies one.
+     * <p>
+     * Under strict-LCD, {@link QueryRequest} only allows ordering by the {@code sortKey}
+     * field; this method simply emits whichever direction the request asks for. ORDER BY
+     * is appended before LIMIT/OFFSET is applied in {@link #executeStatement}.
      */
     private String appendResultSetControl(String sql, QueryRequest query) {
-        StringBuilder result = new StringBuilder(sql);
-        if (query != null && query.orderBy() != null && !query.orderBy().isEmpty()) {
-            result.append(" ORDER BY ");
-            for (int i = 0; i < query.orderBy().size(); i++) {
-                SortOrder so = query.orderBy().get(i);
-                if (i > 0) result.append(", ");
-                result.append(so.field()).append(" ").append(so.direction().name());
-            }
+        if (query == null || query.orderBy() == null || query.orderBy().isEmpty()) {
+            return sql;
         }
-        return result.toString();
+        SortOrder so = query.orderBy().get(0);
+        return sql + " ORDER BY " + so.field() + " " + so.direction().name();
     }
 
     /**
@@ -630,10 +588,6 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
     private QueryPage executeStatement(String sql, Map<String, Object> parameters,
             Integer pageSize, long offset, QueryRequest query) {
         int limit = pageSize != null ? pageSize : SpannerConstants.PAGE_SIZE_DEFAULT;
-        // Respect Top N limit: cap the page size
-        if (query != null && query.limit() != null) {
-            limit = Math.min(limit, query.limit());
-        }
 
         // Append ORDER BY before LIMIT/OFFSET
         String baseSQL = appendResultSetControl(sql, query);

@@ -1,11 +1,12 @@
 # Portable API Surface
 
-The Multicloud DB SDK's portable API surface covers capabilities that work
-identically across all three providers. The features listed below require no
-runtime capability checks - they are guaranteed to work on Azure Cosmos DB,
-Amazon DynamoDB, and Google Cloud Spanner. Some providers offer additional
-capabilities (e.g., `CROSS_PARTITION_QUERY`, `ORDER_BY`, `LIKE`); use
-`client.capabilities()` to discover what the current provider supports.
+The Multicloud DB SDK enforces **strict Lowest-Common-Denominator (LCD)
+portability**: every API exposed by `multiclouddb-api` is guaranteed to work
+identically on **all three** providers — Azure Cosmos DB, Amazon DynamoDB, and
+Google Cloud Spanner. There are no provider-specific escape hatches, no
+asymmetric capabilities, and no runtime feature checks required.
+
+If a feature is not supported by every provider, it is not in the portable API.
 
 ---
 
@@ -30,6 +31,10 @@ Write a WHERE-clause filter once. The SDK translates it to the native query
 language of whichever provider is configured - Cosmos SQL, DynamoDB PartiQL,
 or Spanner GoogleSQL.
 
+Every query is **partition-scoped**: `QueryRequest.partitionKey(...)` is
+required at builder time. Cross-partition queries are not portable to DynamoDB
+and are not exposed.
+
 | Feature | Operators / Functions | Example |
 |---------|----------------------|---------|
 | Comparison | `=`, `!=`, `<`, `>`, `<=`, `>=` | `status = 'active'` |
@@ -41,6 +46,7 @@ or Spanner GoogleSQL.
 
 ```java
 QueryRequest query = QueryRequest.builder()
+    .partitionKey("tenant-42")
     .expression("STARTS_WITH(name, @prefix) AND age >= @minAge")
     .parameter("prefix", "J")
     .parameter("minAge", 21)
@@ -50,12 +56,20 @@ QueryRequest query = QueryRequest.builder()
 QueryPage page = client.query(address, query);
 ```
 
-### Pagination
+### Pagination & Result Cap
 
 | Feature | Description |
 |---------|-------------|
 | **Cursor-based paging** | Continuation-token pagination across all providers |
-| **Page size control** | `maxPageSize` to limit results per page |
+| **Page size hint** | `maxPageSize(int)` controls items per page |
+| **Maximum results cap** | `maxResults(int)` truncates the total returned items; works on every provider |
+
+### Default Sort Order
+
+Every query returns items sorted by the document's **sort key**. To reverse the
+order within the partition, call `.orderBy("sortKey", SortDirection.DESC)` on
+the builder. The portable contract restricts `orderBy` to the `sortKey` field —
+no other field name is accepted at builder time.
 
 ### Data Management
 
@@ -73,7 +87,7 @@ QueryPage page = client.query(address, query);
 |---------|-------------|
 | **Structured diagnostics** | Latency, request charge, and provider correlation IDs per operation |
 | **Portable error categories** | All provider exceptions mapped to `MulticloudDbErrorCategory` |
-| **Capability introspection** | `client.capabilities()` reports what the current provider supports |
+| **Capability introspection** | `client.capabilities()` reports the seven portable capabilities |
 
 ---
 
@@ -101,66 +115,16 @@ The raw HTTP or gRPC status code is also available via `error.statusCode()`.
 > The portable API does not yet expose ETag-based conditional updates; when it does, the 412-equivalent
 > path will be split into a dedicated `PRECONDITION_FAILED` category (tracked in issue #29).
 
-## Default Sort-Key Ordering
-
-All Cosmos DB and DynamoDB query paths return results sorted by the document's
-sort key ascending.
-
-> **Design note:** The default `ORDER BY` is applied to **all** Cosmos queries
-> (both partition-scoped and cross-partition), not just partition-scoped ones.
-> This gives the strongest consistency guarantee: every query, on every provider,
-> returns items sorted by sort key. The early PR description mentioned
-> partition-scoped only as a starting point; the final implementation was
-> intentionally broadened to cover all queries.
-
-### Cosmos DB
-
-Cosmos DB appends `ORDER BY c.id ASC` to every query that does not already carry
-an explicit `ORDER BY` clause (and is not an aggregate / `GROUP BY` query). This
-is applied server-side, so the order is globally consistent across all pages.
-
-> **⚠️ Custom indexing policy - composite index required**
-> If your Cosmos container uses a **custom indexing policy** that does not include
-> a composite index on `(filterField ASC, id ASC)`, Cosmos DB will throw a
-> `400 Bad Request` at runtime for cross-partition queries that combine `WHERE` and
-> the default `ORDER BY c.id ASC`. The default indexing policy includes all paths
-> and supports this automatically. If you have tuned your indexing policy, add the
-> composite index for every field you filter on:
-> ```json
-> { "compositeIndexes": [ [{ "path": "/filterField", "order": "ascending" },
->                          { "path": "/id", "order": "ascending" }] ] }
-> ```
->
-> **⚠️ RU cost**
-> Appending `ORDER BY c.id ASC` to all Cosmos queries incurs an additional RU
-> charge versus unordered queries, proportional to result-set size. This cost is
-> the price of cross-provider consistency and is expected behavior.
->
-> **⚠️ Aggregates and GROUP BY**
-> Cosmos DB rejects `ORDER BY` on aggregate expressions (`COUNT`, `SUM`, `MIN`,
-> `MAX`, `AVG`) and `GROUP BY` queries. The SDK automatically detects these patterns
-> and omits the default `ORDER BY` for them.
-
-### DynamoDB
-
-DynamoDB results are sorted in memory per page after fetching (client-side).
-Within a single page, items are returned sorted by sort key ascending.
-For multi-page scans the overall order across pages is determined by DynamoDB's
-internal token-based traversal, not sort key - this is a known limitation.
-
-### Spanner
-
-The Spanner provider does not yet implement default sort-key ordering.
-Consumers relying on consistent cross-provider sort behavior should not use
-the Spanner provider until this gap is addressed.
-
-> **Tracking**: A follow-up issue will be filed to implement default sort-key
-> ordering for the Spanner provider. Until resolved, do not mix Spanner with
-> Cosmos or DynamoDB in conformance-sensitive workloads.
+---
 
 ## Escape Hatch Policy
 
-The SDK does not expose a `nativeClient()` method. Direct access to the
-underlying provider client is intentionally omitted to enforce portability
-guarantees - code written against the SDK must remain switchable between
-providers by configuration alone.
+The SDK does not expose `nativeExpression()` on `QueryRequest`, and does not
+expose a `nativeClient()` method on `MulticloudDbClient`. Direct access to the
+underlying provider client or native query language is intentionally omitted to
+enforce portability guarantees — code written against the SDK must remain
+switchable between providers by configuration alone.
+
+If your workload genuinely requires a provider-specific feature (e.g., Cosmos
+`LIKE`, Spanner regex, DynamoDB GSI projection), call the native SDK directly
+from a separate code path; do not attempt to layer it on top of `multiclouddb-api`.

@@ -31,24 +31,15 @@ public abstract class CapabilitiesConformanceTest {
     void allKnownCapabilityNamesPresent() throws Exception {
         try (MulticloudDbClient client = ConformanceHarness.createClient(provider())) {
             CapabilitySet caps = client.capabilities();
-            // All 16 well-known capability names must be declared
+            // All 7 strict-LCD capability names must be declared
             String[] knownNames = {
                     Capability.CONTINUATION_TOKEN_PAGING,
-                    Capability.CROSS_PARTITION_QUERY,
                     Capability.TRANSACTIONS,
                     Capability.BATCH_OPERATIONS,
                     Capability.STRONG_CONSISTENCY,
-                    Capability.NATIVE_SQL_QUERY,
                     Capability.CHANGE_FEED,
                     Capability.PORTABLE_QUERY_EXPRESSION,
-                    Capability.LIKE_OPERATOR,
-                    Capability.ORDER_BY,
-                    Capability.ENDS_WITH,
-                    Capability.REGEX_MATCH,
-                    Capability.CASE_FUNCTIONS,
-                    Capability.RESULT_LIMIT,
-                    Capability.ROW_LEVEL_TTL,
-                    Capability.WRITE_TIMESTAMP
+                    Capability.ORDER_BY
             };
             for (String name : knownNames) {
                 assertNotNull(caps.get(name),
@@ -58,11 +49,11 @@ public abstract class CapabilitiesConformanceTest {
     }
 
     @Test
-    void capabilityCountIs16() throws Exception {
+    void capabilityCountIs7() throws Exception {
         try (MulticloudDbClient client = ConformanceHarness.createClient(provider())) {
             CapabilitySet caps = client.capabilities();
-            assertEquals(16, caps.all().size(),
-                    "Provider " + provider().id() + " should declare exactly 16 capabilities");
+            assertEquals(7, caps.all().size(),
+                    "Provider " + provider().id() + " should declare exactly 7 capabilities (strict-LCD)");
         }
     }
 

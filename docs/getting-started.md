@@ -117,6 +117,7 @@ Write a WHERE-clause filter once - the SDK translates it for each provider:
 
 ```java
 QueryRequest query = QueryRequest.builder()
+        .partitionKey("tenant-42")
         .expression("status = @status AND category = @cat")
         .parameters(Map.of("status", "active", "cat", "shopping"))
         .maxPageSize(25)
@@ -128,6 +129,11 @@ for (Map<String, Object> item : page.items()) {
 }
 ```
 
+Every query is **partition-scoped**: `partitionKey(...)` is required on the
+builder. To cap the total number of returned items, call `.maxResults(int)`.
+To reverse the default sort-key ordering, call `.orderBy("sortKey", SortDirection.DESC)` —
+only the `sortKey` field is portable across providers.
+
 The same expression produces different native queries per provider:
 
 | Provider | Generated Native Query |
@@ -138,40 +144,7 @@ The same expression produces different native queries per provider:
 
 ---
 
-## 5. Native Query Escape Hatch
-
-When you need provider-specific query syntax, use `nativeExpression()`:
-
-=== "Cosmos DB"
-
-    ```java
-    QueryRequest q = QueryRequest.builder()
-            .nativeExpression("SELECT * FROM c WHERE c.title LIKE '%flight%'")
-            .maxPageSize(25)
-            .build();
-    ```
-
-=== "DynamoDB"
-
-    ```java
-    QueryRequest q = QueryRequest.builder()
-            .nativeExpression("SELECT * FROM \"todos\" WHERE begins_with(title, 'Ship')")
-            .maxPageSize(25)
-            .build();
-    ```
-
-=== "Spanner"
-
-    ```java
-    QueryRequest q = QueryRequest.builder()
-            .nativeExpression("SELECT * FROM todos WHERE STARTS_WITH(title, 'Ship')")
-            .maxPageSize(25)
-            .build();
-    ```
-
----
-
-## 6. Switch Providers
+## 5. Switch Providers
 
 Change **only** the properties file - no code changes required:
 

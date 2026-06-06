@@ -8,31 +8,21 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.Objects;
 
 /**
- * The result of a {@link MulticloudDbClient#read} operation, combining the
- * document payload with optional provider write-metadata.
+ * The result of a {@link MulticloudDbClient#read} operation.
  * <p>
- * Usage:
- * <pre>{@code
- * DocumentResult result = client.read(address, key);
- * ObjectNode doc = result.document();
- * DocumentMetadata meta = result.metadata(); // may be null if includeMetadata=false
- * }</pre>
+ * Holds the document payload returned by the provider. Provider write-metadata
+ * (last modified, version) is not exposed — it is not portable across all
+ * providers (DynamoDB does not surface per-item write timestamps, Spanner
+ * requires schema-level configuration).
  *
- * @see MulticloudDbClient#read(ResourceAddress, Key, OperationOptions)
+ * @see MulticloudDbClient#read(ResourceAddress, MulticloudDbKey, OperationOptions)
  */
 public final class DocumentResult {
 
     private final ObjectNode document;
-    private final DocumentMetadata metadata;
 
-    public DocumentResult(ObjectNode document, DocumentMetadata metadata) {
-        this.document = Objects.requireNonNull(document, "document must not be null");
-        this.metadata = metadata;
-    }
-
-    /** Convenience constructor for results without metadata. */
     public DocumentResult(ObjectNode document) {
-        this(document, null);
+        this.document = Objects.requireNonNull(document, "document must not be null");
     }
 
     /**
@@ -44,29 +34,20 @@ public final class DocumentResult {
         return document;
     }
 
-    /**
-     * Provider write-metadata, or {@code null} if
-     * {@link OperationOptions#includeMetadata()} was {@code false} (the default).
-     */
-    public DocumentMetadata metadata() {
-        return metadata;
-    }
-
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof DocumentResult that)) return false;
-        return Objects.equals(document, that.document)
-                && Objects.equals(metadata, that.metadata);
+        return Objects.equals(document, that.document);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(document, metadata);
+        return Objects.hash(document);
     }
 
     @Override
     public String toString() {
-        return "DocumentResult{document=" + document + ", metadata=" + metadata + "}";
+        return "DocumentResult{document=" + document + "}";
     }
 }

@@ -6,6 +6,13 @@
 **Status**: Research  
 **Related**: spec.md (FR-002, FR-006), data-model.md (Query, QueryRequest), research.md (Decision 6)
 
+> **Strict LCD Portability**: As of the strict-LCD release, the portable DSL
+> exposes only operators supported by **all three** providers. Operators that
+> were originally researched here but later removed from the portable surface
+> include `LIKE`, `ENDS_WITH`, `REGEX_MATCH`, `UPPER`/`LOWER`, and arbitrary-
+> field `ORDER BY`. The native-SQL passthrough (`nativeExpression`) is also
+> removed. See `multiclouddb-api/CHANGELOG.md` for the current grammar.
+
 ---
 
 ## Table of Contents

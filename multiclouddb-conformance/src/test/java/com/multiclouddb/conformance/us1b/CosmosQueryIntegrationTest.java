@@ -206,19 +206,6 @@ class CosmosQueryIntegrationTest {
     }
 
     @Test @Order(9)
-    @DisplayName("native expression passthrough: Cosmos SQL with LIKE")
-    void nativeExpressionPassthrough() {
-        QueryPage page = client.query(address, QueryRequest.builder()
-                .nativeExpression("SELECT * FROM c WHERE c.title LIKE '%flight%'").maxPageSize(50).build());
-        List<Map<String, Object>> items = page.items();
-        System.out.println("[Cosmos] native LIKE returned " + items.size() + " items");
-        items.forEach(item -> System.out.println("  -> " + str(item, "id") + ": " + str(item, "title")));
-        assertFalse(items.isEmpty(), "Should find items with 'flight' in title");
-        for (Map<String, Object> item : items)
-            assertTrue(str(item, "title").toLowerCase().contains("flight"));
-    }
-
-    @Test @Order(10)
     @DisplayName("all data visible: full scan returns all 6 test items")
     void fullScanShowsAllData() {
         QueryPage page = client.query(address, QueryRequest.builder()

@@ -280,7 +280,8 @@ performance and scalability. Here are common strategies:
 **Entity-per-partition** (`MulticloudDbKey.of(pk, pk)`):
 - Every document gets its own partition
 - Optimal for point reads - always a single-partition operation
-- Queries for "all items of type X" require a **cross-partition scan**
+- The portable API does not allow queries across partitions, so this layout is
+  unsuitable for queries that need to span "all items of type X"
 - Works well when you don't need to query within groups
 
 **Grouped partitions** (`MulticloudDbKey.of(parentId, childId)`):
@@ -767,21 +768,23 @@ Continuation tokens are **opaque strings** - their format differs by provider
 (Cosmos uses its own JSON token, DynamoDB uses an encoded last-evaluated-key,
 Spanner uses a numeric offset). Never parse or construct them manually.
 
-### Full Scan (No Filter)
+### Partition-Wide Scan (No Filter)
 
-To retrieve all documents in a collection (a full scan), omit the expression:
+To retrieve all documents in a single partition, omit the expression. The
+`partitionKey` is still required:
 
 ```java
 QueryRequest scanAll = QueryRequest.builder()
+    .partitionKey("portfolio-alpha")
     .maxPageSize(100)
     .build();
 
 QueryPage page = client.query(addr, scanAll);
 ```
 
-> **Warning**: Full scans read every document in the collection. For large
-> datasets, this is expensive (cross-partition in Cosmos, full table scan in
-> DynamoDB and Spanner). Always prefer expression-based filtering when possible.
+> **Warning**: Even within a single partition, scanning every document is
+> more expensive than an indexed filter. Always prefer expression-based
+> filtering when possible.
 
 ### Expression-Based Filtering
 
@@ -842,44 +845,16 @@ QueryRequest complex = QueryRequest.builder()
     .build();
 ```
 
-### Native Expression Passthrough
+### No Native-Expression Passthrough
 
-When you need provider-specific features not available in the portable DSL
-(e.g., `LIKE`, `ORDER BY`, aggregate functions), bypass the portable layer
-with `nativeExpression()`:
-
-```java
-// Cosmos DB - full SQL capability
-QueryRequest cosmosQuery = QueryRequest.builder()
-    .nativeExpression(
-        "SELECT c.symbol, c.marketValue FROM c " +
-        "WHERE c.portfolioId = @pid ORDER BY c.marketValue DESC"
-    )
-    .parameter("pid", "portfolio-alpha")
-    .maxPageSize(10)
-    .build();
-
-// DynamoDB - PartiQL syntax
-QueryRequest dynamoQuery = QueryRequest.builder()
-    .nativeExpression(
-        "SELECT * FROM \"acme-risk-db__positions\" " +
-        "WHERE begins_with(symbol, 'AA')"
-    )
-    .maxPageSize(10)
-    .build();
-
-// Spanner - GoogleSQL syntax
-QueryRequest spannerQuery = QueryRequest.builder()
-    .nativeExpression(
-        "SELECT * FROM positions WHERE STARTS_WITH(symbol, 'AA') " +
-        "ORDER BY marketValue DESC LIMIT 10"
-    )
-    .build();
-```
-
-> **Warning**: `expression` and `nativeExpression` are **mutually exclusive** -
-> setting both throws an error. Native expressions break portability: switching
-> providers requires rewriting the query.
+The portable API does **not** expose `nativeExpression()` or a `nativeClient()`
+accessor. All queries must go through the portable expression DSL so that
+switching providers requires zero code changes. If your workload needs
+provider-specific features (Cosmos `LIKE`, DynamoDB PartiQL, Spanner regex,
+aggregate functions, server-side `ORDER BY` on non-sortKey fields, server-side
+`LIMIT`, etc.), call the native provider SDK directly outside of
+`MulticloudDbClient`. Doing so opts you out of portability — the strict-LCD
+SDK deliberately does not provide a half-way escape hatch.
 
 ### Translation Pipeline
 
@@ -912,96 +887,84 @@ expression string and parameters.
 ### Why Partition Keys Matter for Queries
 
 In distributed databases, the **partition key determines where data lives
-physically**. This has a direct impact on query performance:
+physically**. The portable API requires every `QueryRequest` to be partition-
+scoped — `partitionKey()` is mandatory at builder time:
 
 - **Partition-scoped query**: When the query filter includes the partition key
   value, the database can go directly to the relevant partition. This is
   **O(partition size)**, not O(total data).
-- **Cross-partition query (fan-out)**: When the partition key is not included
-  in the filter, the database must scan **all partitions**. This is expensive
-  and may not be supported in all providers.
+- **Cross-partition fan-out is not supported** by the portable API. DynamoDB
+  cannot serve cross-partition queries portably; to keep the surface uniform,
+  the API does not expose them on any provider.
 
 #### Cosmos DB
 
-Cosmos DB partitions data by the `/partitionKey` path. When a query includes
-`partitionKey = @value`, Cosmos reads only that partition. Without it, the query
-fans out across all partitions (requires the `cosmos.crossPartitionQuery`
-feature flag).
+Cosmos DB partitions data by the `/partitionKey` path. The SDK sets the
+partition key option on every query, so each query reads only one logical
+partition.
 
 #### DynamoDB
 
-DynamoDB uses the hash key (`partitionKey`) as the partition key. Queries within
-a partition (using the hash key) are efficient. Without it, a full table **Scan**
-is required.
+DynamoDB uses the hash key (`partitionKey`) as the partition key. The SDK
+translates each query into a native `Query` on the hash key value.
 
 #### Spanner
 
 Spanner distributes data across splits based on the primary key prefix. The
 `(partitionKey, sortKey)` composite primary key provides locality for documents
-sharing the same `partitionKey` prefix.
+sharing the same `partitionKey` prefix; the SDK adds `partitionKey = @pk` to
+every query.
 
 ### Combining Expression Filters with Key Design
 
 The most efficient queries combine **good key design** with **expression
 filtering**. Example: positions within a portfolio.
 
-#### Approach 1: Entity-per-partition + Full Scan + Client-Side Filter
+#### Anti-pattern: Entity-per-partition + Per-partition iteration
 
 ```java
 // Key: MulticloudDbKey.of(positionId, positionId) - each position in its own partition
 
-// Query: fetch ALL positions, filter in Java
-List<Map<String, Object>> allPositions = client.query(addr,
-    QueryRequest.builder().maxPageSize(200).build()
-).items();
-
-List<Map<String, Object>> filtered = allPositions.stream()
-    .filter(p -> "portfolio-alpha".equals(p.get("portfolioId")))
-    .toList();
+// Required by the portable API: one query per known positionId
+for (String positionId : knownPositionIds) {
+    QueryRequest q = QueryRequest.builder()
+        .partitionKey(positionId)
+        .maxPageSize(50)
+        .build();
+    QueryPage page = client.query(addr, q);
+    // ... filter portfolioId in Java
+}
 ```
 
-**Problem**: Reads every position document, performs a cross-partition scan,
-then discards most results. O(N) where N = total positions across all
-portfolios.
-
-#### Approach 2: Entity-per-partition + Expression Filter (Better)
-
-```java
-// Key: MulticloudDbKey.of(positionId, positionId) - still entity-per-partition
-
-// Query: let the database filter - only matching documents are returned
-QueryRequest query = QueryRequest.builder()
-    .expression("portfolioId = @pid")
-    .parameter("pid", "portfolio-alpha")
-    .maxPageSize(50)
-    .build();
-
-List<Map<String, Object>> positions = client.query(addr, query).items();
+**Problem**: Requires N round-trips (one per partition) and the caller still
+needs to know every `positionId`. Filtering happens client-side. O(N) where
+N = total positions.
 ```
 
-**Better**: The database applies the filter - you only receive matching
-documents. But this is still a cross-partition scan (the database still reads
-all partitions, it just doesn't return non-matching documents).
+**Problem**: Requires N round-trips (one per partition) and the caller still
+needs to know every `positionId`. Filtering happens client-side. O(N) where
+N = total positions.
 
-#### Approach 3: Partition-per-parent + Expression Filter (Best)
+#### Best practice: Partition-per-parent + Expression Filter
 
 ```java
 // Key: MulticloudDbKey.of(portfolioId, positionId) - positions grouped by portfolio
 
-// Query: the database knows to read only the "portfolio-alpha" partition
+// Query: the database reads only the "portfolio-alpha" partition
 QueryRequest query = QueryRequest.builder()
-    .expression("portfolioId = @pid")
-    .parameter("pid", "portfolio-alpha")
+    .partitionKey("portfolio-alpha")
+    .expression("sector = @sector")
+    .parameter("sector", "Technology")
     .maxPageSize(50)
     .build();
 
 List<Map<String, Object>> positions = client.query(addr, query).items();
 ```
 
-**Best**: By using `portfolioId` as the partition key (first argument to
-`MulticloudDbKey.of`), the database can scope the query to a single partition. Combined with
-the expression filter, this is a **single-partition read** - the most efficient
-pattern possible.
+By using `portfolioId` as the partition key (first argument to
+`MulticloudDbKey.of`), the database scopes the query to a single partition.
+Combined with the expression filter, this is a **single-partition read** -
+the most efficient pattern possible.
 
 > **Note on DynamoDB**: When documents use `MulticloudDbKey.of(portfolioId, positionId)`,
 > `portfolioId` becomes the hash key (`"partitionKey"` attribute) and
@@ -1012,14 +975,13 @@ pattern possible.
 ### Partition-Scoped Queries with `QueryRequest.partitionKey()`
 
 The SDK provides a **portable partition-scoping mechanism** via
-`QueryRequest.partitionKey()`. Instead of relying on the query expression to
-include the partition key implicitly, you can set it explicitly on the query
-request. Each provider maps this to its native partition-scoping mechanism:
+`QueryRequest.partitionKey()`. Every `QueryRequest` must set the partition
+key value, and each provider maps it to its native partition-scoping mechanism:
 
 | Provider | What `.partitionKey(value)` Does |
 |----------|----------------------------------|
 | **Cosmos DB** | Sets `CosmosQueryRequestOptions.setPartitionKey(new PartitionKey(value))` - query reads only that logical partition |
-| **DynamoDB** | Adds a `partitionKey = :pk` equality condition to the scan filter - restricts results to items sharing the given hash key value |
+| **DynamoDB** | Issues a native `Query` on the hash key (`partitionKey = :pk`) instead of a `Scan` |
 | **Spanner** | Adds a `partitionKey = @pk` equality condition to the SQL WHERE clause |
 
 #### Basic Usage
@@ -1027,9 +989,9 @@ request. Each provider maps this to its native partition-scoping mechanism:
 ```java
 // Scope query to a specific partition (e.g., a portfolio)
 QueryRequest query = QueryRequest.builder()
+    .partitionKey("portfolio-alpha")
     .expression("sector = @sector")
     .parameter("sector", "Technology")
-    .partitionKey("portfolio-alpha")
     .maxPageSize(50)
     .build();
 
@@ -1051,53 +1013,27 @@ QueryRequest allInPartition = QueryRequest.builder()
 QueryPage page = client.query(positionsAddr, allInPartition);
 ```
 
-This is far more efficient than a full cross-partition scan - it reads only
-the documents belonging to `"portfolio-alpha"`.
+This reads only the documents belonging to `"portfolio-alpha"`.
 
-#### Cross-Partition Query (Default)
+#### partitionKey is mandatory
 
-When `partitionKey` is not set (or set to `null`), the query fans out across
-all partitions - the same behavior as before:
-
-```java
-// No partitionKey → cross-partition scan
-QueryRequest crossPartition = QueryRequest.builder()
-    .expression("severity = @sev")
-    .parameter("sev", "CRITICAL")
-    .maxPageSize(25)
-    .build();
-```
-
-#### Combining with Native Expressions
-
-`partitionKey()` works with both portable and native expressions:
-
-```java
-// Portable expression + partition scoping
-QueryRequest portable = QueryRequest.builder()
-    .expression("marketValue > @min")
-    .parameter("min", 100000.0)
-    .partitionKey("portfolio-alpha")
-    .build();
-
-// Native Cosmos SQL + partition scoping
-QueryRequest native = QueryRequest.builder()
-    .nativeExpression("SELECT c.symbol, c.marketValue FROM c ORDER BY c.marketValue DESC")
-    .partitionKey("portfolio-alpha")
-    .build();
-```
+When `partitionKey` is omitted, building the `QueryRequest` throws
+`IllegalArgumentException`. The portable API requires every query to be
+partition-scoped because cross-partition scans are not supported by DynamoDB.
+Workloads that need to read across multiple partitions must paginate per
+partition.
 
 #### Performance Impact
 
-| Query Type | Cosmos DB | DynamoDB | Spanner |
-|------------|-----------|----------|---------|
-| With `.partitionKey()` | Single-partition read | Filtered by hash key | Filtered by partition key |
-| Without `.partitionKey()` | Cross-partition fan-out | Full table scan | Full table scan |
-| **Cost difference** | 1 partition vs. N partitions | 1 filter vs. full scan | 1 filter vs. full scan |
+| Provider | With required `.partitionKey()` |
+|----------|---------------------------------|
+| Cosmos DB | Single-partition read (no fan-out) |
+| DynamoDB | Native `Query` API filtered by hash key |
+| Spanner | Filtered by partition key column |
 
-> **Best practice**: Always set `.partitionKey()` when you know the partition
-> value at query time. This is especially important for Cosmos DB, where
-> cross-partition queries consume significantly more RU/s.
+> **Best practice**: Choose a partition key that aligns with your read
+> patterns. Since the portable API enforces partition scoping, the partition
+> key is the primary lever for read efficiency on every provider.
 
 ---
 
@@ -1165,161 +1101,33 @@ table across all providers.
 
 ## Result Set Control
 
-The SDK supports portable `limit` (Top N) and `orderBy` on providers that declare the respective capabilities. Both are **capability-gated**: callers should check provider capabilities before using them. Unsupported options are not guaranteed to be silently ignored; providers may fail fast with `UNSUPPORTED_CAPABILITY` (for example, DynamoDB when `orderBy` is specified). Also note that DynamoDB's `result_limit` support is **per-page**, not a global Top N across the full logical result set.
+Every `QueryRequest` is partition-scoped and returns items sorted by `sortKey`
+ascending by default. Two portable controls are available:
 
-### Checking Capabilities
-
-```java
-CapabilitySet caps = client.capabilities();
-boolean canLimit  = caps.isSupported(Capability.RESULT_LIMIT);
-boolean canOrder  = caps.isSupported(Capability.ORDER_BY);
-```
-
-| Capability | Cosmos DB | DynamoDB | Spanner |
-|------------|:---------:|:--------:|:-------:|
-| `result_limit` (Top N) | ✓ (`SELECT TOP N`) | ✓ (per-page) | ✓ (`LIMIT`) |
-| `order_by` | ✓ | ✗ | ✓ |
-
-> **Note:** DynamoDB's `result_limit=true` caps the _current scan page_, not
-> the total result set. Use continuation tokens to iterate all matching items.
-
-### Limiting Results
+- `maxResults(int)` — cap on the total number of items returned by `query()`.
+  Enforced client-side: the SDK truncates the page returned from the provider
+  after fetching it.
+- `orderBy("sortKey", ASC|DESC)` — reverse the default ascending order. Only
+  the literal field name `"sortKey"` is accepted; any other field name is
+  rejected at builder time.
 
 ```java
 QueryRequest q = QueryRequest.builder()
+        .partitionKey("portfolio-42")                    // required
         .expression("score >= @min")
         .parameter("min", 80)
-        .limit(10)                        // top 10 results
+        .maxResults(10)                                  // cap to 10 items total
+        .orderBy("sortKey", SortDirection.DESC)          // newest sortKey first
         .build();
 
 QueryPage page = client.query(address, q);
 System.out.println("Got " + page.items().size() + " items");
 ```
 
-### Ordering Results
-
-```java
-QueryRequest q = QueryRequest.builder()
-        .expression("portfolioId = @pid")
-        .parameter("pid", "portfolio-42")
-        .orderBy("marketValue", SortDirection.DESC)   // sort descending
-        .orderBy("symbol",      SortDirection.ASC)    // secondary sort
-        .limit(20)
-        .build();
-```
-
-`SortOrder` validates field names against `[A-Za-z_][A-Za-z0-9_.]*` at construction time, rejecting any character that could be used for injection.
-
-### Combining with Native Expressions
-
-Handling of `orderBy` and `limit` with `nativeExpression` is provider-specific. For Cosmos DB and Spanner native passthrough, these fields are ignored and the native query string is sent as provided. For DynamoDB `ExecuteStatement`, `limit` is still applied, and setting `orderBy` causes an error. Use provider-native syntax for ordering/limiting when you need exact control over native query execution:
-
-```java
-// Cosmos DB native - full SQL control
-QueryRequest q = QueryRequest.builder()
-        .nativeExpression(
-            "SELECT TOP 10 c.symbol, c.marketValue FROM c " +
-            "ORDER BY c.marketValue DESC")
-        .build();
-```
-
----
-
-## Document TTL (Time-to-Live)
-
-Set a per-document expiry at write time using `OperationOptions.ttlSeconds()`. Supported on `create()`, `upsert()`, and `update()`.
-
-### Prerequisite: Enable Container-Level TTL
-
-TTL is enforced at the provider level and requires the collection to be configured with TTL support before writing TTL-bearing documents.
-
-| Provider | Required Setup |
-|----------|----------------|
-| Cosmos DB | Enable "Default Time to Live" on the container (set to `-1` for item-level control) |
-| DynamoDB | Enable TTL on the table specifying `ttlExpiry` as the TTL attribute |
-| Spanner | No native row-level TTL - `ROW_LEVEL_TTL=false`; `ttlSeconds` is silently ignored |
-
-### Writing with TTL
-
-```java
-OperationOptions opts = OperationOptions.builder()
-        .ttlSeconds(3_600)          // expire in 1 hour
-        .build();
-
-// TTL on create
-client.create(address, key, doc, opts);
-
-// TTL on upsert (create-or-replace)
-client.upsert(address, key, doc, opts);
-
-// TTL on update - carries TTL forward through the full-replace write
-client.update(address, key, updatedDoc, opts);
-```
-
-### Checking TTL Support
-
-```java
-if (client.capabilities().isSupported(Capability.ROW_LEVEL_TTL)) {
-    client.create(address, key, doc, OperationOptions.builder()
-            .ttlSeconds(86_400)
-            .build());
-} else {
-    // Provider will ignore ttlSeconds; write without TTL
-    client.create(address, key, doc);
-}
-```
-
-> **Important:** If you omit `ttlSeconds` on an `update()` call, the previously
-> stored TTL attribute will be overwritten with no TTL (documents become
-> permanent). Always pass the same `OperationOptions` on every write if you
-> want TTL to persist.
-
----
-
-## Document Metadata
-
-Read write-metadata (last-modified timestamp, TTL expiry, version/ETag) by setting `includeMetadata(true)` on read operations. Metadata is **null by default** to avoid unnecessary overhead.
-
-### Reading Metadata
-
-```java
-OperationOptions opts = OperationOptions.builder()
-        .includeMetadata(true)
-        .build();
-
-DocumentResult result = client.read(address, key, opts);
-DocumentMetadata meta = result.metadata();
-
-if (meta != null) {
-    System.out.println("Last modified : " + meta.lastModified());
-    System.out.println("Expires at    : " + meta.ttlExpiry());    // null if no TTL
-    System.out.println("Version/ETag  : " + meta.version());
-}
-```
-
-### Provider Metadata Availability
-
-| Field | Cosmos DB | DynamoDB | Spanner |
-|-------|:---------:|:--------:|:-------:|
-| `lastModified` | ✓ (from `_ts`) | ✗ | ✗ |
-| `ttlExpiry` | ✗ | ✓ (stored attribute) | ✗ |
-| `version` | ✓ (ETag) | ✗ | ✗ |
-
-Fields the provider cannot supply are returned as `null`. Use
-`Capability.WRITE_TIMESTAMP` to check before accessing `metadata()`.
-
-```java
-if (client.capabilities().isSupported(Capability.WRITE_TIMESTAMP)) {
-    DocumentResult r = client.read(address, key,
-            OperationOptions.builder().includeMetadata(true).build());
-    System.out.println(r.metadata().lastModified());
-}
-```
-
-### System Property Stripping
-
-The `document()` field of `DocumentResult` is always stripped of provider
-system properties (`_ts`, `_etag`, `_rid`, `_self`, `_attachments`, `partitionKey`) before being returned, ensuring the same document shape regardless of which provider it was read from.
+`maxResults` differs from `maxPageSize`: `maxPageSize` is a hint to the
+provider's pager (one network round-trip per page); `maxResults` is the
+total-items cap on the items the caller will see, regardless of provider page
+sizing.
 
 ---
 
@@ -1331,7 +1139,7 @@ data leaves the client. This limit applies to `create()`, `upsert()`, and
 
 ### Why 399 KB, not 400 KB?
 
-Providers inject additional fields (`partitionKey`, `sortKey`, `id`, `ttlExpiry`) before writing. DynamoDB measures its 400 KB limit against the internal wire format, which can be larger than raw JSON bytes. The 1 KB safety margin prevents valid-looking documents from exceeding the wire limit after field injection.
+Providers inject additional fields (`partitionKey`, `sortKey`, `id`) before writing. DynamoDB measures its 400 KB limit against the internal wire format, which can be larger than raw JSON bytes. The 1 KB safety margin prevents valid-looking documents from exceeding the wire limit after field injection.
 
 ### Validation Behaviour
 

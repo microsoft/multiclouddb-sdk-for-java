@@ -2,6 +2,13 @@
 
 This document resolves key design choices for the Multicloud DB SDK and records rationale + alternatives.
 
+> **Strict LCD Portability**: As of the strict-LCD release, design decisions
+> around `nativeExpression`, asymmetric capabilities (LIKE, ROW_LEVEL_TTL,
+> WRITE_TIMESTAMP, etc.), cross-partition queries, and per-document TTL have
+> been superseded — those features have been removed from the public API.
+> See `multiclouddb-api/CHANGELOG.md` "Strict LCD Portability" for the
+> current portable surface.
+
 ## Decision 1: Implementation language and packaging
 - Decision: Implement the initial SDK in **Java** (targeting Java 17 LTS) and publish as Maven artifacts.
 - Rationale: This repository is the Java SDK implementation; the three official provider SDKs are mature on Java, and a Java-first portable contract is the fastest path to a credible conformance suite.

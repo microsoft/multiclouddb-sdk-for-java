@@ -7,6 +7,30 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed — strict Lowest-Common-Denominator (LCD) portability
+
+The Cosmos provider has been updated to align with the strict LCD contract in
+the `multiclouddb-api` module. See the API CHANGELOG for the full breaking-change
+list.
+
+#### Removed capability declarations
+
+The following Cosmos-only / cross-provider-asymmetric capabilities are no longer
+declared by `CosmosCapabilities` because the corresponding API surface has been
+removed from `multiclouddb-api`: `CROSS_PARTITION_QUERY`, `NATIVE_SQL_QUERY`,
+`RESULT_LIMIT`, `LIKE_OPERATOR`, `ENDS_WITH`, `REGEX_MATCH`, `CASE_FUNCTIONS`,
+`ROW_LEVEL_TTL`, `WRITE_TIMESTAMP`. Cosmos retains support for these features
+natively; they are simply no longer exposed through the portable API.
+
+#### Removed query-translation paths
+
+- `Top N` translation (formerly `SELECT TOP n c.* …`) is removed from
+  `CosmosProviderClient.query()`. `QueryRequest.maxResults(int)` is enforced
+  client-side via a single-page truncation in `DefaultMulticloudDbClient`.
+- The `nativeExpression()` passthrough is removed.
+- `orderBy(<field>, …)` is no longer translated to `ORDER BY c.<field>`; only
+  `orderBy("sortKey", …)` is accepted, and Cosmos maps it to `ORDER BY c.id`.
+
 ### Documentation
 
 - **`delete()` of a missing key remains a silent no-op (idempotent).** The

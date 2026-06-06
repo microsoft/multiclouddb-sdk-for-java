@@ -39,7 +39,7 @@ switch providers by changing a single properties file, with zero code changes.
 | **Vendor lock-in** | Single `MulticloudDbClient` interface - portable CRUD + query |
 | **Divergent query languages** | Portable DSL auto-translated to Cosmos SQL, PartiQL, or GoogleSQL |
 | **Migration pain** | Switch providers by changing one property - zero code changes |
-| **Feature uncertainty** | Runtime `CapabilitySet` introspection with portability warnings |
+| **Feature uncertainty** | Strict Lowest-Common-Denominator portability — if it's in the API, every provider supports it |
 | **Cross-provider testing** | Conformance suite runs identical tests against every provider |
 
 ---
@@ -72,10 +72,11 @@ Automatically translated to Cosmos SQL, DynamoDB PartiQL, or Spanner GoogleSQL.
 
 <div class="card" markdown>
 
-### :material-shield-check: Capability Introspection
+### :material-shield-check: Strict LCD Portability
 
-Query provider capabilities at runtime. Get clear signals when a feature
-is unavailable or behaviour may differ across providers.
+Every API in `multiclouddb-api` is supported by **all three** providers.
+No asymmetric capabilities, no native-provider escape hatches. Code that
+compiles will run identically on any configured provider.
 
 [Learn more →](compatibility.md)
 
@@ -96,7 +97,7 @@ Partition-scoped queries for efficient within-partition reads.
 
 ### :material-test-tube: Conformance Testing
 
-281+ tests across API and provider modules. Identical CRUD + query tests
+396+ tests across API and provider modules. Identical CRUD + query tests
 run against every provider emulator.
 
 [Learn more →](contributing.md)
@@ -199,8 +200,9 @@ client.upsert(todos, key, doc);
 
 // Query with portable expressions - auto-translated per provider
 QueryRequest query = QueryRequest.builder()
-    .expression("status = @status AND category = @cat")
-    .parameters(Map.of("status", "active", "cat", "shopping"))
+    .partitionKey("shopping")           // every query is partition-scoped
+    .expression("status = @status")
+    .parameter("status", "active")
     .maxPageSize(25)
     .build();
 QueryPage page = client.query(todos, query);

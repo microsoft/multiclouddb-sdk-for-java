@@ -7,6 +7,11 @@ description: "Tasks for implementing Multicloud DB SDK (Java)"
 **Input**: Design documents from `specs/001-clouddb-sdk/`  
 **Prerequisites**: plan.md (required), spec.md (required), research.md, data-model.md, contracts/openapi.yaml, quickstart.md
 
+> **Strict LCD Portability**: As of the strict-LCD release, tasks referencing
+> `nativeExpression`, asymmetric capabilities, cross-partition queries,
+> per-document TTL, or arbitrary-field `orderBy` are historical. The current
+> portable surface is documented in `multiclouddb-api/CHANGELOG.md`.
+
 **Tech stack (from plan.md)**: Java 17 (LTS), multi-module Maven, SLF4J API, Jackson `JsonNode`, JUnit 5 + Mockito
 
 ## Format: `- [ ] T### [P?] [US?] Description with file path`

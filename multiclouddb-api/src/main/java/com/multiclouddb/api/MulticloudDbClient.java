@@ -41,9 +41,8 @@ public interface MulticloudDbClient extends AutoCloseable {
      *
      * @param address target database + collection
      * @param key     document key
-     * @param options operation options; set {@link OperationOptions#includeMetadata()} to
-     *                {@code true} to request provider write-metadata
-     * @return the document result (document + optional metadata), or {@code null} if not found
+     * @param options operation options
+     * @return the document result, or {@code null} if not found
      */
     DocumentResult read(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
 

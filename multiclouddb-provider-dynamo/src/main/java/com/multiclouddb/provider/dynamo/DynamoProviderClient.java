@@ -4,7 +4,6 @@
 package com.multiclouddb.provider.dynamo;
 
 import com.multiclouddb.api.CapabilitySet;
-import com.multiclouddb.api.DocumentMetadata;
 import com.multiclouddb.api.DocumentResult;
 import com.multiclouddb.api.MulticloudDbClientConfig;
 import com.multiclouddb.api.MulticloudDbError;
@@ -182,10 +181,6 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
             item.put(DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(
                     key.sortKey() != null ? key.sortKey() : key.partitionKey()));
-            if (options != null && options.ttlSeconds() != null) {
-                long expiryEpoch = Instant.now().getEpochSecond() + options.ttlSeconds();
-                item.put(DynamoConstants.ATTR_TTL_EXPIRY, AttributeValue.fromN(String.valueOf(expiryEpoch)));
-            }
 
             PutItemRequest request = PutItemRequest.builder()
                     .tableName(resolveTableName(address))
@@ -245,17 +240,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                         ProviderId.DYNAMO, OperationNames.READ, false, null));
             }
 
-            DocumentMetadata metadata = null;
-            if (options != null && options.includeMetadata()) {
-                DocumentMetadata.Builder metaBuilder = DocumentMetadata.builder();
-                // Extract TTL expiry if the attribute is present on the item.
-                JsonNode ttlNode = doc.get(DynamoConstants.ATTR_TTL_EXPIRY);
-                if (ttlNode != null && ttlNode.isNumber()) {
-                    metaBuilder.ttlExpiry(Instant.ofEpochSecond(ttlNode.longValue()));
-                }
-                metadata = metaBuilder.build();
-            }
-            return new DocumentResult(doc, metadata);
+            return new DocumentResult(doc);
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.READ);
         }
@@ -283,10 +268,6 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
             item.put(DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(
                     key.sortKey() != null ? key.sortKey() : key.partitionKey()));
-            if (options != null && options.ttlSeconds() != null) {
-                long expiryEpoch = Instant.now().getEpochSecond() + options.ttlSeconds();
-                item.put(DynamoConstants.ATTR_TTL_EXPIRY, AttributeValue.fromN(String.valueOf(expiryEpoch)));
-            }
 
             PutItemRequest request = PutItemRequest.builder()
                     .tableName(resolveTableName(address))
@@ -338,10 +319,6 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
             item.put(DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(
                     key.sortKey() != null ? key.sortKey() : key.partitionKey()));
-            if (options != null && options.ttlSeconds() != null) {
-                long expiryEpoch = Instant.now().getEpochSecond() + options.ttlSeconds();
-                item.put(DynamoConstants.ATTR_TTL_EXPIRY, AttributeValue.fromN(String.valueOf(expiryEpoch)));
-            }
 
             PutItemRequest request = PutItemRequest.builder()
                     .tableName(resolveTableName(address))
@@ -424,13 +401,9 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
     @Override
     public QueryPage query(ResourceAddress address, QueryRequest query, OperationOptions options) {
         try {
-            validateResultSetControl(query, OperationNames.QUERY);
             String tableName = resolveTableName(address);
             int pageSize = query.maxPageSize() != null ? query.maxPageSize() : DynamoConstants.PAGE_SIZE_DEFAULT;
-            // Respect Top N limit: cap the page size to avoid over-fetching
-            if (query.limit() != null) {
-                pageSize = Math.min(pageSize, query.limit());
-            }
+            boolean ascending = isSortKeyAscending(query);
 
             // Deserialize continuation token if present
             Map<String, AttributeValue> exclusiveStartKey = null;
@@ -438,41 +411,15 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                 exclusiveStartKey = DynamoContinuationToken.decode(query.continuationToken());
             }
 
-            // If nativeExpression is set, use PartiQL passthrough
-            if (query.nativeExpression() != null && !query.nativeExpression().isBlank()) {
-                String stmt = query.nativeExpression();
-                Map<String, Object> params = query.parameters();
-                if (query.partitionKey() != null) {
-                    stmt = appendPartitionKeyCondition(stmt);
-                    LinkedHashMap<String, Object> combined = new LinkedHashMap<>();
-                    if (params != null) combined.putAll(params);
-                    combined.put(DynamoConstants.QUERY_PARTITION_KEY_PARAM, query.partitionKey());
-                    params = combined;
-                }
-                return executePartiQL(stmt, params, pageSize, query.continuationToken());
-            }
-
-            // If expression is null/blank or the generic "SELECT * FROM c":
-            // - With partitionKey: use DynamoDB Query API (O(partition size)) not Scan+Filter (O(table size))
-            // - Without partitionKey: full-table scan (no alternative)
-            if (query.expression() == null || query.expression().isBlank()
-                    || query.expression().trim().equalsIgnoreCase(DynamoConstants.QUERY_SELECT_ALL_COSMOS)) {
-                if (query.partitionKey() != null) {
-                    return executeQueryByPartitionKey(address, tableName, query.partitionKey(),
-                            null, null, pageSize, exclusiveStartKey);
-                }
-                return executeScan(tableName, pageSize, exclusiveStartKey);
-            }
-
-            // Legacy expression path:
-            // - With partitionKey: Query API with KeyConditionExpression + FilterExpression
-            // - Without partitionKey: Scan with FilterExpression (no key to scope on)
-            if (query.partitionKey() != null) {
+            // No filter expression → Query API scoped to partitionKey (O(partition size))
+            if (query.expression() == null || query.expression().isBlank()) {
                 return executeQueryByPartitionKey(address, tableName, query.partitionKey(),
-                        query.expression(), query.parameters(), pageSize, exclusiveStartKey);
+                        null, null, pageSize, exclusiveStartKey, ascending);
             }
-            return executeScanWithFilter(tableName, query.expression(), query.parameters(),
-                    pageSize, exclusiveStartKey);
+
+            // With filter expression → Query API with KeyConditionExpression + FilterExpression
+            return executeQueryByPartitionKey(address, tableName, query.partitionKey(),
+                    query.expression(), query.parameters(), pageSize, exclusiveStartKey, ascending);
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.QUERY);
         }
@@ -508,12 +455,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
     public QueryPage queryWithTranslation(ResourceAddress address, TranslatedQuery translated,
             QueryRequest query, OperationOptions options) {
         try {
-            validateResultSetControl(query, OperationNames.QUERY_WITH_TRANSLATION);
             int pageSize = query.maxPageSize() != null ? query.maxPageSize() : DynamoConstants.PAGE_SIZE_DEFAULT;
-            // Respect Top N limit
-            if (query.limit() != null) {
-                pageSize = Math.min(pageSize, query.limit());
-            }
             List<AttributeValue> params = new ArrayList<>();
             for (Object val : translated.positionalParameters()) {
                 params.add(DynamoItemMapper.toAttributeValue(val));
@@ -529,10 +471,8 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
             }
 
             // Inject partition key scoping as a partitionKey equality condition
-            if (query.partitionKey() != null) {
-                stmt = appendPartitionKeyCondition(stmt);
-                params.add(DynamoItemMapper.toAttributeValue(query.partitionKey()));
-            }
+            stmt = appendPartitionKeyCondition(stmt);
+            params.add(DynamoItemMapper.toAttributeValue(query.partitionKey()));
 
             ExecuteStatementRequest.Builder stmtBuilder = ExecuteStatementRequest.builder()
                     .statement(stmt)
@@ -551,12 +491,13 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                 items.add(DynamoItemMapper.attributeMapToMap(item));
             }
 
-            // PartiQL ExecuteStatement returns items in undefined order for scans.
-            // Sort by sort key (ascending) to match the implicit ordering of
-            // DynamoDB Query within a partition and the Cosmos provider's default
-            // ORDER BY c.id ASC. Ordering applies within this page only; see
-            // SORT_KEY_ASC for the multi-page limitation note.
-            items.sort(SORT_KEY_ASC);
+            // PartiQL ExecuteStatement returns items in undefined order. Sort by
+            // sortKey to match the implicit ordering of DynamoDB Query within a
+            // partition. Direction is determined by the request's orderBy clause
+            // (validated to be sortKey-only at the API layer). Sort applies within
+            // this page only; see SORT_KEY_ASC for the multi-page limitation note.
+            boolean ascending = isSortKeyAscending(query);
+            items.sort(ascending ? SORT_KEY_ASC : SORT_KEY_ASC.reversed());
 
             OperationDiagnostics diag = buildQueryDiagnostics(OperationNames.QUERY_WITH_TRANSLATION, address,
                     response.responseMetadata().requestId(),
@@ -570,56 +511,8 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
     }
 
     /**
-     * Executes a native PartiQL {@code ExecuteStatement} and returns a page of results.
-     * <p>
-     * Parameter values are extracted from the supplied map in insertion order and
-     * converted to DynamoDB {@link AttributeValue}s. The DynamoDB
-     * {@code nextToken} is used for pagination (not the SDK-level
-     * {@link DynamoContinuationToken} Base64 format used by Scan).
-     *
-     * @param statement  the PartiQL statement string
-     * @param parameters query parameters (values converted to {@link AttributeValue}s in
-     *                   insertion order)
-     * @param pageSize   maximum number of items to return
-     * @param nextToken  DynamoDB pagination token from a previous call, or {@code null}
-     * @return a page of results
-     */
-    private QueryPage executePartiQL(String statement, Map<String, Object> parameters,
-            int pageSize, String nextToken) {
-        List<AttributeValue> params = new ArrayList<>();
-        if (parameters != null) {
-            for (Object val : parameters.values()) {
-                params.add(DynamoItemMapper.toAttributeValue(val));
-            }
-        }
-
-        ExecuteStatementRequest.Builder stmtBuilder = ExecuteStatementRequest.builder()
-                .statement(statement)
-                .limit(pageSize);
-
-        if (!params.isEmpty()) stmtBuilder.parameters(params);
-        if (nextToken != null && !nextToken.isBlank()) stmtBuilder.nextToken(nextToken);
-
-        java.time.Instant partiqlStart = java.time.Instant.now();
-        ExecuteStatementResponse response = dynamoClient.executeStatement(stmtBuilder.build());
-
-        List<Map<String, Object>> items = new ArrayList<>();
-        for (Map<String, AttributeValue> item : response.items()) {
-            items.add(DynamoItemMapper.attributeMapToMap(item));
-        }
-
-        OperationDiagnostics partiqlDiag = buildQueryDiagnostics(DynamoConstants.OP_QUERY_PARTIQL, null,
-                response.responseMetadata().requestId(),
-                response.consumedCapacity(), items.size(), response.nextToken(),
-                java.time.Duration.between(partiqlStart, java.time.Instant.now()), response.sdkHttpResponse());
-
-        return new QueryPage(items, response.nextToken(), partiqlDiag);
-    }
-
-    /**
      * Executes a DynamoDB <em>Query</em> scoped to a single partition (hash key) using
-     * {@code KeyConditionExpression}. This is O(partition size), compared to
-     * {@link #executeScanWithFilter} which performs a full-table Scan and is O(table size).
+     * {@code KeyConditionExpression}. This is O(partition size).
      *
      * <p>If {@code filterExpression} is provided it is applied as a {@code FilterExpression}
      * <em>after</em> the key-condition lookup; the caller must not include partition key
@@ -638,7 +531,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      */
     private QueryPage executeQueryByPartitionKey(ResourceAddress address, String tableName, String partitionKeyValue,
             String filterExpression, Map<String, Object> filterParameters,
-            int pageSize, Map<String, AttributeValue> exclusiveStartKey) {
+            int pageSize, Map<String, AttributeValue> exclusiveStartKey, boolean ascending) {
         Map<String, AttributeValue> expressionValues = new LinkedHashMap<>();
         expressionValues.put(DynamoConstants.KEY_CONDITION_PK_PARAM,
                 AttributeValue.fromS(partitionKeyValue));
@@ -662,6 +555,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                         .keyConditionExpression(DynamoConstants.KEY_CONDITION_EXPRESSION)
                         .expressionAttributeValues(expressionValues)
                         .limit(pageSize)
+                        .scanIndexForward(ascending)
                         .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
 
         if (filterExpression != null && !filterExpression.isBlank()) {
@@ -689,122 +583,6 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                 java.time.Duration.between(keyQueryStart, java.time.Instant.now()), response.sdkHttpResponse());
 
         return new QueryPage(items, continuationToken, keyCondDiag);
-    }
-
-    /**
-     * Executes a full-table DynamoDB {@code Scan} with no filter and returns a page of
-     * results.
-     * <p>
-     * Pagination uses {@code exclusiveStartKey} (decoded from the portable
-     * {@link DynamoContinuationToken}) and encodes the returned
-     * {@code lastEvaluatedKey} back into the portable token format.
-     *
-     * @param tableName        the physical DynamoDB table name
-     * @param pageSize         maximum number of items to return
-     * @param exclusiveStartKey the DynamoDB exclusive start key for pagination, or
-     *                         {@code null} for the first page
-     * @return a page of results
-     */
-    private QueryPage executeScan(String tableName, int pageSize,
-            Map<String, AttributeValue> exclusiveStartKey) {
-        ScanRequest.Builder scanBuilder = ScanRequest.builder()
-                .tableName(tableName)
-                .limit(pageSize)
-                .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
-
-        if (exclusiveStartKey != null) scanBuilder.exclusiveStartKey(exclusiveStartKey);
-
-        java.time.Instant scanStart = java.time.Instant.now();
-        ScanResponse response = dynamoClient.scan(scanBuilder.build());
-        List<Map<String, Object>> items = new ArrayList<>();
-        for (Map<String, AttributeValue> item : response.items()) {
-            items.add(DynamoItemMapper.attributeMapToMap(item));
-        }
-
-        // DynamoDB Scan returns items in undefined hash-key order. Sort by sort key
-        // (ascending) to match the implicit ordering of DynamoDB Query within a
-        // partition and the Cosmos provider's default ORDER BY c.id ASC. Ordering
-        // applies within this page only; see SORT_KEY_ASC for the multi-page
-        // limitation note.
-        items.sort(SORT_KEY_ASC);
-
-        String continuationToken = null;
-        if (response.lastEvaluatedKey() != null && !response.lastEvaluatedKey().isEmpty()) {
-            continuationToken = DynamoContinuationToken.encode(response.lastEvaluatedKey());
-        }
-
-        OperationDiagnostics scanDiag = buildQueryDiagnostics(DynamoConstants.OP_QUERY_SCAN, null,
-                response.sdkHttpResponse().firstMatchingHeader(DynamoConstants.HEADER_REQUEST_ID).orElse(null),
-                response.consumedCapacity(), items.size(), continuationToken,
-                java.time.Duration.between(scanStart, java.time.Instant.now()), response.sdkHttpResponse());
-
-        return new QueryPage(items, continuationToken, scanDiag);
-    }
-
-    /**
-     * Executes a DynamoDB {@code Scan} with a filter expression and returns a page of
-     * results.
-     * <p>
-     * Parameter names that do not already start with {@code :} are prefixed
-     * automatically. Pagination uses the same {@link DynamoContinuationToken} encoding
-     * as {@link #executeScan}.
-     *
-     * @param tableName        the physical DynamoDB table name
-     * @param filterExpression the DynamoDB filter expression string
-     * @param parameters       expression attribute values (keys are param names, may
-     *                         or may not include the {@code :} prefix)
-     * @param pageSize         maximum number of items to return
-     * @param exclusiveStartKey DynamoDB exclusive start key for pagination, or
-     *                         {@code null} for the first page
-     * @return a page of results
-     */
-    private QueryPage executeScanWithFilter(String tableName, String filterExpression,
-            Map<String, Object> parameters, int pageSize,
-            Map<String, AttributeValue> exclusiveStartKey) {
-        Map<String, AttributeValue> expressionValues = new LinkedHashMap<>();
-        if (parameters != null) {
-            for (Map.Entry<String, Object> entry : parameters.entrySet()) {
-                String paramName = entry.getKey().startsWith(DynamoConstants.FILTER_PARAM_PREFIX)
-                        ? entry.getKey()
-                        : DynamoConstants.FILTER_PARAM_PREFIX + entry.getKey();
-                expressionValues.put(paramName, DynamoItemMapper.toAttributeValue(entry.getValue()));
-            }
-        }
-
-        ScanRequest.Builder scanBuilder = ScanRequest.builder()
-                .tableName(tableName)
-                .filterExpression(filterExpression)
-                .limit(pageSize)
-                .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
-
-        if (!expressionValues.isEmpty()) scanBuilder.expressionAttributeValues(expressionValues);
-        if (exclusiveStartKey != null) scanBuilder.exclusiveStartKey(exclusiveStartKey);
-
-        java.time.Instant filterScanStart = java.time.Instant.now();
-        ScanResponse response = dynamoClient.scan(scanBuilder.build());
-        List<Map<String, Object>> items = new ArrayList<>();
-        for (Map<String, AttributeValue> item : response.items()) {
-            items.add(DynamoItemMapper.attributeMapToMap(item));
-        }
-
-        // DynamoDB Scan returns items in undefined hash-key order. Sort by sort key
-        // (ascending) to match the implicit ordering of DynamoDB Query within a
-        // partition and the Cosmos provider's default ORDER BY c.id ASC. Ordering
-        // applies within this page only; see SORT_KEY_ASC for the multi-page
-        // limitation note.
-        items.sort(SORT_KEY_ASC);
-
-        String continuationToken = null;
-        if (response.lastEvaluatedKey() != null && !response.lastEvaluatedKey().isEmpty()) {
-            continuationToken = DynamoContinuationToken.encode(response.lastEvaluatedKey());
-        }
-
-        OperationDiagnostics filterDiag = buildQueryDiagnostics(DynamoConstants.OP_QUERY_SCAN_FILTER, null,
-                response.sdkHttpResponse().firstMatchingHeader(DynamoConstants.HEADER_REQUEST_ID).orElse(null),
-                response.consumedCapacity(), items.size(), continuationToken,
-                java.time.Duration.between(filterScanStart, java.time.Instant.now()), response.sdkHttpResponse());
-
-        return new QueryPage(items, continuationToken, filterDiag);
     }
 
     /**
@@ -883,23 +661,17 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
     }
 
     /**
-     * Validates result-set control fields in a query request.
+     * Returns the requested sort direction for the {@code sortKey} field
+     * (defaults to ascending when no orderBy is specified).
      * <p>
-     * DynamoDB does not support server-side ORDER BY; any non-empty {@code orderBy}
-     * list throws {@link MulticloudDbException} with
-     * {@link MulticloudDbErrorCategory#UNSUPPORTED_CAPABILITY}.
-     * {@code limit} is supported via the DynamoDB Scan/PartiQL {@code LIMIT} parameter.
+     * {@link QueryRequest} validates that orderBy fields are sortKey-only, so we
+     * only need to inspect the first (and only allowed) direction.
      */
-    private void validateResultSetControl(QueryRequest query, String operation) {
-        if (query.orderBy() != null && !query.orderBy().isEmpty()) {
-            throw new MulticloudDbException(new MulticloudDbError(
-                    MulticloudDbErrorCategory.UNSUPPORTED_CAPABILITY,
-                    "DynamoDB does not support ORDER BY. Check Capability.ORDER_BY before calling query().",
-                    ProviderId.DYNAMO,
-                    operation,
-                    false,
-                    null));
+    private static boolean isSortKeyAscending(QueryRequest query) {
+        if (query.orderBy() == null || query.orderBy().isEmpty()) {
+            return true;
         }
+        return query.orderBy().get(0).direction() == com.multiclouddb.api.SortDirection.ASC;
     }
 
     @Override

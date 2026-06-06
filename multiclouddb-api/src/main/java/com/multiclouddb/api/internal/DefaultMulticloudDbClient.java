@@ -25,8 +25,6 @@ import com.multiclouddb.api.query.ExpressionParser;
 import com.multiclouddb.api.query.ExpressionTranslator;
 import com.multiclouddb.api.query.ExpressionValidationException;
 import com.multiclouddb.api.query.ExpressionValidator;
-import com.multiclouddb.api.query.LogicalExpression;
-import com.multiclouddb.api.query.NotExpression;
 import com.multiclouddb.api.query.TranslatedQuery;
 import com.multiclouddb.spi.MulticloudDbProviderClient;
 import org.slf4j.Logger;
@@ -34,6 +32,8 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletionException;
@@ -144,34 +144,32 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
         try {
             QueryPage page;
 
-            // Native expression passthrough (T069)
-            if (query.nativeExpression() != null && !query.nativeExpression().isBlank()) {
-                LOG.debug("query using native expression passthrough: address={}", address);
-                page = providerClient.query(address, query, options);
-            }
-            // Portable expression pipeline: parse → validate → translate → execute
-            else if (query.expression() != null && !query.expression().isBlank()
-                    && expressionTranslator != null
-                    && !isLegacyExpression(query.expression())) {
-                // Fail-fast: check portable query capability (T080)
+            // Portable expression pipeline: parse → validate → translate → execute.
+            // Under strict LCD, provider-native passthrough is no longer supported.
+            if (query.expression() != null && !query.expression().isBlank()) {
+                if (expressionTranslator == null) {
+                    throw new MulticloudDbException(new MulticloudDbError(
+                            MulticloudDbErrorCategory.INVALID_REQUEST,
+                            "Portable query expressions require a translator configured on the provider",
+                            config.provider(), OperationNames.QUERY, false, Map.of()));
+                }
                 checkCapability(Capability.PORTABLE_QUERY_EXPRESSION,
                         "Portable query expressions are not supported by provider " + config.provider().id());
 
                 Expression ast = ExpressionParser.parse(query.expression());
                 ExpressionValidator.validate(ast, query.parameters());
 
-                // Fail-fast: check capability-gated features in the AST (T080)
-                checkExpressionCapabilities(ast);
-
                 TranslatedQuery translated = expressionTranslator.translate(
                         ast, query.parameters(), address.collection());
                 LOG.debug("query translated: address={}, native={}", address, translated.queryString());
                 page = providerClient.queryWithTranslation(address, translated, query, options);
-            }
-            // Legacy/opaque expression or no translator — pass through directly
-            else {
+            } else {
+                // No filter expression — provider scans the supplied partition.
                 page = providerClient.query(address, query, options);
             }
+
+            // Apply client-side maxResults cap to enforce the SDK-level total cap.
+            page = applyMaxResultsCap(page, query);
 
             LOG.debug("query completed: address={}, items={}, hasMore={}, duration={}ms",
                     address, page.items().size(), page.continuationToken() != null,
@@ -195,16 +193,28 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
     }
 
     /**
-     * Check if an expression looks like a legacy opaque expression
-     * (e.g., "SELECT * FROM c" or contains provider-specific syntax like ":param").
+     * Truncate the page items to satisfy {@link QueryRequest#maxResults()}.
+     * <p>The maxResults cap is enforced client-side and applies to a single
+     * page invocation: if the provider returned more items than the cap, the
+     * extra items are dropped and the continuation token is cleared so the
+     * caller does not request another page.
+     * Callers iterating across pages should treat the cap as a per-call upper
+     * bound; tracking the total across pages is the caller's responsibility.
      */
-    private boolean isLegacyExpression(String expression) {
-        String trimmed = expression.trim();
-        // Legacy patterns: full SQL statements or DynamoDB filter expressions with
-        // :param
-        return trimmed.toUpperCase().startsWith("SELECT ")
-                || trimmed.contains(":")
-                || trimmed.startsWith("#");
+    private QueryPage applyMaxResultsCap(QueryPage page, QueryRequest query) {
+        Integer cap = query.maxResults();
+        if (cap == null) {
+            return page;
+        }
+        List<Map<String, Object>> items = page.items();
+        if (items.size() <= cap) {
+            return page;
+        }
+        List<Map<String, Object>> truncated = new ArrayList<>(cap);
+        for (int i = 0; i < cap; i++) {
+            truncated.add(items.get(i));
+        }
+        return new QueryPage(truncated, null);
     }
 
     @Override
@@ -314,26 +324,5 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
                             false,
                             Map.of("capability", capabilityName)));
         }
-    }
-
-    /**
-     * Walk the expression AST and fail-fast if it uses capability-gated features
-     * not supported by this provider (T080).
-     */
-    private void checkExpressionCapabilities(Expression ast) {
-        CapabilitySet caps = providerClient.capabilities();
-        checkExpressionCapabilitiesRecursive(ast, caps);
-    }
-
-    private void checkExpressionCapabilitiesRecursive(Expression expr, CapabilitySet caps) {
-        if (expr instanceof LogicalExpression logical) {
-            checkExpressionCapabilitiesRecursive(logical.left(), caps);
-            checkExpressionCapabilitiesRecursive(logical.right(), caps);
-        } else if (expr instanceof NotExpression not) {
-            checkExpressionCapabilitiesRecursive(not.child(), caps);
-        }
-        // No capability-gated operators in the current expression grammar.
-        // Future capability-gated features (e.g., LIKE, ORDER BY) can be
-        // checked here when added to the portable expression parser.
     }
 }

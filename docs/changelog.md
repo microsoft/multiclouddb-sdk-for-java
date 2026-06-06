@@ -11,6 +11,29 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### [Unreleased]
 
+**Breaking changes — strict Lowest-Common-Denominator (LCD) portability:**
+
+This release enforces strict LCD portability: any feature not supported by **all
+three** providers (Cosmos, DynamoDB, Spanner) has been removed from the public
+API. See `multiclouddb-api/CHANGELOG.md` for the full migration guide.
+
+- **Removed types:** `DocumentMetadata`. `DocumentResult.read()` now returns
+  the document `ObjectNode` directly.
+- **Removed `QueryRequest` members:** `nativeExpression()`, `limit()`, and
+  arbitrary-field `orderBy()`.
+- **Removed `OperationOptions` members:** `ttlSeconds()`, `includeMetadata()`.
+- **Removed `Capability` constants:** `CROSS_PARTITION_QUERY`,
+  `NATIVE_SQL_QUERY`, `RESULT_LIMIT`, `LIKE_OPERATOR`, `ENDS_WITH`,
+  `REGEX_MATCH`, `CASE_FUNCTIONS`, `ROW_LEVEL_TTL`, `WRITE_TIMESTAMP`. Only
+  seven portable capabilities remain: `CONTINUATION_TOKEN_PAGING`,
+  `TRANSACTIONS`, `BATCH_OPERATIONS`, `STRONG_CONSISTENCY`, `CHANGE_FEED`,
+  `PORTABLE_QUERY_EXPRESSION`, `ORDER_BY` (restricted to the `sortKey` field).
+- **`QueryRequest.partitionKey` is now required.** Building a `QueryRequest`
+  without a partition key throws `IllegalArgumentException`.
+- **`QueryRequest.orderBy(...)` accepts only `"sortKey"`** with `ASC` / `DESC`.
+- **`QueryRequest.maxResults(int)` (new)** — client-side cap on the total
+  number of items returned by `query()`. Replaces the removed `limit()`.
+
 **Documentation:**
 
 - `MulticloudDbClient.delete(...)` is documented as idempotent — silent on
@@ -59,6 +82,23 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ## multiclouddb-provider-cosmos
 
 ### [Unreleased]
+
+**Changed — strict LCD portability:**
+
+Aligned with `multiclouddb-api`'s strict LCD contract. See
+`multiclouddb-api/CHANGELOG.md` for the full breaking-change list.
+
+- `CosmosCapabilities` no longer declares the removed capabilities
+  (`CROSS_PARTITION_QUERY`, `NATIVE_SQL_QUERY`, `RESULT_LIMIT`,
+  `LIKE_OPERATOR`, `ENDS_WITH`, `REGEX_MATCH`, `CASE_FUNCTIONS`,
+  `ROW_LEVEL_TTL`, `WRITE_TIMESTAMP`). Cosmos retains support for these
+  features natively; they are simply no longer exposed through the portable
+  API.
+- `SELECT TOP n` translation is removed; `maxResults(int)` is enforced
+  client-side via a single-page truncation in `DefaultMulticloudDbClient`.
+- `nativeExpression()` passthrough is removed.
+- `orderBy("sortKey", …)` is mapped to `ORDER BY c.id`; arbitrary-field
+  orderBy is removed.
 
 **Added:**
 
@@ -134,6 +174,23 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### [Unreleased]
 
+**Changed — strict LCD portability:**
+
+Aligned with `multiclouddb-api`'s strict LCD contract. See
+`multiclouddb-api/CHANGELOG.md` for the full breaking-change list.
+
+- **Cross-partition `Scan` routing is removed.** Every `QueryRequest` now
+  carries a `partitionKey` by construction, so the DynamoDB provider always
+  routes to the native `Query` API with a `KeyConditionExpression`.
+- `orderBy` is narrowed to `orderBy("sortKey", ASC|DESC)`, mapped to
+  `ScanIndexForward(true|false)`. Default is ASC.
+- `QueryRequest.maxResults(int)` is enforced client-side by
+  `DefaultMulticloudDbClient`; the old `limit()` path is removed.
+- `DynamoCapabilities` no longer declares the removed capabilities
+  (`CROSS_PARTITION_QUERY`, `NATIVE_SQL_QUERY`, `RESULT_LIMIT`,
+  `LIKE_OPERATOR`, `ENDS_WITH`, `REGEX_MATCH`, `CASE_FUNCTIONS`,
+  `ROW_LEVEL_TTL`, `WRITE_TIMESTAMP`).
+
 **Changed:**
 
 - `BETWEEN` translation now wraps in parentheses (`(field BETWEEN ? AND ?)`).
@@ -173,6 +230,23 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ## multiclouddb-provider-spanner
 
 ### [Unreleased]
+
+**Changed — strict LCD portability:**
+
+Aligned with `multiclouddb-api`'s strict LCD contract. See
+`multiclouddb-api/CHANGELOG.md` for the full breaking-change list.
+
+- `nativeExpression()` passthrough is removed.
+- `query.limit(int)` translation is removed; `maxResults(int)` is enforced
+  client-side by `DefaultMulticloudDbClient`.
+- `orderBy("sortKey", ASC|DESC)` is the only accepted form; mapped to
+  `ORDER BY sortKey ASC|DESC`. Default is ASC.
+- `DocumentMetadata` extraction is removed (the type itself is gone from the
+  API). `read()` now returns the raw document only.
+- `SpannerCapabilities` no longer declares the removed capabilities
+  (`NATIVE_SQL_QUERY`, `RESULT_LIMIT`, `LIKE_OPERATOR`, `ENDS_WITH`,
+  `REGEX_MATCH`, `CASE_FUNCTIONS`, `ROW_LEVEL_TTL`, `WRITE_TIMESTAMP`,
+  `CROSS_PARTITION_QUERY`).
 
 **Changed:**
 

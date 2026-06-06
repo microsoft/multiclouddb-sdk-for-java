@@ -164,29 +164,31 @@ public abstract class CrudConformanceTests {
     @Test @Order(6)
     @DisplayName("query returns items")
     void queryAll() {
+        String pk = "conf-query-pk";
         for (int i = 1; i <= 3; i++) {
-            client.upsert(getAddress(), MulticloudDbKey.of("conf-query-" + i, "conf-query-" + i),
+            client.upsert(getAddress(), MulticloudDbKey.of(pk, "conf-query-" + i),
                     Map.of("title", "Query Item " + i, "batch", "conformance"));
         }
         QueryPage page = client.query(getAddress(),
-                QueryRequest.builder().expression("SELECT * FROM c").maxPageSize(50).build());
+                QueryRequest.builder().partitionKey(pk).maxPageSize(50).build());
         assertNotNull(page);
         assertFalse(page.items().isEmpty(), "Query should return at least our inserted items");
-        for (int i = 1; i <= 3; i++) safeDelete(MulticloudDbKey.of("conf-query-" + i, "conf-query-" + i));
+        for (int i = 1; i <= 3; i++) safeDelete(MulticloudDbKey.of(pk, "conf-query-" + i));
     }
 
     @Test @Order(7)
     @DisplayName("query with page size limits results")
     void queryPaging() {
+        String pk = "conf-page-pk";
         for (int i = 1; i <= 5; i++) {
-            client.upsert(getAddress(), MulticloudDbKey.of("conf-page-" + i, "conf-page-" + i),
+            client.upsert(getAddress(), MulticloudDbKey.of(pk, "conf-page-" + i),
                     Map.of("title", "Page Item " + i));
         }
         QueryPage page1 = client.query(getAddress(),
-                QueryRequest.builder().expression("SELECT * FROM c").maxPageSize(2).build());
+                QueryRequest.builder().partitionKey(pk).maxPageSize(2).build());
         assertNotNull(page1);
         assertTrue(page1.items().size() <= 2, "Page should respect pageSize limit");
-        for (int i = 1; i <= 5; i++) safeDelete(MulticloudDbKey.of("conf-page-" + i, "conf-page-" + i));
+        for (int i = 1; i <= 5; i++) safeDelete(MulticloudDbKey.of(pk, "conf-page-" + i));
     }
 
     @Test @Order(8)
@@ -238,44 +240,15 @@ public abstract class CrudConformanceTests {
     }
 
     @Test @Order(12)
-    @DisplayName("partitionKey null falls back to cross-partition query (returns items from multiple partitions)")
-    void queryWithoutPartitionKey() {
-        // Per-run unique marker so a long-lived emulator (or leftover items
-        // from a previously failed run) cannot interfere with the assertion:
-        // we only ever see items seeded by *this* invocation.
-        String marker = "cross-conf-" + java.util.UUID.randomUUID();
-        client.upsert(getAddress(), MulticloudDbKey.of("cross-a", "pk-cross-a"), Map.of("title", "Cross-A", "marker", marker));
-        client.upsert(getAddress(), MulticloudDbKey.of("cross-b", "pk-cross-b"), Map.of("title", "Cross-B", "marker", marker));
-
-        // Iterate continuation tokens so we evaluate the *full* result set
-        // for this marker, not just the first page. With a fixed marker we
-        // could otherwise be fooled by leftover rows pushing the seeded items
-        // past page-1.
-        Set<String> seenPartitions = new HashSet<>();
-        String continuation = null;
-        do {
-            QueryRequest.Builder qb = QueryRequest.builder()
-                    .expression("marker = @m")
-                    .parameter("m", marker)
-                    .maxPageSize(200);
-            if (continuation != null) qb.continuationToken(continuation);
-            QueryPage page = client.query(getAddress(), qb.build());
-            assertNotNull(page);
-            for (Map<String, Object> item : page.items()) {
-                String t = str(item, "title");
-                if ("Cross-A".equals(t)) seenPartitions.add("cross-a");
-                else if ("Cross-B".equals(t)) seenPartitions.add("cross-b");
-            }
-            continuation = page.continuationToken();
-        } while (continuation != null);
-
-        // Cross-partition query must return items from BOTH partitions, not just one.
-        assertTrue(seenPartitions.size() >= 2,
-                "Cross-partition query should surface items from at least 2 distinct partitions; saw: "
-                        + seenPartitions);
-
-        safeDelete(MulticloudDbKey.of("cross-a", "pk-cross-a"));
-        safeDelete(MulticloudDbKey.of("cross-b", "pk-cross-b"));
+    @DisplayName("partitionKey is required: building a QueryRequest without one throws")
+    void partitionKeyRequired() {
+        // Under strict-LCD, every query must be scoped to a partition.
+        // QueryRequest.Builder must reject any build() call that omits partitionKey.
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> QueryRequest.builder().expression("title = @t").parameter("t", "x").build(),
+                "QueryRequest without partitionKey must be rejected at construction time");
+        assertTrue(ex.getMessage() != null && ex.getMessage().toLowerCase().contains("partitionkey"),
+                "Exception message should mention partitionKey, got: " + ex.getMessage());
     }
 
     @Test @Order(13)
@@ -383,6 +356,7 @@ public abstract class CrudConformanceTests {
         String unmatchableTitle = "no-document-has-this-title-" + java.util.UUID.randomUUID();
         QueryPage page = client.query(getAddress(),
                 QueryRequest.builder()
+                        .partitionKey("no-match-pk")
                         .expression("title = @t")
                         .parameter("t", unmatchableTitle)
                         .maxPageSize(50)

@@ -412,7 +412,7 @@ class CosmosConsistencyTest {
 
             CosmosProviderClient providerClient = new CosmosProviderClient(config);
             ResourceAddress address = new ResourceAddress("testdb", "testcol");
-            QueryRequest query = QueryRequest.builder().expression("c.id = '1'").build();
+            QueryRequest query = QueryRequest.builder().partitionKey("pk1").expression("c.id = '1'").build();
             providerClient.query(address, query, null);
 
             ArgumentCaptor<CosmosQueryRequestOptions> captor =
@@ -461,7 +461,7 @@ class CosmosConsistencyTest {
                             "SELECT * FROM c WHERE c.id = @id ORDER BY c.id ASC",
                             "c.id = @id",
                             Map.of("@id", "1"));
-            QueryRequest query = QueryRequest.builder().build();
+            QueryRequest query = QueryRequest.builder().partitionKey("pk1").build();
             providerClient.queryWithTranslation(address, translated, query, null);
 
             ArgumentCaptor<CosmosQueryRequestOptions> captor =
@@ -503,7 +503,7 @@ class CosmosConsistencyTest {
 
             CosmosProviderClient providerClient = new CosmosProviderClient(config);
             ResourceAddress address = new ResourceAddress("testdb", "testcol");
-            QueryRequest query = QueryRequest.builder().expression("c.id = '1'").build();
+            QueryRequest query = QueryRequest.builder().partitionKey("pk1").expression("c.id = '1'").build();
             providerClient.query(address, query, null);
 
             ArgumentCaptor<CosmosQueryRequestOptions> captor =
@@ -551,7 +551,7 @@ class CosmosConsistencyTest {
                             "SELECT * FROM c WHERE c.id = @id ORDER BY c.id ASC",
                             "c.id = @id",
                             Map.of("@id", "1"));
-            QueryRequest query = QueryRequest.builder().build();
+            QueryRequest query = QueryRequest.builder().partitionKey("pk1").build();
             providerClient.queryWithTranslation(address, translated, query, null);
 
             ArgumentCaptor<CosmosQueryRequestOptions> captor =

@@ -47,15 +47,13 @@ All application code depends on `multiclouddb-api`. The core types are:
 | `MulticloudDbClientConfig` | Builder-pattern config: provider selection, connection, auth, feature flags |
 | `ResourceAddress` | `(database, collection)` pair targeting a container/table |
 | `MulticloudDbKey` | `(partitionKey, sortKey)` pair - every document needs at least a partition key |
-| `QueryRequest` | Portable expression, native expression, parameters, page size, continuation token, partition key scoping, `limit`, `orderBy` |
+| `QueryRequest` | Portable expression, parameters, partition key (required), continuation token, `maxPageSize`, `maxResults`, `orderBy("sortKey", …)` |
 | `QueryPage` | Result page: items + optional continuation token + optional diagnostics |
-| `SortOrder` / `SortDirection` | Sort specification for `orderBy` - validates field names against injection |
-| `DocumentResult` | Result of `read()`: document payload + optional `DocumentMetadata` |
-| `DocumentMetadata` | Write-metadata: `lastModified`, `ttlExpiry`, `version` |
+| `SortDirection` | `ASC` / `DESC` direction for the `orderBy("sortKey", …)` clause |
+| `DocumentResult` | Result of `read()` wrapping the document payload as an `ObjectNode` |
 | `CapabilitySet` / `Capability` | Runtime introspection of provider capabilities |
 | `MulticloudDbException` | Structured error with category, provider, and native code |
-| `PortabilityWarning` | Signals non-portable behavior |
-| `OperationOptions` | Per-call timeout, TTL, metadata flag |
+| `OperationOptions` | Per-call request controls (e.g., consistency level) |
 | `OperationDiagnostics` | Latency, request units/charge, request ID, ETag, item count |
 
 ### Expression Types

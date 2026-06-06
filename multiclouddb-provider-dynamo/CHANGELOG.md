@@ -7,6 +7,42 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed — strict Lowest-Common-Denominator (LCD) portability
+
+The DynamoDB provider has been updated to align with the strict LCD contract in
+the `multiclouddb-api` module. See the API CHANGELOG for the full
+breaking-change list.
+
+#### Removed query routing
+
+- **Cross-partition `Scan` routing is removed.** Every `QueryRequest` now
+  carries a `partitionKey` by construction, so the DynamoDB provider always
+  routes to the native `Query` API with a `KeyConditionExpression`. The
+  `executeScan(...)`, `executeScanWithFilter(...)`, and `validateResultSetControl(...)`
+  helpers in `DynamoProviderClient` are removed (they were used only for
+  cross-partition / `LIMIT` paths that no longer exist).
+- The `Top N` (`QueryRequest.limit`) path is removed; `QueryRequest.maxResults(int)`
+  is enforced client-side by `DefaultMulticloudDbClient`.
+
+#### `orderBy` semantics narrowed
+
+- The portable API now exposes only `orderBy("sortKey", ASC|DESC)`. The Dynamo
+  provider maps this to `ScanIndexForward(true|false)` on the underlying
+  `QueryRequest`. The default (no `orderBy` call) is ASC. The per-page in-memory
+  sort previously applied to multi-page scans is no longer needed and has been
+  removed.
+
+#### Removed capability declarations
+
+The following capabilities are no longer declared by `DynamoCapabilities`
+because the corresponding API surface has been removed from `multiclouddb-api`:
+`CROSS_PARTITION_QUERY`, `NATIVE_SQL_QUERY`, `RESULT_LIMIT`, `LIKE_OPERATOR`,
+`ENDS_WITH`, `REGEX_MATCH`, `CASE_FUNCTIONS`, `ROW_LEVEL_TTL`,
+`WRITE_TIMESTAMP`. (`CROSS_PARTITION_QUERY` and `ORDER_BY` previously declared
+`supported=false` for DynamoDB; now that the strict-LCD set retains only
+capabilities supported by every provider, the explicit unsupported markers are
+also gone.)
+
 ### Documentation
 
 - **`delete()` of a missing key remains a silent no-op (idempotent).** The

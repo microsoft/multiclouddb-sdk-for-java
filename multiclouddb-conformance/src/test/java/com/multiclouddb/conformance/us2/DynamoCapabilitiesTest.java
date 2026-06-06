@@ -11,8 +11,8 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * DynamoDB capability conformance test — verifies unsupported capabilities
- * are correctly declared.
+ * DynamoDB capability conformance test — under the strict-LCD contract,
+ * DynamoDB must support every published capability.
  */
 @Tag("dynamo")
 @Tag("emulator")
@@ -23,42 +23,21 @@ public class DynamoCapabilitiesTest extends CapabilitiesConformanceTest {
     }
 
     @Test
-    void dynamoLikeNotSupported() throws Exception {
+    void dynamoSupportsAllLcdCapabilities() throws Exception {
         try (var client = com.multiclouddb.conformance.ConformanceHarness.createClient(ProviderId.DYNAMO)) {
-            assertFalse(client.capabilities().isSupported(Capability.LIKE_OPERATOR),
-                    "DynamoDB must NOT support LIKE_OPERATOR");
-        }
-    }
-
-    @Test
-    void dynamoOrderByNotSupported() throws Exception {
-        try (var client = com.multiclouddb.conformance.ConformanceHarness.createClient(ProviderId.DYNAMO)) {
-            assertFalse(client.capabilities().isSupported(Capability.ORDER_BY),
-                    "DynamoDB must NOT support ORDER_BY");
-        }
-    }
-
-    @Test
-    void dynamoEndsWithNotSupported() throws Exception {
-        try (var client = com.multiclouddb.conformance.ConformanceHarness.createClient(ProviderId.DYNAMO)) {
-            assertFalse(client.capabilities().isSupported(Capability.ENDS_WITH),
-                    "DynamoDB must NOT support ENDS_WITH");
-        }
-    }
-
-    @Test
-    void dynamoRegexNotSupported() throws Exception {
-        try (var client = com.multiclouddb.conformance.ConformanceHarness.createClient(ProviderId.DYNAMO)) {
-            assertFalse(client.capabilities().isSupported(Capability.REGEX_MATCH),
-                    "DynamoDB must NOT support REGEX_MATCH");
-        }
-    }
-
-    @Test
-    void dynamoCrosPartitionQueryNotSupported() throws Exception {
-        try (var client = com.multiclouddb.conformance.ConformanceHarness.createClient(ProviderId.DYNAMO)) {
-            assertFalse(client.capabilities().isSupported(Capability.CROSS_PARTITION_QUERY),
-                    "DynamoDB must NOT support CROSS_PARTITION_QUERY");
+            String[] lcd = {
+                    Capability.CONTINUATION_TOKEN_PAGING,
+                    Capability.TRANSACTIONS,
+                    Capability.BATCH_OPERATIONS,
+                    Capability.STRONG_CONSISTENCY,
+                    Capability.CHANGE_FEED,
+                    Capability.PORTABLE_QUERY_EXPRESSION,
+                    Capability.ORDER_BY
+            };
+            for (String c : lcd) {
+                assertTrue(client.capabilities().isSupported(c),
+                        "DynamoDB must support strict-LCD capability: " + c);
+            }
         }
     }
 }
