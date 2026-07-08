@@ -24,6 +24,10 @@ public final class DynamoCapabilities {
             Capability.STRONG_CONSISTENCY_CAP.withNotes("Strongly consistent reads supported on individual items"),
             Capability.NATIVE_SQL_QUERY_UNSUPPORTED.withNotes("PartiQL is available but not SQL; filter expressions used for scans"),
             Capability.CHANGE_FEED_CAP.withNotes("DynamoDB Streams for change data capture"),
+            Capability.EXTENDED_CHANGE_FEED_HISTORY_UNSUPPORTED.withNotes(
+                    "DynamoDB Streams is fixed at 24h server-side. SDK-managed archive-on-read "
+                    + "via Kafka (customer-provisioned brokers) is on the v1.x roadmap; for now drain "
+                    + "Streams into a customer-provisioned Kafka cluster outside the SDK for >24h."),
             // Query DSL capabilities
             Capability.PORTABLE_QUERY_EXPRESSION_CAP.withNotes("Portable expression translation to DynamoDB PartiQL"),
             Capability.LIKE_OPERATOR_UNSUPPORTED.withNotes("LIKE not natively supported in PartiQL on DynamoDB"),

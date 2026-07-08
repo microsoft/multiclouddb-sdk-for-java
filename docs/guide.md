@@ -28,7 +28,7 @@ portable API surface and error mapping reference, see
   - [read - Point Read](#read---point-read)
   - [update - Replace Existing](#update---replace-existing)
   - [upsert - Create or Replace](#upsert---create-or-replace)
-  - [delete - Idempotent Delete](#delete---idempotent-delete)
+  - [delete - Idempotent Delete](#delete---idempotent-delete-silent-on-missing-key)
   - [Document Field Injection](#document-field-injection)
 - [Query DSL](#query-dsl)
   - [Portable Expressions](#portable-expressions)
@@ -51,6 +51,19 @@ portable API surface and error mapping reference, see
   - [Limiting Results](#limiting-results)
   - [Ordering Results](#ordering-results)
   - [Combining with Native Expressions](#combining-with-native-expressions)
+- [Change Feeds](#change-feeds)
+  - [When to use change feeds](#when-to-use-change-feeds)
+  - [The three primitives](#the-three-primitives)
+  - [Provider provisioning prerequisites](#provider-provisioning-prerequisites)
+  - [Reading a change feed (single-thread)](#reading-a-change-feed-single-thread)
+  - [Persisting cursors across restarts](#persisting-cursors-across-restarts)
+  - [Recovering from an expired cursor](#recovering-from-an-expired-cursor)
+  - [Multi-threaded pattern (one worker per cursor)](#multi-threaded-pattern-one-worker-per-cursor)
+  - [Provider semantics & caveats](#provider-semantics--caveats)
+- [Extending change-feed history beyond 24 hours](#extending-change-feed-history-beyond-24-hours)
+  - [Fail-fast capability gate](#fail-fast-capability-gate)
+  - [How the opt-in is honoured](#how-the-opt-in-is-honoured)
+  - [Cost callout — read before opting in](#cost-callout--read-before-opting-in)
 - [Document TTL (Time-to-Live)](#document-ttl-time-to-live)
   - [Prerequisite: Enable Container-Level TTL](#prerequisite-enable-container-level-ttl)
   - [Writing with TTL](#writing-with-ttl)
@@ -579,24 +592,35 @@ client.upsert(addr, key, doc);   // Creates or replaces the document
 | If not exists | Create | Create | Create |
 | Return value | None (void) | None (void) | None (void) |
 
-### delete - Idempotent Delete
+### delete - Idempotent Delete (silent on missing key)
 
-`delete()` removes a document by key. If the document doesn't exist, the
-operation **succeeds silently** (no error). This makes delete idempotent and
-safe for retry.
+`delete()` removes a document by key. If the document does not exist the
+operation is a **silent no-op** — no exception is thrown. This is the LCD
+across the supported providers: DynamoDB `DeleteItem` and Spanner
+`Mutation.delete` are both idempotent natively, and the Cosmos provider
+swallows the 404 to match. Callers can therefore retry deletes safely
+without bespoke "ignore NOT_FOUND" handling.
 
 ```java
 client.delete(addr, MulticloudDbKey.of("customer-456", "order-123"));
-// Succeeds whether or not the document exists
+// Safe to call again — second invocation is also a no-op.
+client.delete(addr, MulticloudDbKey.of("customer-456", "order-123"));
 ```
+
+If you need to detect whether a key exists, use `read()` — it returns
+`null` on every provider when the key does not exist, and does not mutate
+state. `update()` also throws `NOT_FOUND` on a missing key, but it
+requires a document body and **overwrites the existing document on hit**,
+so it is not a safe pure existence probe.
 
 **Key behavior across providers:**
 
 | Behavior | Cosmos DB | DynamoDB | Spanner |
 |----------|-----------|----------|---------|
-| Operation | `deleteItem(id, partitionKey)` | `deleteItem(keyMap)` | `Mutation.delete(key)` |
-| Not found | Silent success (HTTP 404 suppressed) | Silent success | Silent success |
+| Operation | `deleteItem(id, partitionKey)` | `deleteItem` (no condition) | `Mutation.delete(table, key)` |
+| Not found | 404 swallowed (silent) | Silent (native) | Silent (native) |
 | Return value | None (void) | None (void) | None (void) |
+
 
 ### Document Field Injection
 
@@ -1214,6 +1238,307 @@ QueryRequest q = QueryRequest.builder()
 
 ---
 
+## Change Feeds
+
+Change feeds let you read the **ordered stream of modifications** (`CREATE`,
+`UPDATE`, `DELETE`) to a collection, so downstream systems can react to data
+changes without polling the full collection. The SDK exposes a single portable
+model that works the same across Cosmos DB, DynamoDB Streams, and Spanner
+change streams.
+
+### When to use change feeds
+
+Use the change-feed API when you need to:
+
+- Materialise a downstream view (search index, cache, analytics warehouse)
+  from an authoritative store.
+- Trigger workflows when documents change (notifications, audit pipelines,
+  webhooks).
+- Replicate a subset of data to another system.
+
+Change feeds are **not** a replacement for `query()`. They surface change
+events in commit order, not snapshot semantics; if you need a consistent
+point-in-time read of a whole collection, use `query()`.
+
+### The three primitives
+
+| Type / Method | Purpose |
+|---|---|
+| `ChangeFeedCursor` | An opaque, immutable position in the stream. Persist via `cursor.toToken()` / `ChangeFeedCursor.fromToken(String)`; the token wire format is intentionally opaque and may evolve across SDK versions. |
+| `ChangeFeedCursor.now()` | A provider-agnostic sentinel meaning "the live tip at the time of the next read". The first `readChanges` call hydrates it. |
+| `client.listCursors(address)` | Discovers the current set of provider-side partitions and returns one cursor per partition, each positioned at the live tip. Use this to seed a multi-threaded reader. On Cosmos this fetches the feed ranges and runs a one-item warmup query per range to capture a live-tip continuation, so the RU cost scales with the partition count; cache the cursors for the lifetime of your reader rather than calling `listCursors` per page. |
+| `client.readChanges(address, cursor)` | Drains **one page** of events from `cursor` and returns a `ChangeFeedPage` carrying `events`, `nextCursor`, `hasMore`, and `terminal` flags. |
+| `CursorExpiredException` | Thrown when the SDK detects that a cursor can no longer be honoured (provider trimmed events, client-side 24h age cap, malformed/wrong-provider/wrong-resource token). |
+
+Cursors are **opaque to your application**. Persist them as the
+`String` returned by `cursor.toToken()` and restore them with
+`ChangeFeedCursor.fromToken(String)` — do not introspect the token
+structure.
+
+Check capability before you call:
+
+```java
+CapabilitySet caps = client.capabilities();
+if (!caps.isSupported(Capability.CHANGE_FEED)) {
+    throw new IllegalStateException(
+            "Provider " + client.providerId() + " does not support change feeds");
+}
+```
+
+### Provider provisioning prerequisites
+
+The SDK does **not** auto-provision change-stream infrastructure on
+`provisionSchema()` — you must configure it once per collection so that
+CREATE / UPDATE / DELETE distinctions are preserved.
+
+| Provider | What you must provision | How |
+|---|---|---|
+| **Azure Cosmos DB** | Container created with an **All-Versions-and-Deletes (AVAD)** change-feed policy, on an account that supports it. | Configure container settings in Azure Portal / ARM / Bicep; with the Java SDK, attach `ChangeFeedPolicy.createAllVersionsAndDeletesPolicy(Duration)` to the `CosmosContainerProperties` you pass to `createContainerIfNotExists`. |
+| **Amazon DynamoDB** | Table stream enabled with `StreamSpecification(NEW_AND_OLD_IMAGES)`. | Enable via `UpdateTable` API or table console. The 24-hour retention is fixed by the service. |
+| **Google Cloud Spanner** | `CREATE CHANGE STREAM <name> FOR <table> OPTIONS (value_capture_type = 'NEW_ROW')` DDL applied to the database. | Run as part of your schema migration. The default stream name resolved by the SDK is `<collection>_changes`; override per collection with the `changeStream.<collection>` connection key. |
+
+Without these, the first `listCursors` or `readChanges` call surfaces a
+portable `UNSUPPORTED_CAPABILITY` (or `PROVIDER_ERROR` on unhandled
+shapes) carrying a provider-specific `reason` discriminator:
+
+| Provider | Error class | `providerDetails.reason` |
+|---|---|---|
+| Cosmos | `MulticloudDbException(UNSUPPORTED_CAPABILITY)` mapped from a Cosmos 400 BadRequest whose message mentions AVAD / `ChangeFeedPolicy`. | `avad_not_enabled` |
+| DynamoDB | `MulticloudDbException(UNSUPPORTED_CAPABILITY)` (table stream not enabled, or `StreamSpecification` not `NEW_AND_OLD_IMAGES`). | `stream_not_enabled` |
+| Spanner | `MulticloudDbException(UNSUPPORTED_CAPABILITY)` (referenced change stream missing or pointed at the wrong table). | `stream_not_enabled` |
+
+All three normalise to the same portable category, so a single
+`catch (MulticloudDbException e)` branch on
+`e.error().category() == UNSUPPORTED_CAPABILITY` works across providers;
+inspect `e.error().providerDetails().get("reason")` only if the call
+site needs to surface the specific provisioning hint.
+
+### Reading a change feed (single-thread)
+
+```java
+ResourceAddress address = new ResourceAddress("appdb", "orders");
+
+// Start from the live tip (skip historical events).
+ChangeFeedCursor cursor = ChangeFeedCursor.now();
+
+while (true) {
+    ChangeFeedPage page = client.readChanges(address, cursor);
+
+    for (ChangeEvent ev : page.events()) {
+        System.out.printf("%s %s commitTs=%s%n",
+                ev.type(), ev.key(), ev.commitTimestamp());
+        applyDownstream(ev);
+    }
+
+    cursor = page.nextCursor();
+    persist(cursor.toToken()); // save after every successful batch
+
+    if (!page.hasMore()) {
+        // Caught up. Sleep briefly to avoid hot-spinning the provider.
+        Thread.sleep(500);
+    }
+}
+```
+
+### Persisting cursors across restarts
+
+`ChangeFeedCursor` is engineered so a single `String` is the complete state.
+Persist `cursor.toToken()` after **every successful** batch — typically in the
+same transaction as the downstream side-effect to guarantee at-least-once
+delivery:
+
+```java
+String token = cursor.toToken();
+saveTokenToDurableStore(workerId, token);
+
+// On restart:
+ChangeFeedCursor restored = ChangeFeedCursor.fromToken(
+        loadTokenFromDurableStore(workerId));
+```
+
+The token carries:
+
+- The provider id (`cosmos` / `dynamo` / `spanner`).
+- The resource binding (`database/collection`).
+- The per-partition continuation positions.
+- An issued-at timestamp, refreshed every time the SDK returns a `nextCursor`.
+
+If a restored token's issued-at is more than **24 hours** in the past, the
+SDK throws `CursorExpiredException` client-side without contacting the
+provider — see the [recovery guidance](#recovering-from-an-expired-cursor)
+below.
+
+### Recovering from an expired cursor
+
+`CursorExpiredException` is thrown on `readChanges` (or eagerly on
+`ChangeFeedCursor.fromToken` for client-side issues) when the cursor cannot
+be honoured. The reason is exposed in
+`exception.error().providerDetails().get("reason")`:
+
+| `reason` | Cause | Recovery |
+|---|---|---|
+| `TOKEN_AGED_OUT` | The cursor's issued-at is > 24 h old. | Mint a fresh `ChangeFeedCursor.now()` and accept the gap. |
+| `PROVIDER_TRIMMED` | The provider trimmed events the cursor was about to read (Cosmos 410, Dynamo `TrimmedDataAccessException`, Spanner partition outside retention). | Re-bootstrap with `listCursors()` and accept the gap. |
+| `ITERATOR_EXPIRED` | A persisted server-side iterator handle aged out before its next read (today: DynamoDB Streams' ~5-minute inactivity window on a persisted shard iterator). Events at that position may still exist but the bookmark is no longer addressable. | Re-bootstrap with `listCursors()` from the live tip; records produced between the expired iterator's position and the new live tip will be skipped. |
+| `MALFORMED` / `VERSION_UNSUPPORTED` | Token isn't a valid SDK token, or was minted by a newer codec. | Reject the token and start fresh. |
+| `PROVIDER_MISMATCH` / `RESOURCE_MISMATCH` | Token was minted against a different provider or `database/collection`. | Operator / configuration error — do not silently restart; alert. |
+
+The portable recovery pattern is:
+
+```java
+try {
+    page = client.readChanges(address, cursor);
+} catch (CursorExpiredException e) {
+    String reason = e.error().providerDetails().getOrDefault("reason", "");
+    if ("PROVIDER_MISMATCH".equals(reason) || "RESOURCE_MISMATCH".equals(reason)) {
+        throw e; // configuration bug — fail loud.
+    }
+    // Best-effort restart at the live tip; downstream will get a gap.
+    LOG.warn("Cursor expired ({}). Restarting from live tip.", reason);
+    cursor = ChangeFeedCursor.now();
+    continue;
+}
+```
+
+### Multi-threaded pattern (one worker per cursor)
+
+For throughput, scale horizontally by dedicating **one worker thread per
+cursor** returned by `listCursors`. Each worker drives its own cursor; the
+SDK does not require coordination between workers.
+
+A complete runnable worker-pool example will ship in a follow-up release. The
+sketch:
+
+```java
+List<ChangeFeedCursor> cursors = client.listCursors(address);
+ExecutorService pool = Executors.newFixedThreadPool(cursors.size());
+for (ChangeFeedCursor seed : cursors) {
+    pool.submit(() -> runWorker(client, address, seed));
+}
+
+// In runWorker:
+ChangeFeedCursor cursor = restoredOr(seed);
+while (!Thread.currentThread().isInterrupted()) {
+    ChangeFeedPage page = client.readChanges(address, cursor);
+    for (ChangeEvent ev : page.events()) apply(ev);
+    cursor = page.nextCursor();
+    persistPerWorker(workerId, cursor.toToken());
+    if (!page.hasMore()) Thread.sleep(500);
+}
+```
+
+Provider-side partition splits and merges are absorbed transparently by the
+SDK: the next cursor's token carries the updated set of partitions, so the
+worker continues without re-listing.
+
+### Provider semantics & caveats
+
+| Concern | Cosmos DB | DynamoDB | Spanner |
+|---|---|---|---|
+| Maximum history horizon | 24 h baseline; up to 30 d via opt-in (`ChangeFeedConfig.extendedRetention`) provisioning an AVAD `ChangeFeedPolicy` (Continuous Backup tier–capped) | **24 h fixed** (DynamoDB Streams is service-bounded) | 24 h baseline; up to 7 d via opt-in (`ChangeFeedConfig.extendedRetention`) emitted as `CREATE CHANGE STREAM ... OPTIONS(retention_period)` |
+| `commitTimestamp` source | AVAD `metadata.crts`, falling back to `_ts` (second resolution) | `ApproximateCreationDateTime` (sub-second, approximate) | True commit timestamp (microsecond) |
+| Emits `DELETE`? | Yes (AVAD policy required) | Yes (with `NEW_AND_OLD_IMAGES`) | Yes |
+| CREATE vs UPDATE distinguishable? | Yes (via AVAD `metadata.operationType`) | Yes (via `OperationType`) | Yes (via `mod_type`) |
+| Partition discovery cost | Cheap — `getFeedRanges()` is a metadata call | One `DescribeStream` per call | One bootstrap TVF call |
+
+For applications that need history older than 24 h with cross-provider
+portability, the default 24-hour baseline is the lowest common denominator
+(DynamoDB Streams is service-bounded). To extend the floor on Cosmos and
+Spanner — at the cost of losing parity with the Dynamo adapter — see
+[Extending change-feed history beyond 24 hours](#extending-change-feed-history-beyond-24-hours)
+below. The compatibility matrix in [compatibility.md](compatibility.md)
+calls out the per-provider ceilings.
+
+`commitTimestamp` is documented as "the provider's authoritative ordering
+timestamp," not necessarily a true commit time. Use it for ordering and
+checkpointing, not as a precise clock reading.
+
+---
+
+## Extending change-feed history beyond 24 hours
+
+The portable change-feed read path ships with a 24-hour history floor on
+every provider. To request a longer server-side retention window, opt in via
+`ChangeFeedConfig.builder().extendedRetention(Duration)` on
+`MulticloudDbClientConfig`:
+
+```java
+MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+        .provider(ProviderId.COSMOS)
+        .connection("endpoint", "...")
+        .changeFeed(ChangeFeedConfig.builder()
+                .extendedRetention(Duration.ofDays(7))
+                .build())
+        .build();
+
+try (MulticloudDbClient client = MulticloudDbClientFactory.create(config)) {
+    client.ensureContainer(ResourceAddress.of("orders", "events"));
+    // ...
+}
+```
+
+### Fail-fast capability gate
+
+At client-build time the SDK reads the provider's `CapabilitySet` and refuses
+to construct the client when the requested provider does not declare
+`Capability.EXTENDED_CHANGE_FEED_HISTORY`:
+
+| Provider | `EXTENDED_CHANGE_FEED_HISTORY` |
+|---|---|
+| Cosmos DB | ✅ supported |
+| Spanner | ✅ supported |
+| DynamoDB | ❌ not supported (server-side stream retention is fixed at 24 h) |
+
+When the capability is absent the SDK throws
+`MulticloudDbException` with category `UNSUPPORTED_CAPABILITY` and
+`providerDetails.reason="extended_retention_unavailable"` — the gate throws
+before any change-feed-substrate I/O is issued, and the underlying provider
+client (already constructed by `adapter.createClient(...)`) is `close()`-d on
+the same path so no control-plane channels leak.
+
+### How the opt-in is honoured
+
+| Provider | `ensureContainer()` behaviour | Failure → portable mapping |
+|---|---|---|
+| Cosmos DB | Sets an AVAD `ChangeFeedPolicy` on the container properties carrying the requested retention. | If the account lacks Continuous Backup, returns `UNSUPPORTED_CAPABILITY` (`reason=continuous_backup_required`). |
+| Spanner | Emits `CREATE CHANGE STREAM <table>_changes FOR <table> OPTIONS (value_capture_type = 'NEW_ROW', retention_period = '<value>')` after the table-create (the `NEW_ROW` capture type matches what the SDK's change-feed reader requires for full-row payloads). If a stream of the same name already exists with a different retention, `ensureContainer()` reads back the active retention via `INFORMATION_SCHEMA.CHANGE_STREAM_OPTIONS` and refuses to silently honour the mismatch — it throws `UNSUPPORTED_CAPABILITY` (`reason=extended_retention_not_enacted`, with both `requestedRetention` and `activeRetention` in `providerDetails`) so the divergence is loud rather than a silent retention drop. The stream name matches the reader's default convention so `listCursors()` / `readChanges()` transparently pick it up. | If the requested retention exceeds the database's native maximum, returns `UNSUPPORTED_CAPABILITY` (`reason=retention_exceeds_native_max`). |
+
+`ChangeFeedConfig` defaults (`ChangeFeedConfig.defaults()`) leave behaviour
+**bit-for-bit identical to v1** — the opt-in surface is purely additive.
+
+### Cost callout — read before opting in
+
+Extending the change-feed history window changes the bill differently on each
+provider; the windows are **not interchangeable**. Plan the request against
+the price driver that actually moves on your provider:
+
+- **Cosmos DB** — extended retention requires Continuous Backup. The
+  Continuous-Backup tiers (7-day and 30-day) are billed monthly per
+  *provisioned-storage GB* — flat-rate by tier, not by change-volume.
+  Verify your account is on the tier that covers the requested window before
+  opting in.
+- **Spanner** — change-stream retention beyond the default 7 days requires a
+  database explicitly configured for extended retention. Cost scales with
+  **change-data volume × retention** (writes that hit columns covered by the
+  stream are billed for the full retention window). Wide tables with
+  high-cardinality updates can produce a much larger bill at 30-day retention
+  than at 1-day retention.
+- **DynamoDB** — not applicable; server-side stream retention is fixed at
+  24 h. For >24 h history with Dynamo today, drain the stream into a
+  customer-provisioned Kafka cluster (outside the SDK).
+
+The portable 24-hour baseline incurs no extra cost on any provider.
+
+> **Roadmap — DynamoDB Kafka path:** A v1.x item will close the Dynamo
+> capability gap by archiving DynamoDB Streams into a customer-provisioned
+> Kafka cluster. Once shipped, callers will opt in to
+> `ChangeFeedConfig.extendedRetention(...)` against Dynamo by additionally
+> wiring Kafka broker configuration on `MulticloudDbClientConfig` — the
+> consumer-facing `listCursors()` / `readChanges()` surface stays unchanged,
+> so the only adapter-specific delta is the broker config at client-build
+> time.
+
+---
 ## Document TTL (Time-to-Live)
 
 Set a per-document expiry at write time using `OperationOptions.ttlSeconds()`. Supported on `create()`, `upsert()`, and `update()`.

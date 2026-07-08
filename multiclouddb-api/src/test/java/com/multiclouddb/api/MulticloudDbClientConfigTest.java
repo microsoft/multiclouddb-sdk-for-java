@@ -3,7 +3,10 @@
 
 package com.multiclouddb.api;
 
+import com.multiclouddb.api.changefeed.ChangeFeedConfig;
 import org.junit.jupiter.api.Test;
+
+import java.time.Duration;
 import static org.junit.jupiter.api.Assertions.*;
 
 class MulticloudDbClientConfigTest {
@@ -140,5 +143,43 @@ class MulticloudDbClientConfigTest {
                 .build();
 
         assertEquals(maxLen, config.userAgentSuffix());
+    }
+    // --- ChangeFeedConfig wiring (PR #84 extended retention) ---
+
+    @Test
+    void changeFeedDefaultsWhenNotSet() {
+        MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+                .provider(ProviderId.COSMOS)
+                .build();
+        assertNotNull(config.changeFeed(),
+                "changeFeed() must never return null — defaults() is the floor");
+        assertSame(ChangeFeedConfig.defaults(), config.changeFeed(),
+                "unset changeFeed must be the cached DEFAULTS singleton");
+        assertFalse(config.changeFeed().hasExtendedRetention());
+    }
+
+    @Test
+    void changeFeedRoundTrip() {
+        ChangeFeedConfig cf = ChangeFeedConfig.builder()
+                .extendedRetention(Duration.ofDays(7))
+                .build();
+        MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+                .provider(ProviderId.SPANNER)
+                .changeFeed(cf)
+                .build();
+        assertSame(cf, config.changeFeed(),
+                "changeFeed() must return the exact instance the builder was given");
+        assertTrue(config.changeFeed().hasExtendedRetention());
+        assertEquals(Duration.ofDays(7), config.changeFeed().extendedRetention().orElseThrow());
+    }
+
+    @Test
+    void changeFeedNullSetterFallsBackToDefaults() {
+        MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+                .provider(ProviderId.COSMOS)
+                .changeFeed(null)
+                .build();
+        assertSame(ChangeFeedConfig.defaults(), config.changeFeed(),
+                "passing null to changeFeed() must fall back to DEFAULTS, never store null");
     }
 }

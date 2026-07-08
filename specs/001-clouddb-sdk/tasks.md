@@ -702,3 +702,107 @@ RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use sing
 ## Phase 18: Build and Validate
 
 - [x] T161 Build and validate all modules compile and all existing + new tests pass: `mvn clean install -DskipTests` confirms zero compilation errors, then `mvn test -pl multiclouddb-api` confirms 28 tests pass. Full clean build successful across all modules.
+
+
+---
+
+## Phase 19: User Story 14 — Portable Change Feed (Priority: P2)
+
+**Goal**: Deliver a portable pull-mode change feed across Cosmos / Dynamo / Spanner. Three primitives: `ChangeFeedCursor.now()`, `ChangeFeedCursor.fromToken(String)`, and `MulticloudDbClient.readChanges(addr, cursor)`. See `plan.md` → *Change Feed (US14) — Planning Addendum* for the per-provider mapping and the deferred-work register.
+
+- [x] T162 [US14] Public API types in `multiclouddb-api`: `ChangeFeedCursor`, `ChangeFeedPage`, `ChangeEvent`, `ChangeType`, `CursorExpiredException`.
+  Files: `multiclouddb-api/src/main/java/com/multiclouddb/api/changefeed/*.java`
+- [x] T163 [US14] Internal token model + codec: `CursorToken` (immutable record-shaped class), `CursorAnchor` enum, `PartitionPosition`, `CursorTokenCodec` (Base64URL JSON wire format, 24h client-side age cap, `expired(reason, message)` factory).
+  Files: `multiclouddb-api/src/main/java/com/multiclouddb/api/changefeed/internal/*.java`
+- [x] T164 [US14] `MulticloudDbClient.listCursors` + `readChanges` (with and without `OperationOptions`) + `MulticloudDbProviderClient` SPI mirror; `DefaultMulticloudDbClient` delegates with provider/resource validation.
+  Files: `multiclouddb-api/src/main/java/com/multiclouddb/api/MulticloudDbClient.java`, `multiclouddb-api/src/main/java/com/multiclouddb/api/spi/MulticloudDbProviderClient.java`, `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DefaultMulticloudDbClient.java`
+- [x] T165 [P] [US14] Cosmos provider: `CosmosChangeFeedReader` backed by `CosmosContainer.queryChangeFeed(...)` + `getFeedRanges()`. Always reads in All-Versions-and-Deletes (AVAD) mode and unwraps the AVAD envelope so `ChangeEvent.type()` faithfully distinguishes `CREATE`/`UPDATE`/`DELETE` and `ChangeEvent.data()` carries the document body (not the transport envelope). 410 GONE → `CursorExpiredException(PROVIDER_TRIMMED)`. Caller must provision the target container with an AVAD change-feed policy.
+  File: `multiclouddb-provider-cosmos/src/main/java/com/multiclouddb/provider/cosmos/CosmosChangeFeedReader.java`
+- [x] T166 [P] [US14] Dynamo provider: `DynamoChangeFeedReader` backed by `DynamoDbStreams.getRecords(...)` with `ShardIteratorType=AT_SEQUENCE_NUMBER`/`LATEST`. Requires stream-enabled table; `TrimmedDataAccessException` → `CursorExpiredException(PROVIDER_TRIMMED)`.
+  File: `multiclouddb-provider-dynamo/src/main/java/com/multiclouddb/provider/dynamo/DynamoChangeFeedReader.java`
+- [x] T167 [P] [US14] Spanner provider: `SpannerChangeFeedReader` backed by `READ_<stream>(...)` TVF in a single-use read-only TX. `child_partitions_record` rows rotate the partition set in place. `OUT_OF_RANGE` → `CursorExpiredException(PROVIDER_TRIMMED)`. Per-collection stream-name resolution: `changeStream.<collection>` connection key, defaults to `<collection>_changes`. `ChangeEvent.data()` is filtered by the row's `FIELD_DATA` metadata so it matches the read-path full-document-replace contract.
+  File: `multiclouddb-provider-spanner/src/main/java/com/multiclouddb/provider/spanner/SpannerChangeFeedReader.java`
+- [x] T168 [US14] Spanner upsert change-feed parity: flip `upsert()` from `Mutation.newReplaceBuilder(...)` back to `Mutation.newInsertOrUpdateBuilder(...)` so Spanner's change stream emits the correct CREATE-vs-UPDATE record. Read-path semantics are preserved by `FIELD_DATA` field-set tracking.
+  File: `multiclouddb-provider-spanner/src/main/java/com/multiclouddb/provider/spanner/SpannerProviderClient.java`
+- [x] T169 [US14] Add `Capability.CHANGE_FEED` and declare it on all three provider `*Capabilities` classes.
+  Files: `multiclouddb-api/src/main/java/com/multiclouddb/api/Capability.java`, `multiclouddb-provider-cosmos/...CosmosCapabilities.java`, `multiclouddb-provider-dynamo/...DynamoCapabilities.java`, `multiclouddb-provider-spanner/...SpannerCapabilities.java`
+- [x] T170 [US14] Conformance suite `us14`: cross-provider behavioural coverage (live-tip semantics, ordering within partition, resume across re-bootstrap, expired-token diagnostics, per-partition cursor mint). Per-provider concrete subclasses run the suite under Cosmos AVAD, Dynamo `NEW_AND_OLD_IMAGES`, and Spanner with a provisioned change stream.
+  Files: `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us14/ChangeFeedConformanceTest.java` + per-provider `*ChangeFeedConformanceTest.java`
+- [x] T171 [US14] Error-normalization coverage for the codec-side aged-token path: mint a `CursorToken` with `issuedAt = now-25h`, encode, call `ChangeFeedCursor.fromToken(...)`, assert `CursorExpiredException` with `operation="fromToken"`, `retryable=false`, and `providerDetails.reason="TOKEN_AGED_OUT"`.
+  File: `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us2/ErrorNormalizationConformanceTest.java`
+- [x] T172 [US14] Documentation: add `changeStream.<collection>` (Spanner) connection key to `docs/configuration.md`; add `Change Feeds` section to `docs/guide.md` describing the three primitives, the Cosmos AVAD container-provisioning prerequisite, the deferred sub-capabilities, and Spanner `CREATE CHANGE STREAM` provisioning prerequisite; add `[Unreleased]` *Added — Change-Feed support* sections to `multiclouddb-provider-{cosmos,dynamo,spanner}` in `docs/changelog.md`.
+  Files: `docs/configuration.md`, `docs/guide.md`, `docs/changelog.md`
+- [ ] T173 [US14] Multi-thread change-feed e2e demonstrator: a worker-pool fixture in `multiclouddb-e2e/` that fan-outs `listCursors(addr)` to N workers and drains them in parallel against the live emulator, asserting (a) no duplicate `eventID` across workers and (b) each worker's `nextCursor` remains individually resumable. Documents the recommended deployment pattern referenced in `docs/guide.md` Change Feeds section.
+  Files: `multiclouddb-e2e/src/test/java/com/multiclouddb/e2e/changefeed/MultiThreadChangeFeedE2ETest.java` (new), `docs/guide.md` cross-link
+- [ ] T174 [US14] Honour `OperationOptions.timeout()` on the change-feed path. v1 emits a one-shot `WARN` when a non-default timeout is passed because no built-in provider enforces it; this task replaces the warning with per-call wall-clock bounding (Cosmos: per-request HTTP timeout; Dynamo: `GetRecords` request timeout; Spanner: TVF window scaled to the remaining timeout) so callers can compose timeouts uniformly with CRUD operations.
+  Files: `multiclouddb-provider-{cosmos,dynamo,spanner}/.../*ChangeFeedReader.java`, `multiclouddb-api/.../internal/DefaultMulticloudDbClient.java` (drop the one-shot WARN), `multiclouddb-conformance/.../us14/ChangeFeedConformanceTest.java` (add timeout-honoured assertion)
+
+- [x] T175 [US14] Extended change-feed retention opt-in API: new
+  `Capability.EXTENDED_CHANGE_FEED_HISTORY` constant + `_CAP` /
+  `_UNSUPPORTED` singletons; new `ChangeFeedConfig` value class with
+  builder validation (must be > 24 h); wired into
+  `MulticloudDbClientConfig.changeFeed(...)`; per-provider declarations
+  (Cosmos / Spanner `_CAP`; Dynamo `_UNSUPPORTED`).
+  Files: `multiclouddb-api/src/main/java/com/multiclouddb/api/Capability.java`,
+  `multiclouddb-api/src/main/java/com/multiclouddb/api/changefeed/ChangeFeedConfig.java`,
+  `multiclouddb-api/src/main/java/com/multiclouddb/api/MulticloudDbClientConfig.java`,
+  `multiclouddb-provider-{cosmos,dynamo,spanner}/.../{Cosmos,Dynamo,Spanner}Capabilities.java`
+- [x] T176 [US14] Build-time capability gate in
+  `MulticloudDbClientFactory.create(...)`: when
+  `config.changeFeed().hasExtendedRetention()` is true and the resolved
+  provider client does not declare `EXTENDED_CHANGE_FEED_HISTORY`, throw
+  `MulticloudDbException` with category `UNSUPPORTED_CAPABILITY` and
+  `providerDetails.reason="extended_retention_unavailable"` before any change-feed-substrate I/O is issued.
+  File: `multiclouddb-api/src/main/java/com/multiclouddb/api/MulticloudDbClientFactory.java`
+- [x] T177 [US14] Cosmos `ensureContainer()` extension: provision AVAD
+  `ChangeFeedPolicy` with `ChangeFeedConfig.extendedRetention(...)` duration
+  when the opt-in is set. Normalise a 400 BadRequest with a "continuous
+  backup" fingerprint to `UNSUPPORTED_CAPABILITY` with
+  `providerDetails.reason="continuous_backup_required"`. No behaviour change
+  when the opt-in is unset.
+  File: `multiclouddb-provider-cosmos/src/main/java/com/multiclouddb/provider/cosmos/CosmosProviderClient.java`
+- [x] T178 [US14] Spanner `ensureContainer()` extension: emit idempotent
+  `CREATE CHANGE STREAM <table>_changes FOR <table> OPTIONS
+  (value_capture_type = 'NEW_ROW', retention_period = '<value>')` after the
+  table-create when the opt-in is set (`NEW_ROW` is required so UPDATE
+  events carry the full post-update row). Stream name matches
+  `SpannerChangeFeedReader` default convention. Normalise
+  `INVALID_ARGUMENT` whose message references retention to
+  `UNSUPPORTED_CAPABILITY` with
+  `providerDetails.reason="retention_exceeds_native_max"`. Swallow
+  "Duplicate name in schema" for idempotency. New package-private static
+  `formatRetentionPeriod(Duration)` helper that picks the coarsest stable
+  GoogleSQL suffix.
+  File: `multiclouddb-provider-spanner/src/main/java/com/multiclouddb/provider/spanner/SpannerProviderClient.java`
+- [x] T179 [US14] Capability registry size assertion bump:
+  `CapabilitiesConformanceTest.capabilityCountIs17` now asserts the registry
+  declares 17 capabilities (was 16), and `EXTENDED_CHANGE_FEED_HISTORY` is
+  added to the `knownNames[]` array.
+  File: `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us2/CapabilitiesConformanceTest.java`
+- [x] T180 [US14] Unit-test coverage for the opt-in surface and DDL helper:
+  `ChangeFeedConfigTest` exercises builder validation (zero / negative /
+  &le;24 h / null-clear / 24 h + 1 ms acceptance) and the value-class
+  contract; `MulticloudDbClientConfigTest` exercises the
+  `changeFeed(...)` wiring (default / round-trip / null-fallback);
+  `SpannerRetentionPeriodFormatTest` exercises the
+  `formatRetentionPeriod(Duration)` helper across `d` / `h` / `m` / `s`
+  suffixes and stability.
+  Files: `multiclouddb-api/src/test/java/com/multiclouddb/api/changefeed/ChangeFeedConfigTest.java`,
+  `multiclouddb-api/src/test/java/com/multiclouddb/api/MulticloudDbClientConfigTest.java`,
+  `multiclouddb-provider-spanner/src/test/java/com/multiclouddb/provider/spanner/SpannerRetentionPeriodFormatTest.java`
+- [x] T181 [US14] Documentation: new
+  `docs/guide.md` → *Extending change-feed history beyond 24 hours* section
+  (with per-provider cost-driver callout — Cosmos Continuous-Backup tier
+  storage-GB billing, Spanner change-data-volume × retention, Dynamo
+  not-applicable / customer-provisioned Kafka escape); new
+  `docs/compatibility.md` → *Change-Feed History Retention* subsection;
+  `[Unreleased]` extended-retention entries in `docs/changelog.md` and all
+  four per-module `CHANGELOG.md` files; FR-068 implementation-status note in
+  `specs/001-clouddb-sdk/spec.md` records that `EXTENDED_CHANGE_FEED_HISTORY`
+  now ships.
+  Files: `docs/guide.md`, `docs/compatibility.md`, `docs/changelog.md`,
+  `multiclouddb-api/CHANGELOG.md`,
+  `multiclouddb-provider-{cosmos,dynamo,spanner}/CHANGELOG.md`,
+  `specs/001-clouddb-sdk/spec.md`
+
+**Checkpoint**: ``mvn test -Dtest=*ChangeFeed*ConformanceTest`` passes against all three providers (Cosmos AVAD-enabled emulator, Dynamo with `NEW_AND_OLD_IMAGES` stream, Spanner with a provisioned change stream).

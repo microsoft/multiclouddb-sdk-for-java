@@ -61,4 +61,11 @@ public class DynamoCapabilitiesTest extends CapabilitiesConformanceTest {
                     "DynamoDB must NOT support CROSS_PARTITION_QUERY");
         }
     }
+    @Test
+    void dynamoExtendedChangeFeedHistoryNotSupported() throws Exception {
+        try (var client = com.multiclouddb.conformance.ConformanceHarness.createClient(ProviderId.DYNAMO)) {
+            assertFalse(client.capabilities().isSupported(Capability.EXTENDED_CHANGE_FEED_HISTORY),
+                    "DynamoDB Streams is fixed at 24h server-side — EXTENDED_CHANGE_FEED_HISTORY must be _UNSUPPORTED");
+        }
+    }
 }

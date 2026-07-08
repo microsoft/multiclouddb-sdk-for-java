@@ -3,17 +3,21 @@
 
 package com.multiclouddb.spi;
 
+import com.multiclouddb.api.Capability;
 import com.multiclouddb.api.CapabilitySet;
 import com.multiclouddb.api.DocumentResult;
 import com.multiclouddb.api.MulticloudDbError;
 import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.MulticloudDbException;
 import com.multiclouddb.api.MulticloudDbKey;
+import com.multiclouddb.api.OperationNames;
 import com.multiclouddb.api.OperationOptions;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
+import com.multiclouddb.api.changefeed.ChangeFeedCursor;
+import com.multiclouddb.api.changefeed.ChangeFeedPage;
 import com.multiclouddb.api.query.TranslatedQuery;
 
 import java.util.ArrayList;
@@ -238,4 +242,41 @@ public interface MulticloudDbProviderClient extends AutoCloseable {
      * Return the provider id.
      */
     ProviderId providerId();
+
+    // ── Change Feed (default UNSUPPORTED) ─────────────────────────────────────
+
+    /**
+     * Discover the current live partitions of the change feed for {@code address}.
+     * <p>
+     * Default implementation throws {@link MulticloudDbErrorCategory#UNSUPPORTED_CAPABILITY}.
+     * Providers that declare {@link com.multiclouddb.api.Capability#CHANGE_FEED}
+     * as supported MUST override this method.
+     */
+    default java.util.List<ChangeFeedCursor> listCursors(ResourceAddress address) {
+        throw new MulticloudDbException(new MulticloudDbError(
+                MulticloudDbErrorCategory.UNSUPPORTED_CAPABILITY,
+                "Change feed is not supported by provider " + providerId().id(),
+                providerId(),
+                OperationNames.LIST_CURSORS,
+                false,
+                java.util.Map.of("capability", Capability.CHANGE_FEED)));
+    }
+
+    /**
+     * Read one page of change events from {@code cursor}.
+     * <p>
+     * Default implementation throws {@link MulticloudDbErrorCategory#UNSUPPORTED_CAPABILITY}.
+     * Providers that declare {@link com.multiclouddb.api.Capability#CHANGE_FEED}
+     * as supported MUST override this method.
+     */
+    default ChangeFeedPage readChanges(ResourceAddress address, ChangeFeedCursor cursor,
+                                       OperationOptions options) {
+        throw new MulticloudDbException(new MulticloudDbError(
+                MulticloudDbErrorCategory.UNSUPPORTED_CAPABILITY,
+                "Change feed is not supported by provider " + providerId().id(),
+                providerId(),
+                OperationNames.READ_CHANGES,
+                false,
+                java.util.Map.of("capability", Capability.CHANGE_FEED)));
+    }
 }

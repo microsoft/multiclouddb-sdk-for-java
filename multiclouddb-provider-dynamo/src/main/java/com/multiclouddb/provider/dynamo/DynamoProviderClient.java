@@ -87,6 +87,17 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
 
     private final MulticloudDbClientConfig config;
     private final DynamoDbClient dynamoClient;
+    private final DynamoChangeFeedReader changeFeedReader;
+    /**
+     * Lifecycle flag flipped by {@link #close()}. Public CRUD/query/provisioning
+     * entry points consult {@link #checkOpen(String)} first so a post-close call
+     * always surfaces {@link MulticloudDbErrorCategory#CLIENT_CLOSED} instead of
+     * leaking the {@code IllegalStateException} that the AWS SDK would throw
+     * once {@code DynamoDbClient.close()} is invoked. Declared {@code volatile}
+     * for cross-thread visibility without locking; the {@code synchronized}
+     * {@link #close()} method handles double-close idempotency.
+     */
+    private volatile boolean closed = false;
 
     /**
      * Constructs a DynamoDB provider client from the supplied configuration.
@@ -106,6 +117,28 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      * @param config client configuration carrying connection, auth, and options
      */
     public DynamoProviderClient(MulticloudDbClientConfig config) {
+        // SPI-level defence-in-depth: even when an integrator bypasses
+        // MulticloudDbClientFactory and constructs DynamoProviderClient
+        // directly (via ServiceLoader<MulticloudDbProviderAdapter>), the
+        // extended-retention opt-in must still fail fast. DynamoDB Streams is
+        // fixed at 24h server-side — silently dropping the opt-in would leak
+        // a misconfigured client into production.
+        if (config.changeFeed().hasExtendedRetention()) {
+            java.time.Duration requested = config.changeFeed().extendedRetention().orElseThrow();
+            throw new MulticloudDbException(new com.multiclouddb.api.MulticloudDbError(
+                    MulticloudDbErrorCategory.UNSUPPORTED_CAPABILITY,
+                    "DynamoDB Streams is fixed at 24h server-side; "
+                            + "ChangeFeedConfig.extendedRetention(" + requested + ") is not honoured. "
+                            + "Drain Streams into a customer-provisioned Kafka cluster for >24h history. "
+                            + "See docs/guide.md → 'Extending change-feed history beyond 24h'.",
+                    ProviderId.DYNAMO,
+                    "create",
+                    false,
+                    java.util.Map.of(
+                            "reason", "extended_retention_unavailable",
+                            "capability", com.multiclouddb.api.Capability.EXTENDED_CHANGE_FEED_HISTORY,
+                            "requestedRetention", requested.toString())));
+        }
         this.config = config;
         String region   = config.connection().getOrDefault(DynamoConstants.CONFIG_REGION, DynamoConstants.REGION_DEFAULT);
         String endpoint = config.connection().get(DynamoConstants.CONFIG_ENDPOINT);
@@ -138,6 +171,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
         }
 
         this.dynamoClient = builder.build();
+        this.changeFeedReader = DynamoChangeFeedReader.create(ProviderId.DYNAMO, config);
         LOG.info("DynamoDB client created for region: {}, endpoint: {}", region,
                 endpoint != null ? endpoint : "default");
     }
@@ -145,6 +179,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
     /** Package-private constructor for testing — injects a pre-configured {@link DynamoDbClient}. */
     DynamoProviderClient(DynamoDbClient dynamoClient) {
         this.dynamoClient = dynamoClient;
+        this.changeFeedReader = null;
         this.config = MulticloudDbClientConfig.builder()
                 .provider(com.multiclouddb.api.ProviderId.DYNAMO)
                 .build();
@@ -177,6 +212,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        checkOpen(OperationNames.CREATE);
         try {
             Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
@@ -218,6 +254,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public DocumentResult read(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
+        checkOpen(OperationNames.READ);
         try {
             Map<String, AttributeValue> keyMap = new LinkedHashMap<>();
             keyMap.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
@@ -278,6 +315,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        checkOpen(OperationNames.UPDATE);
         try {
             Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
@@ -333,6 +371,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        checkOpen(OperationNames.UPSERT);
         try {
             Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
@@ -360,8 +399,11 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
     /**
      * Deletes an item from DynamoDB by its composite key.
      * <p>
-     * Uses a {@code DeleteItem} request. The operation succeeds silently if the item
-     * does not exist — delete is idempotent in DynamoDB.
+     * Idempotent: DynamoDB {@code DeleteItem} returns success even when the
+     * target item does not exist, so a delete of a missing key is a silent
+     * no-op. This matches the LCD cross-provider contract on
+     * {@link com.multiclouddb.api.MulticloudDbClient#delete}, where Cosmos
+     * swallows 404 and Spanner {@code Mutation.delete} naturally no-ops.
      *
      * @param address the logical database + collection
      * @param key     the document key identifying the item to delete
@@ -370,6 +412,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
+        checkOpen(OperationNames.DELETE);
         try {
             Map<String, AttributeValue> keyMap = new LinkedHashMap<>();
             keyMap.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
@@ -420,6 +463,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public QueryPage query(ResourceAddress address, QueryRequest query, OperationOptions options) {
+        checkOpen(OperationNames.QUERY);
         try {
             validateResultSetControl(query, OperationNames.QUERY);
             String tableName = resolveTableName(address);
@@ -504,6 +548,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
     @Override
     public QueryPage queryWithTranslation(ResourceAddress address, TranslatedQuery translated,
             QueryRequest query, OperationOptions options) {
+        checkOpen(OperationNames.QUERY_WITH_TRANSLATION);
         try {
             validateResultSetControl(query, OperationNames.QUERY_WITH_TRANSLATION);
             int pageSize = query.maxPageSize() != null ? query.maxPageSize() : DynamoConstants.PAGE_SIZE_DEFAULT;
@@ -911,7 +956,63 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
 
     @Override
     public void close() {
-        dynamoClient.close();
+        if (closed) return;
+        synchronized (this) {
+            if (closed) return;
+            closed = true;
+            dynamoClient.close();
+            if (changeFeedReader != null) changeFeedReader.close();
+        }
+    }
+
+    /**
+     * Guards public entry points against use after {@link #close()}.
+     * <p>
+     * Provider-level mirror of the facade guard in
+     * {@code DefaultMulticloudDbClient.checkOpen(String)}: callers that talk
+     * directly to the SPI (e.g., conformance harnesses, test fixtures) still
+     * see a typed {@link MulticloudDbErrorCategory#CLIENT_CLOSED} envelope
+     * rather than a raw {@code IllegalStateException} from the AWS SDK.
+     *
+     * @param operation the caller's operation name from {@link OperationNames}
+     */
+    private void checkOpen(String operation) {
+        if (closed) {
+            throw new MulticloudDbException(new MulticloudDbError(
+                    MulticloudDbErrorCategory.CLIENT_CLOSED,
+                    "DynamoProviderClient has been closed",
+                    ProviderId.DYNAMO, operation, false, Map.of()));
+        }
+    }
+
+    // ── Change Feed ─────────────────────────────────────────────────────────
+
+    @Override
+    public java.util.List<com.multiclouddb.api.changefeed.ChangeFeedCursor> listCursors(
+            ResourceAddress address) {
+        checkOpen(OperationNames.LIST_CURSORS);
+        if (changeFeedReader == null) {
+            throw new com.multiclouddb.api.MulticloudDbException(new MulticloudDbError(
+                    MulticloudDbErrorCategory.UNSUPPORTED_CAPABILITY,
+                    "Change feed reader not initialized (test-only constructor)",
+                    ProviderId.DYNAMO, OperationNames.LIST_CURSORS, false, java.util.Map.of()));
+        }
+        return changeFeedReader.listCursors(dynamoClient, address, resolveTableName(address));
+    }
+
+    @Override
+    public com.multiclouddb.api.changefeed.ChangeFeedPage readChanges(
+            ResourceAddress address,
+            com.multiclouddb.api.changefeed.ChangeFeedCursor cursor,
+            OperationOptions options) {
+        checkOpen(OperationNames.READ_CHANGES);
+        if (changeFeedReader == null) {
+            throw new com.multiclouddb.api.MulticloudDbException(new MulticloudDbError(
+                    MulticloudDbErrorCategory.UNSUPPORTED_CAPABILITY,
+                    "Change feed reader not initialized (test-only constructor)",
+                    ProviderId.DYNAMO, OperationNames.READ_CHANGES, false, java.util.Map.of()));
+        }
+        return changeFeedReader.readChanges(dynamoClient, address, resolveTableName(address), cursor, options);
     }
 
     // ── Provisioning ────────────────────────────────────────────────────────
@@ -923,6 +1024,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void ensureDatabase(String database) {
+        checkOpen(OperationNames.ENSURE_DATABASE);
         LOG.debug("ensureDatabase is a no-op for DynamoDB (database={})", database);
     }
 
@@ -951,6 +1053,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void ensureContainer(ResourceAddress address) {
+        checkOpen(OperationNames.ENSURE_CONTAINER);
         String tableName = resolveTableName(address);
         try {
             TableStatus status = describeTableStatus(tableName);

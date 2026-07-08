@@ -24,6 +24,8 @@ public final class CosmosCapabilities {
             Capability.STRONG_CONSISTENCY_CAP.withNotes("Configurable consistency levels including Strong"),
             Capability.NATIVE_SQL_QUERY_CAP.withNotes("SQL-like query language"),
             Capability.CHANGE_FEED_CAP.withNotes("Change feed processor for real-time changes"),
+            Capability.EXTENDED_CHANGE_FEED_HISTORY_CAP.withNotes(
+                    "Up to 30 days via Continuous Backup 30d tier; 7d minimum (AVAD requires Continuous Backup)"),
             // Query DSL capabilities
             Capability.PORTABLE_QUERY_EXPRESSION_CAP.withNotes("Portable expression translation to Cosmos SQL"),
             Capability.LIKE_OPERATOR_CAP.withNotes("LIKE operator supported via Cosmos SQL"),

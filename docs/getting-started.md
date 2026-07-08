@@ -214,6 +214,42 @@ Change **only** the properties file - no code changes required:
 
 ---
 
+## 7. Read Change Events
+
+Subscribe to inserts, updates and deletes with three primitives —
+`ChangeFeedCursor` (opaque, persistable position), `listCursors` (one cursor
+per provider partition), and `readChanges` (one page at a time).
+
+```java
+ResourceAddress orders = new ResourceAddress("appdb", "orders");
+
+// Start from the live tip — historical events are skipped.
+ChangeFeedCursor cursor = ChangeFeedCursor.now();
+
+while (true) {
+    ChangeFeedPage page = client.readChanges(orders, cursor);
+
+    for (ChangeEvent ev : page.events()) {
+        System.out.printf("%s %s @ %s%n",
+                ev.type(), ev.key(), ev.commitTimestamp());
+    }
+
+    cursor = page.nextCursor();
+    persist(cursor.toToken()); // resume from this point on restart
+
+    if (!page.hasMore()) Thread.sleep(500);
+}
+```
+
+> **Provisioning required.** Cosmos containers must enable AVAD mode for the
+> SDK to surface `DELETE`; DynamoDB tables need `StreamSpecification(NEW_AND_OLD_IMAGES)`;
+> Spanner needs `CREATE CHANGE STREAM <collection>_changes FOR <collection>
+> OPTIONS (value_capture_type = 'NEW_ROW')`. See [guide.md - Change Feeds](guide.md#change-feeds)
+> for full setup, multi-thread patterns, expired-cursor recovery, and
+> per-provider semantics.
+
+---
+
 ## Next Steps
 
 - [Configuration Reference](configuration.md) - full connection and auth properties per provider

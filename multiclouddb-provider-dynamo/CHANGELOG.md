@@ -7,6 +7,27 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [0.1.0-beta.2] — 2026-06-22
+
+> **Requires `multiclouddb-api` 0.1.0-beta.2 or later** — this release consumes API surface (change-feed cursors, `CLIENT_CLOSED` envelope, `ChangeFeedConfig.extendedRetention(...)` opt-in gating) introduced in API beta.2. The dependency is pinned in the published POM.
+
+### Added
+
+- Change-feed reader backed by DynamoDB Streams (`DescribeStream`, `GetShardIterator`, `GetRecords`). `listCursors` returns one cursor per open shard at the live tip with a pre-resolved `LATEST` iterator (`@@ITER:<iterator>` continuation), avoiding the silent event loss that an `ANCHOR_NOW` sentinel produces between mint and first read. `readChanges` drains one shard's page per call, rotates the partition list across shards so multi-shard cursors are not starved, transitions to an `AFTER_SEQUENCE_NUMBER` continuation on the first observed record (good for the full 24-hour stream retention), and absorbs shard splits/closes by re-describing the stream and emitting child shards on the next cursor. `TrimmedDataAccessException` is mapped to `CursorExpiredException(reason=PROVIDER_TRIMMED)`; `ExpiredIteratorException` (~5-minute iterator idle timeout) is mapped to `reason=ITERATOR_EXPIRED`. Change-event payloads preserve the full DynamoDB type system (`M`/`L`/`SS`/`NS`/nested) via the shared `DynamoItemMapper`. The target table must have `StreamSpecification(NEW_AND_OLD_IMAGES)` enabled; otherwise the reader fails fast with `UNSUPPORTED_CAPABILITY(reason="stream_not_enabled")`.
+- `DynamoCapabilities` explicitly declares `EXTENDED_CHANGE_FEED_HISTORY_UNSUPPORTED` (DynamoDB Streams is fixed at 24h server-side; an SDK-managed archive-on-read path via customer-provisioned Kafka brokers is on the v1.x roadmap). Callers that opt in to `ChangeFeedConfig.extendedRetention(...)` fail fast at client-build time via the API-module factory gate; `DynamoProviderClient`'s constructor carries a defence-in-depth mirror gate so SPI-direct integrators (`ServiceLoader` consumers bypassing the factory) cannot silently drop the opt-in.
+- Default sort-key ordering: scan paths (`executeScan`, `executeScanWithFilter`, `queryWithTranslation`) sort items per-page by sort key ascending, matching DynamoDB's native `Query` API and the Cosmos provider's global default. Per-page only — multi-page scans retain DynamoDB's token-based traversal order across pages.
+- Typed `CLIENT_CLOSED` envelope on every post-close CRUD / query / provisioning / change-feed entry point. `close()` is idempotent and also disposes the embedded `DynamoDbStreamsClient`.
+
+### Changed
+
+- `SORT_KEY_ASC` comparator handles numeric sort keys with type-aware comparison (`Long`/`Integer` use their native compare; mixed numerics fall back to `BigDecimal`) so integers beyond `2^53` are no longer truncated through `Double.compare`.
+- `BETWEEN` translation wraps in parentheses (`(field BETWEEN ? AND ?)`) for cross-provider consistency.
+
+### Documentation
+
+- `delete()` of a missing key is documented as a silent no-op (idempotent); the Dynamo provider issues an unconditional `DeleteItem` and does not pay the conditional-write WCU surcharge.
+- AWS SDK v2 (2.34.x) bundles the DynamoDB Streams client classes inside the main `software.amazon.awssdk:dynamodb` artifact at `software.amazon.awssdk.services.dynamodb.streams.*` (verified against the published `dynamodb-2.34.0.jar`); no separate `dynamodbstreams` dependency is required. If `aws-sdk.version` is bumped, re-verify that the Streams classes remain bundled.
+
 ## [0.1.0-beta.1] — 2026-04-23
 
 ### Added

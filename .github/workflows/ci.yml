@@ -6,6 +6,13 @@ on:
   push:
     branches: [main]
 
+# Least-privilege GITHUB_TOKEN for all jobs. This workflow only checks out the
+# repo, runs the Maven build, and uploads workflow artifacts (which does not need
+# a token scope) - it never writes back to the repository - so read-only access
+# to contents is sufficient.
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build, Unit Tests & Artifacts
@@ -302,5 +309,79 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dynamo-test-reports
+          path: '**/surefire-reports/**'
+          retention-days: 7
+
+  emulator-spanner:
+    name: Spanner Emulator Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'maven'
+
+      - name: Start Spanner Emulator
+        run: |
+          IMAGE="gcr.io/cloud-spanner-emulator/emulator:1.5.29"
+          for i in 1 2 3 4 5; do
+            echo "Attempt $i: pulling $IMAGE..."
+            if docker pull "$IMAGE" 2>&1; then
+              echo "Pull succeeded"
+              break
+            fi
+            if [ "$i" -eq 5 ]; then
+              echo "::error::Failed to pull $IMAGE after 5 attempts"
+              exit 1
+            fi
+            # Exponential backoff: 15s, 30s, 60s, 120s between attempts.
+            WAIT=$((15 * (1 << (i - 1))))
+            echo "Pull failed, waiting ${WAIT}s before retry..."
+            sleep "$WAIT"
+          done
+          docker run -d --name spanner-emulator \
+            -p 9010:9010 \
+            -p 9020:9020 \
+            "$IMAGE"
+
+      - name: Wait for Spanner Emulator
+        run: |
+          echo "Waiting for Spanner Emulator to be ready..."
+          # Probe instanceConfigs — the emulator pre-populates this list, so it
+          # returns HTTP 200 once the REST/gRPC stack is up and does not depend
+          # on any user-created project/instance.
+          timeout 60 bash -c '
+            until curl -fsS http://localhost:9020/v1/projects/test-project/instanceConfigs >/dev/null 2>&1; do
+              echo "  Not ready yet, retrying in 2s..."
+              sleep 2
+            done
+          '
+          echo "Spanner Emulator is ready (gRPC :9010, REST :9020)"
+
+      - name: Run Spanner integration tests
+        run: |
+          mvn verify -Pemulator-spanner -pl multiclouddb-conformance -am \
+            -Djunit.jupiter.execution.timeout.default=20s
+
+      - name: Spanner emulator diagnostics (on failure)
+        if: failure()
+        run: |
+          docker ps -a
+          docker logs spanner-emulator || true
+
+      - name: Stop Spanner Emulator
+        if: always()
+        run: docker rm -f spanner-emulator 2>/dev/null || true
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spanner-test-reports
           path: '**/surefire-reports/**'
           retention-days: 7

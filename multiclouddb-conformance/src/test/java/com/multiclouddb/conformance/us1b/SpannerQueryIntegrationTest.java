@@ -72,6 +72,7 @@ class SpannerQueryIntegrationTest {
                         "CREATE TABLE " + TABLE + " ("
                                 + "  partitionKey STRING(MAX) NOT NULL,"
                                 + "  sortKey STRING(MAX) NOT NULL,"
+                                + "  data STRING(MAX),"
                                 + "  title STRING(MAX),"
                                 + "  status STRING(MAX),"
                                 + "  priority INT64,"

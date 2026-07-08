@@ -38,6 +38,20 @@ contract.
 | `ExpressionTranslator` | SPI - translates AST to provider-native query syntax |
 | `TranslatedQuery` | Translation result: query string + bound parameters |
 
+### Change-Feed Types (`com.multiclouddb.api.changefeed`)
+
+| Type | Description |
+|------|-------------|
+| `ChangeFeedCursor` | Opaque, immutable position in a change feed. `now()` mints a sentinel at the live tip; `toToken()` / `fromToken(String)` persist it. |
+| `ChangeFeedPage` | A page of change events plus `nextCursor`, `hasMore`, and `terminal` flags. |
+| `ChangeEvent` | A single change with `key`, `type`, `commitTimestamp`, `data`, and `providerEventId`. |
+| `ChangeType` | Enum: `CREATE`, `UPDATE`, `DELETE`. |
+| `CursorExpiredException` | Thrown when a cursor cannot be honoured (trimmed, aged-out, mismatched). `error().providerDetails().get("reason")` carries the cause. |
+| `ChangeFeedConfig` | Immutable opt-in configuration for change-feed retention. `builder().extendedRetention(Duration)` requests server-side history > 24 h (provider-gated; see `Capability.EXTENDED_CHANGE_FEED_HISTORY`). `defaults()` is the cached no-op singleton; bit-for-bit identical v1 behaviour when not set. |
+
+See [guide.md - Change Feeds](guide.md#change-feeds) for the full workflow,
+provisioning prerequisites, and multi-thread pattern.
+
 ---
 
 ## Building Javadoc Locally

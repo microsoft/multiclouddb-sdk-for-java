@@ -15,12 +15,22 @@ module com.multiclouddb.api {
     // Public API — what app developers use
     exports com.multiclouddb.api;
     exports com.multiclouddb.api.query;
+    exports com.multiclouddb.api.changefeed;
 
     // SPI — only to provider modules and the conformance test suite, not to app code.
     // NOTE: multiclouddb-conformance currently has no module-info.java and runs on
     // the unnamed (classpath) module, so this qualified export is a forward declaration
     // for when the conformance module is eventually placed on the module path.
     exports com.multiclouddb.spi to
+        com.multiclouddb.provider.cosmos,
+        com.multiclouddb.provider.dynamo,
+        com.multiclouddb.provider.spanner,
+        com.multiclouddb.conformance;
+
+    // Change-feed internal types — providers need CursorToken / CursorTokenCodec
+    // to mint and refresh cursors. Application code should treat ChangeFeedCursor
+    // as opaque (toToken/fromToken only).
+    exports com.multiclouddb.api.changefeed.internal to
         com.multiclouddb.provider.cosmos,
         com.multiclouddb.provider.dynamo,
         com.multiclouddb.provider.spanner,
