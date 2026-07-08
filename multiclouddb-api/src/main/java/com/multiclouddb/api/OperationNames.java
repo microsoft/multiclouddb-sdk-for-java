@@ -44,5 +44,14 @@ public final class OperationNames {
 
     /** Ensure a container or table exists, creating it if absent. */
     public static final String ENSURE_CONTAINER = "ensureContainer";
+
+    /** Provision a schema (one or more databases each with one or more containers). */
+    public static final String PROVISION_SCHEMA = "provisionSchema";
+
+    /** Discover one change-feed cursor per provider partition at the live tip. */
+    public static final String LIST_CURSORS = "listCursors";
+
+    /** Drain one page of change events from a change-feed cursor. */
+    public static final String READ_CHANGES = "readChanges";
 }
 

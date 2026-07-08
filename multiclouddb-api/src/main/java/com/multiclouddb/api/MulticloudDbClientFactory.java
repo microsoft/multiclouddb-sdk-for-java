@@ -3,6 +3,8 @@
 
 package com.multiclouddb.api;
 
+import com.multiclouddb.api.Capability;
+import com.multiclouddb.api.CapabilitySet;
 import com.multiclouddb.api.internal.DefaultMulticloudDbClient;
 import com.multiclouddb.api.query.ExpressionTranslator;
 import com.multiclouddb.spi.MulticloudDbProviderAdapter;
@@ -10,6 +12,8 @@ import com.multiclouddb.spi.MulticloudDbProviderClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
+import java.util.Map;
 import java.util.ServiceLoader;
 
 /**
@@ -45,6 +49,52 @@ public final class MulticloudDbClientFactory {
                         adapter.getClass().getName(), requestedProvider.id());
 
                 MulticloudDbProviderClient providerClient = adapter.createClient(config);
+
+                // Build-time capability gate (T080-style fail-fast): if the user
+                // requested extended change-feed retention via
+                // ChangeFeedConfig.extendedRetention(...) but this provider does
+                // not declare EXTENDED_CHANGE_FEED_HISTORY, surface a clean
+                // UNSUPPORTED_CAPABILITY before any change-feed-substrate I/O
+                // is issued. Misconfiguration must not lurk until the first
+                // ensureContainer / listCursors / readChanges call.
+                //
+                // We have already paid for adapter.createClient(...) at this
+                // point (some adapters open a control-plane gRPC channel /
+                // refresh an auth token in their constructor), so we MUST
+                // close the providerClient on a gate-throw to release pooled
+                // HTTP connections, worker threads, and gRPC channels.
+                try {
+                    if (config.changeFeed().hasExtendedRetention()) {
+                        CapabilitySet caps = providerClient.capabilities();
+                        if (!caps.isSupported(Capability.EXTENDED_CHANGE_FEED_HISTORY)) {
+                            Duration requested = config.changeFeed().extendedRetention().orElseThrow();
+                            String providerNote = caps.get(Capability.EXTENDED_CHANGE_FEED_HISTORY) != null
+                                    ? caps.get(Capability.EXTENDED_CHANGE_FEED_HISTORY).notes()
+                                    : null;
+                            String msg = "Provider " + requestedProvider.id()
+                                    + " does not support Capability.EXTENDED_CHANGE_FEED_HISTORY — "
+                                    + "extended change-feed retention (requested " + requested
+                                    + ") is unavailable on this provider. "
+                                    + "See docs/guide.md → 'Extending change-feed history beyond 24 hours' "
+                                    + "for the per-provider capability matrix and supported escape hatches."
+                                    + (providerNote != null ? " Provider note: " + providerNote : "");
+                            throw new MulticloudDbException(new MulticloudDbError(
+                                    MulticloudDbErrorCategory.UNSUPPORTED_CAPABILITY,
+                                    msg,
+                                    requestedProvider,
+                                    "create",
+                                    false,
+                                    Map.of(
+                                            "reason", "extended_retention_unavailable",
+                                            "capability", Capability.EXTENDED_CHANGE_FEED_HISTORY,
+                                            "requestedRetention", requested.toString())));
+                        }
+                    }
+                } catch (RuntimeException rethrow) {
+                    try { providerClient.close(); } catch (Exception ignored) { /* best-effort */ }
+                    throw rethrow;
+                }
+
                 DefaultMulticloudDbClient client = new DefaultMulticloudDbClient(providerClient, config);
 
                 ExpressionTranslator translator = adapter.createExpressionTranslator();

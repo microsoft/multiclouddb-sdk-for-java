@@ -27,8 +27,16 @@ public final class QueryPage {
 
     public QueryPage(List<Map<String, Object>> items, String continuationToken,
                      OperationDiagnostics diagnostics) {
+        // Defensive deep copy using a null-tolerant copy at both levels:
+        // Map.copyOf() and List.copyOf() reject null entries, but schemaless
+        // stores (Cosmos / Dynamo) and the Spanner provider round-trip
+        // explicit null field values. Use LinkedHashMap (preserves iteration
+        // order and tolerates null values) wrapped in unmodifiableMap, then
+        // collect to an unmodifiableList.
         this.items = items != null
-                ? items.stream().map(Map::copyOf).collect(java.util.stream.Collectors.toUnmodifiableList())
+                ? items.stream()
+                        .map(m -> Collections.unmodifiableMap(new java.util.LinkedHashMap<>(m)))
+                        .collect(java.util.stream.Collectors.toUnmodifiableList())
                 : Collections.emptyList();
         this.continuationToken = (continuationToken != null && !continuationToken.isEmpty())
                 ? continuationToken : null;

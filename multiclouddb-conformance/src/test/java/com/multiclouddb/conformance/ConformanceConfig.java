@@ -161,7 +161,7 @@ public final class ConformanceConfig {
      * Resolve a value from system property, then environment variable, then
      * default.
      */
-    private static String resolve(String sysProp, String envVar, String defaultVal) {
+    static String resolve(String sysProp, String envVar, String defaultVal) {
         String val = System.getProperty(sysProp);
         if (val != null && !val.isBlank()) {
             return val;

@@ -3,6 +3,8 @@
 
 package com.multiclouddb.api;
 
+import com.multiclouddb.api.changefeed.ChangeFeedConfig;
+
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -41,6 +43,13 @@ public final class MulticloudDbClientConfig {
      */
     private final String userAgentSuffix;
 
+    /**
+     * Change-feed configuration (e.g. extended-retention opt-in).
+     * Defaults to {@link ChangeFeedConfig#defaults()} (no opt-in) so callers
+     * that never touch this knob behave identically to v1.
+     */
+    private final ChangeFeedConfig changeFeed;
+
     private MulticloudDbClientConfig(Builder builder) {
         this.provider = Objects.requireNonNull(builder.provider, "provider is required");
         this.connection = builder.connection != null ? Map.copyOf(builder.connection) : Collections.emptyMap();
@@ -48,6 +57,7 @@ public final class MulticloudDbClientConfig {
         this.defaultOptions = builder.defaultOptions != null ? builder.defaultOptions : OperationOptions.defaults();
         this.nativeDiagnosticsEnabled = builder.nativeDiagnosticsEnabled;
         this.userAgentSuffix = builder.userAgentSuffix;
+        this.changeFeed = builder.changeFeed != null ? builder.changeFeed : ChangeFeedConfig.defaults();
     }
 
     /** The target provider. */
@@ -98,6 +108,14 @@ public final class MulticloudDbClientConfig {
         return userAgentSuffix;
     }
 
+    /**
+     * Change-feed configuration (extended-retention opt-in, etc.).
+     * Never {@code null}; an unset config returns {@link ChangeFeedConfig#defaults()}.
+     */
+    public ChangeFeedConfig changeFeed() {
+        return changeFeed;
+    }
+
 
     public static Builder builder() {
         return new Builder();
@@ -116,6 +134,7 @@ public final class MulticloudDbClientConfig {
         private OperationOptions defaultOptions;
         private boolean nativeDiagnosticsEnabled = false;
         private String userAgentSuffix;
+        private ChangeFeedConfig changeFeed;
 
         /** Set the target provider. */
         public Builder provider(ProviderId provider) {
@@ -221,6 +240,19 @@ public final class MulticloudDbClientConfig {
                 }
             }
             this.userAgentSuffix = suffix;
+            return this;
+        }
+
+        /**
+         * Set the change-feed configuration (extended-retention opt-in, etc.).
+         * Pass {@code null} (or omit the call) to use the portable baseline —
+         * {@link ChangeFeedConfig#defaults()}.
+         * <p>
+         * Validation runs at {@link ChangeFeedConfig.Builder#build()} time, so
+         * an illegal request surfaces before this setter is reached.
+         */
+        public Builder changeFeed(ChangeFeedConfig changeFeed) {
+            this.changeFeed = changeFeed;
             return this;
         }
 

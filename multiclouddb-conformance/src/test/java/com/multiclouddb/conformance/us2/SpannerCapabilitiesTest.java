@@ -33,4 +33,11 @@ public class SpannerCapabilitiesTest extends CapabilitiesConformanceTest {
             assertTrue(caps.isSupported(Capability.CASE_FUNCTIONS));
         }
     }
+    @Test
+    void spannerExtendedChangeFeedHistorySupported() throws Exception {
+        try (var client = com.multiclouddb.conformance.ConformanceHarness.createClient(ProviderId.SPANNER)) {
+            assertTrue(client.capabilities().isSupported(Capability.EXTENDED_CHANGE_FEED_HISTORY),
+                    "Spanner must support EXTENDED_CHANGE_FEED_HISTORY — declared via CREATE CHANGE STREAM ... OPTIONS(retention_period)");
+        }
+    }
 }

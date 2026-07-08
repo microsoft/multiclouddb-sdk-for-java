@@ -8,6 +8,12 @@ on:
       - 'mkdocs.yml'
   workflow_dispatch:
 
+# Least-privilege GITHUB_TOKEN. The gh-deploy push authenticates with a separate
+# PAT (PAGES_DEPLOY_TOKEN) and checkout runs with persist-credentials: false, so
+# the default token is only used to read the repo during checkout.
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest

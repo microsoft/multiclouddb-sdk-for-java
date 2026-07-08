@@ -24,6 +24,9 @@ public final class SpannerCapabilities {
             Capability.STRONG_CONSISTENCY_CAP.withNotes("External consistency (linearizability)"),
             Capability.NATIVE_SQL_QUERY_CAP.withNotes("Full GoogleSQL or PostgreSQL-dialect SQL"),
             Capability.CHANGE_FEED_CAP.withNotes("Change Streams"),
+            Capability.EXTENDED_CHANGE_FEED_HISTORY_CAP.withNotes(
+                    "Default 24h; configurable up to 7d natively via CREATE CHANGE STREAM ... OPTIONS(retention_period=...). "
+                    + "Cost scales with change-data volume × retention."),
             // Query DSL capabilities
             Capability.PORTABLE_QUERY_EXPRESSION_CAP.withNotes("Portable expression translation to Spanner GoogleSQL"),
             Capability.LIKE_OPERATOR_CAP.withNotes("LIKE operator supported in GoogleSQL"),

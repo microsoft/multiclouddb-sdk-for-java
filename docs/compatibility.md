@@ -22,7 +22,7 @@ no asterisks, no provider-specific caveats, and no runtime checks required.
 | **Read** | Point-read by partition key + sort key |
 | **Update** | Replace an existing document (fails if not found) |
 | **Upsert** | Create or replace - always succeeds |
-| **Delete** | Remove by key (idempotent) |
+| **Delete** | Remove by key (idempotent — silent on missing; use `read()` to detect a missing key, since `read()` returns `null` on every provider) |
 
 ### Query - Portable Expression DSL
 
@@ -65,7 +65,7 @@ QueryPage page = client.query(address, query);
 | **Transactions** | Multi-document transactional operations |
 | **Batch operations** | Batch read/write for throughput efficiency |
 | **Strong consistency** | Strongly-consistent reads |
-| **Change feed** | Change feed / change streams |
+| **Change feed** | Change feed / change streams — see [guide.md - Change Feeds](guide.md#change-feeds) |
 
 ### Diagnostics & Error Handling
 
@@ -93,7 +93,8 @@ The raw HTTP or gRPC status code is also available via `error.statusCode()`.
 | `THROTTLED`  | HTTP 429  | ProvisionedThroughputExceededException, ThrottlingException  | RESOURCE_EXHAUSTED  |
 | `TRANSIENT_FAILURE`  | HTTP 449, 500, 502, 503  | HTTP 500–5xx  | UNAVAILABLE  |
 | `PERMANENT_FAILURE`  | -  | ItemCollectionSizeLimitExceededException  | -  |
-| `UNSUPPORTED_CAPABILITY`  | -  | -  | UNIMPLEMENTED  |
+| `UNSUPPORTED_CAPABILITY`  | HTTP 400 with AVAD-not-enabled fingerprint (`providerDetails.reason="avad_not_enabled"`)  | `InvalidArgumentException` / `ResourceNotFoundException` for streams not enabled (`reason="stream_not_enabled"`)  | UNIMPLEMENTED, plus change-stream-not-provisioned (`reason="stream_not_enabled"`)  |
+| `CURSOR_EXPIRED` (change-feed) | HTTP 410 GONE (`reason="PROVIDER_TRIMMED"`)  | `TrimmedDataAccessException` (`reason="PROVIDER_TRIMMED"`), `ExpiredIteratorException` (`reason="ITERATOR_EXPIRED"`)  | `INVALID_ARGUMENT` / `OUT_OF_RANGE` / `NOT_FOUND` for partition outside retention (`reason="PROVIDER_TRIMMED"`)  |
 | `PROVIDER_ERROR`  | Other  | Other  | INTERNAL, Other  |
 
 > ¹ DynamoDB uses `ConditionalCheckFailedException` for both the 409 (duplicate-key on `create`) and 412
@@ -101,6 +102,28 @@ The raw HTTP or gRPC status code is also available via `error.statusCode()`.
 > The portable API does not yet expose ETag-based conditional updates; when it does, the 412-equivalent
 > path will be split into a dedicated `PRECONDITION_FAILED` category (tracked in issue #29).
 
+## Change-Feed History Retention
+
+The portable change-feed read path guarantees a **24-hour** history floor on
+every provider out of the box — a cursor token minted by `ChangeFeedCursor#toToken()`
+can be replayed for 24 hours regardless of which provider produced it.
+
+To request a longer server-side retention window, opt in via
+`ChangeFeedConfig.builder().extendedRetention(Duration)` on
+`MulticloudDbClientConfig`. The SDK fails fast at client-build time with
+`UNSUPPORTED_CAPABILITY` (`reason=extended_retention_unavailable`) if the
+target provider does not declare the `EXTENDED_CHANGE_FEED_HISTORY` capability.
+
+| Provider | Declares `EXTENDED_CHANGE_FEED_HISTORY` | How it is honoured | Practical ceiling |
+|---|---|---|---|
+| Cosmos DB | ✅ | `ensureContainer()` provisions an AVAD `ChangeFeedPolicy` carrying the requested retention. The account must have Continuous Backup enabled; the SDK normalises the "continuous backup required" failure to `UNSUPPORTED_CAPABILITY` (`reason=continuous_backup_required`). | Up to **30 days** on a Continuous Backup 30-day tier; 7 days is the most common ceiling. |
+| Spanner | ✅ | `ensureContainer()` emits `CREATE CHANGE STREAM <table>_changes FOR <table> OPTIONS (value_capture_type = 'NEW_ROW', retention_period = '<value>')` after the table-create (the `NEW_ROW` capture type matches what the SDK's change-feed reader requires for full-row payloads). Requests beyond the database's native maximum are normalised to `UNSUPPORTED_CAPABILITY` (`reason=retention_exceeds_native_max`). If a stream of the same name already exists with a different retention, `ensureContainer()` reads back the active retention via `INFORMATION_SCHEMA.CHANGE_STREAM_OPTIONS` and surfaces the mismatch as `UNSUPPORTED_CAPABILITY` (`reason=extended_retention_not_enacted`) so the divergence cannot be silently swallowed. | **7 days** natively; up to **1 year** only on a database explicitly configured for extended retention. |
+| DynamoDB | ❌ | DynamoDB Streams is fixed at 24 h server-side. Calling `client(...).provisionSchema(...)` (or any container-create call) with an `extendedRetention` opt-in fails fast at client-build time. | Drain Streams into a customer-provisioned Kafka cluster (outside the SDK) for >24 h today. SDK-managed archive-on-read via Kafka (customer-provisioned brokers) is on the v1.x roadmap. |
+
+**Cost is provider-shaped** — extending the change-feed history window changes
+your bill differently on each provider; the windows are not interchangeable.
+See `docs/guide.md` → *"Extending change-feed history beyond 24 hours"* for the
+per-provider price-driver detail before opting in.
 ## Default Sort-Key Ordering
 
 All Cosmos DB and DynamoDB query paths return results sorted by the document's

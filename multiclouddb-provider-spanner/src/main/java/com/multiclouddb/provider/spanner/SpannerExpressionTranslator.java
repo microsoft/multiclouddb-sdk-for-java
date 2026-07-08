@@ -79,10 +79,16 @@ public final class SpannerExpressionTranslator implements ExpressionTranslator {
             sb.append(')');
 
         } else if (expr instanceof BetweenExpression between) {
-            sb.append(between.field().name()).append(" BETWEEN ");
+            // Wrap in parentheses for consistency with sibling translators.
+            // GoogleSQL parses the un-parenthesised form correctly (its
+            // operator precedence binds BETWEEN tighter than logical AND), so
+            // this is not strictly required here — but uniform output across
+            // providers simplifies cross-provider debugging and query stitching.
+            sb.append('(').append(between.field().name()).append(" BETWEEN ");
             appendValue(between.low(), sb, srcParams, outParams);
             sb.append(" AND ");
             appendValue(between.high(), sb, srcParams, outParams);
+            sb.append(')');
         }
     }
 

@@ -4,6 +4,7 @@
 package com.multiclouddb.provider.cosmos;
 
 import com.azure.cosmos.ConsistencyLevel;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -214,5 +215,25 @@ public final class CosmosConstants {
      * Maximum RU charge for a single query page before a WARN is emitted.
      */
     public static final double DIAG_THRESHOLD_QUERY_RU = 100.0;
+    /**
+     * Lowercase substrings that, when found in a Cosmos {@code 400 BadRequest}
+     * message, indicate the account does not have Continuous Backup enabled
+     * (a prerequisite for AVAD {@code ChangeFeedPolicy} retention beyond the
+     * default 7 days). Used by
+     * {@code CosmosProviderClient#maybeContinuousBackupRequired(...)} to
+     * promote the underlying error into a portable
+     * {@code UNSUPPORTED_CAPABILITY(continuous_backup_required)} envelope.
+     * <p>
+     * Cosmos SDK releases vary in their exact wording ("continuous backup",
+     * "continuousBackup", "point in time restore", "PITR"), so this list is
+     * intentionally a small fingerprint set rather than a single literal.
+     * Update both this list and
+     * {@code CosmosContinuousBackupFingerprintTest} when the upstream
+     * wording changes.
+     */
+    public static final List<String> CONTINUOUS_BACKUP_FINGERPRINTS = List.of(
+            "continuous backup",
+            "continuousbackup",
+            "point in time restore",
+            "pitr");
 }
-

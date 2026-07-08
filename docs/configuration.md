@@ -198,9 +198,35 @@ multiclouddb.connection.consistencyLevel=EVENTUAL
 | `multiclouddb.connection.instanceId` | Spanner instance ID |
 | `multiclouddb.connection.databaseId` | Spanner database ID |
 | `multiclouddb.connection.emulatorHost` | Emulator host:port (omit for GCP) |
+| `multiclouddb.connection.changeStream.<collection>` | Per-collection change-stream name override (optional). Defaults to `<collection>_changes`. **By default** the change stream must be provisioned out of band with `CREATE CHANGE STREAM <name> FOR <collection> OPTIONS (value_capture_type='NEW_ROW')` — the SDK does not create change streams. **Exception:** when the caller opts in via `MulticloudDbClientConfig.changeFeed(ChangeFeedConfig.builder().extendedRetention(d).build())`, `ensureContainer(...)` emits the DDL itself (including `OPTIONS (value_capture_type = 'NEW_ROW', retention_period = '…')`) and resolves the stream name through this override so producer and reader stay in sync. See `docs/guide.md` → *"Extending change-feed history beyond 24 hours"*. |
 
 ---
 
+## Change-Feed Configuration (opt-in)
+
+Beyond the per-collection `changeStream.<collection>` *connection* override
+above, change-feed–specific behavioural knobs live on
+`MulticloudDbClientConfig.changeFeed(ChangeFeedConfig)`:
+
+```java
+MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+    .provider(ProviderId.SPANNER)
+    .changeFeed(ChangeFeedConfig.builder()
+        .extendedRetention(Duration.ofDays(7))  // > 24 h; opt-in only
+        .build())
+    .build();
+```
+
+| Setter | Default | Purpose |
+|---|---|---|
+| `ChangeFeedConfig.Builder.extendedRetention(Duration)` | unset (24 h portable baseline) | Requests server-side change-feed history beyond 24 h. Must be strictly > 24 h. Fails fast at client-build time with `UNSUPPORTED_CAPABILITY(reason="extended_retention_unavailable")` on providers that do not declare `Capability.EXTENDED_CHANGE_FEED_HISTORY` (Dynamo). See `docs/guide.md` → *"Extending change-feed history beyond 24 hours"* for the per-provider price drivers, ceilings, and substrate-provisioning semantics. |
+
+Callers that never invoke `changeFeed(...)` get the portable 24-hour baseline
+on every provider — the default `ChangeFeedConfig.defaults()` is the cached
+no-op singleton, so the on-the-wire behaviour is bit-for-bit identical to a
+client built without this knob.
+
+---
 ## Programmatic Configuration
 
 You can also configure the client programmatically using the builder:
