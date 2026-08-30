@@ -894,6 +894,25 @@ QueryRequest spannerQuery = QueryRequest.builder()
 > setting both throws an error. Native expressions break portability: switching
 > providers requires rewriting the query.
 
+> **Mismatched dialects are not caught by the SDK.** The native statement is
+> not translated or dialect-checked - it is passed to the configured provider.
+> Sending Cosmos SQL to DynamoDB therefore fails at execution time as a
+> `MulticloudDbException`, not as an SDK-side compatibility error. The category
+> depends on how the target database rejects it: a syntax error maps to
+> `INVALID_REQUEST`, while a statement naming a table that does not exist on
+> the target - the usual outcome of a cross-dialect paste - maps to
+> `NOT_FOUND`. A statement valid in more than one dialect can even succeed
+> silently while returning different results per provider. See
+> [Escape Hatch Policy](compatibility.md#escape-hatch-policy).
+
+> **Do not combine `partitionKey()` with `nativeExpression()`.** On DynamoDB
+> and Spanner the adapter appends a partition-key condition to your statement,
+> choosing `WHERE` or `AND` by a plain case-insensitive search for `WHERE`, so
+> a statement containing `WHERE` in a string literal or subquery can be
+> rewritten incorrectly. Cosmos DB leaves the statement untouched and scopes
+> the query through a request option instead. Put the partition-key predicate
+> in your own statement.
+
 ### Translation Pipeline
 
 When you use a portable `expression`, the SDK processes it through a four-stage
@@ -1094,6 +1113,9 @@ QueryRequest portable = QueryRequest.builder()
     .build();
 
 // Native Cosmos SQL + partition scoping
+// Safe on Cosmos DB, which scopes via a request option and does not touch the
+// statement. On DynamoDB and Spanner the adapter appends a partition-key
+// condition to the statement instead - see "Native Expression Passthrough".
 QueryRequest native = QueryRequest.builder()
     .nativeExpression("SELECT c.symbol, c.marketValue FROM c ORDER BY c.marketValue DESC")
     .partitionKey("portfolio-alpha")

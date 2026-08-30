@@ -183,7 +183,102 @@ the Spanner provider until this gap is addressed.
 
 ## Escape Hatch Policy
 
+### No native client access
+
 The SDK does not expose a `nativeClient()` method. Direct access to the
 underlying provider client is intentionally omitted to enforce portability
 guarantees - code written against the SDK must remain switchable between
 providers by configuration alone.
+
+The same rule applies to code-level hooks, interceptors, and async callbacks:
+provider-specific behaviour is reached through capability-gated features and
+SDK configuration only.
+
+### `nativeExpression()` - the one supported escape hatch
+
+Queries are the single exception. When the portable expression DSL cannot
+express what you need (for example Cosmos DB `LIKE`, or provider-specific
+aggregate and ordering syntax), `QueryRequest.nativeExpression()` bypasses the
+portable translation pipeline and sends a complete, provider-native statement
+to the database. (The statement is never translated between dialects, though
+the adapter may append a partition-key condition to it - see
+[What happens on a provider mismatch](#what-happens-on-a-provider-mismatch).)
+
+```java
+// Cosmos DB - Cosmos SQL
+QueryRequest q = QueryRequest.builder()
+        .nativeExpression("SELECT * FROM c WHERE c.title LIKE '%flight%'")
+        .maxPageSize(25)
+        .build();
+```
+
+All three providers accept the field, but each dialect differs:
+
+| Provider | Dialect passed through |
+|---|---|
+| Cosmos DB | Cosmos SQL (`SELECT * FROM c ...` - `c` is a container alias; any identifier works) |
+| DynamoDB | PartiQL (`SELECT * FROM "database__collection" ...`) |
+| Spanner | GoogleSQL (`SELECT * FROM collection ...`) |
+
+Note what selects the target. On Cosmos DB the container comes from the
+`ResourceAddress` you pass to `query()`, and the alias in the statement is
+just an alias. On DynamoDB and Spanner the `ResourceAddress` is **ignored**
+on the native path - the target is whatever table your statement names, so
+you must spell it out yourself. DynamoDB table names are the `database` and
+`collection` of your `ResourceAddress` joined by a double underscore
+(`database__collection`); Spanner table names are the `collection` alone.
+Addressing collection A while naming collection B in the statement reads
+collection B, with no error.
+
+`expression()` and `nativeExpression()` are mutually exclusive - setting both
+throws `IllegalArgumentException` when `QueryRequest` is built.
+
+`orderBy()` and `limit()` are **not** reliably applied to a native statement -
+put `ORDER BY` and `LIMIT` in the statement itself. Setting `orderBy()`
+alongside `nativeExpression()` fails fast with `UNSUPPORTED_CAPABILITY` on
+DynamoDB, and is silently ignored on Cosmos DB and Spanner. `limit()` is
+honoured on DynamoDB (it caps the page size) and ignored on the other two.
+
+### What happens on a provider mismatch
+
+The SDK does not dialect-check or translate the native statement, so a query
+written for one provider is **not** rejected before execution. It is handed to
+the configured provider, and the resulting failure is surfaced through the
+normal error model:
+
+| Stage | Behaviour |
+|---|---|
+| Build time | No dialect validation - the statement is stored as-is (the only build-time check is the `expression()` / `nativeExpression()` mutual-exclusivity rule above) |
+| SDK dispatch | No dialect validation. **Exception:** when `partitionKey()` is also set, the DynamoDB and Spanner adapters append a partition-key equality condition to your statement (see below); Cosmos DB scopes the query through a request option and leaves the statement untouched |
+| Provider execution | The database rejects it, mapped into a portable category (see [Portable Error Mapping](#portable-error-mapping)) |
+
+Because of that rewrite, **avoid combining `partitionKey()` with
+`nativeExpression()`** - put the partition-key predicate in your own statement
+instead. The adapters choose between appending `WHERE ...` and `AND ...` using
+a plain case-insensitive search for `WHERE`, so a statement containing `WHERE`
+inside a string literal or a subquery can be rewritten incorrectly on DynamoDB
+and Spanner while working correctly on Cosmos DB. The two are also not
+equivalent in cost: on Cosmos DB `partitionKey()` bounds the query to a single
+partition, whereas on DynamoDB and Spanner it becomes an ordinary predicate
+that does not by itself bound the scan.
+
+Three consequences are worth planning for:
+
+- **The failure costs a round trip.** You get a runtime
+  `MulticloudDbException` raised by the database, not an SDK-side dialect
+  check, so a wrong dialect is only detected once the query reaches the
+  provider. (`orderBy()` on DynamoDB is the one exception - it is rejected
+  client-side before any network call.)
+- **The error category depends on how the target rejects it.** A syntax error
+  maps to `INVALID_REQUEST`, but a statement naming a table that does not exist
+  on the target - the usual outcome of pasting another provider's dialect -
+  maps to `NOT_FOUND`. Do not branch on `INVALID_REQUEST` alone.
+- **A mismatch can silently succeed.** A statement valid in more than one
+  dialect (for example `SELECT * FROM "app__todos" WHERE status = 'active'`,
+  which parses under both PartiQL and GoogleSQL when the table name matches on
+  both sides) executes without error, even though results and semantics may
+  differ between providers.
+
+Because of this, treat `nativeExpression()` as a last resort. Any query that
+uses it must be rewritten and re-tested when the target provider changes;
+prefer the portable `expression()` DSL wherever it can express the filter.
