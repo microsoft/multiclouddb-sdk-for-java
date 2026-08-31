@@ -32,7 +32,6 @@ import org.slf4j.LoggerFactory;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -236,10 +235,10 @@ final class CosmosChangeFeedReader {
                     CosmosChangeFeedRequestOptions.createForProcessingFromNow(range)
                             .allVersionsAndDeletes();
             warmup.setMaxItemCount(1);
-            Iterator<FeedResponse<JsonNode>> it =
-                    container.queryChangeFeed(warmup, JsonNode.class).iterableByPage().iterator();
-            if (it.hasNext()) {
-                String c = it.next().getContinuationToken();
+            FeedResponse<JsonNode> first =
+                    CosmosPagedReader.firstPage(container.queryChangeFeed(warmup, JsonNode.class));
+            if (first != null) {
+                String c = first.getContinuationToken();
                 // Capture wall-clock immediately after the bookmark materialises so
                 // the CursorToken's issuedAt matches the instant the continuation
                 // is valid for — not the moment we *started* warming up.
@@ -323,14 +322,13 @@ final class CosmosChangeFeedReader {
 
         try {
             CosmosPagedIterable<JsonNode> iterable = container.queryChangeFeed(opts, JsonNode.class);
-            Iterator<FeedResponse<JsonNode>> pageIter = iterable.iterableByPage().iterator();
+            FeedResponse<JsonNode> page = CosmosPagedReader.firstPage(iterable);
 
             List<ChangeEvent> events = new ArrayList<>();
             String newContinuation = pos.continuation();
             boolean hasMore = false;
 
-            if (pageIter.hasNext()) {
-                FeedResponse<JsonNode> page = pageIter.next();
+            if (page != null) {
                 for (JsonNode item : page.getResults()) {
                     events.add(mapEvent(item));
                 }

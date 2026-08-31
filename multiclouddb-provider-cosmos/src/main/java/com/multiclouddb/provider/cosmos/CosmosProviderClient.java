@@ -33,11 +33,16 @@ import java.util.regex.Pattern;
  * <li>{@code endpoint} — Cosmos account endpoint URL (required)</li>
  * <li>{@code key} — Cosmos account key (optional; omit to use
  *     {@link DefaultAzureCredentialBuilder})</li>
+ * <li>{@code thinClientEnabled} — optional Gateway V2 thin-client override;
+ *     omit for automatic probe and fallback, or set {@code false} to opt out</li>
  * <li>{@code consistencyLevel} — read consistency override (optional; omit to
  *     inherit the Cosmos account's default consistency level). Accepted values
  *     (case-insensitive): {@code STRONG}, {@code BOUNDED_STALENESS},
  *     {@code SESSION}, {@code CONSISTENT_PREFIX}, {@code EVENTUAL}.
  *     The override must be equal to or weaker than the account's default.</li>
+ * <li>{@code contentResponseOnWriteEnabled} — whether write responses carry the
+ *     stored document body (optional; defaults to {@code true}). Set {@code false}
+ *     to trim write latency and bandwidth; reads are unaffected.</li>
  * </ul>
  */
 public class CosmosProviderClient implements MulticloudDbProviderClient {
@@ -45,6 +50,8 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
     private static final Logger LOG = LoggerFactory.getLogger(CosmosProviderClient.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
+    private static final String REMOVED_CONNECTION_MODE_CONFIG = "connectionMode";
+    private static final String REMOVED_GATEWAY_HTTP2_CONFIG = "gatewayHttp2Enabled";
 
     private final CosmosClient cosmosClient;
     private final MulticloudDbClientConfig config;
@@ -75,7 +82,8 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
      * @param config client configuration carrying connection, auth, and options
      * @throws IllegalArgumentException if {@code connection.endpoint} is missing or blank,
      *                                  or if {@code connection.consistencyLevel} is present
-     *                                  but not a valid consistency level value
+     *                                  but not a valid consistency level value, or if a removed
+     *                                  transport option is present
      */
     public CosmosProviderClient(MulticloudDbClientConfig config) {
         this.config = config;
@@ -86,9 +94,15 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             throw new IllegalArgumentException(CosmosConstants.ERR_ENDPOINT_REQUIRED);
         }
 
+        validateFixedTransportConfig(config);
+        configureThinClient(config);
+
+        Boolean contentResponseOnWrite = strictBoolean(
+                config.connection().get(CosmosConstants.CONFIG_CONTENT_RESPONSE_ON_WRITE_ENABLED),
+                CosmosConstants.CONFIG_CONTENT_RESPONSE_ON_WRITE_ENABLED);
         CosmosClientBuilder builder = new CosmosClientBuilder()
                 .endpoint(endpoint)
-                .contentResponseOnWriteEnabled(true);
+                .contentResponseOnWriteEnabled(contentResponseOnWrite == null || contentResponseOnWrite);
 
         if (key != null && !key.isBlank()) {
             builder.key(key);
@@ -104,13 +118,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             LOG.info("Cosmos client using DefaultAzureCredential (supports Managed Identity, Azure CLI, environment variables)");
         }
 
-        String connectionMode = config.connection().getOrDefault(
-                CosmosConstants.CONFIG_CONNECTION_MODE, CosmosConstants.CONNECTION_MODE_DEFAULT);
-        if (CosmosConstants.CONNECTION_MODE_DIRECT.equalsIgnoreCase(connectionMode)) {
-            builder.directMode();
-        } else {
-            builder.gatewayMode();
-        }
+        builder.gatewayMode(gatewayConnectionConfig(config));
 
         String consistencyStr = config.connection().get(CosmosConstants.CONFIG_CONSISTENCY_LEVEL);
         ConsistencyLevel readConsistencyOverride = null;
@@ -137,6 +145,116 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         this.changeFeedReader = new CosmosChangeFeedReader(ProviderId.COSMOS, effectiveRetentionMillis);
         LOG.info("Cosmos client created for endpoint: {}", endpoint);
         LOG.info("Cosmos read consistency: {}", readConsistencyOverride != null ? readConsistencyOverride : "account default");
+        LOG.info("Cosmos content response on write: {}", contentResponseOnWrite == null || contentResponseOnWrite);
+    }
+
+    static GatewayConnectionConfig gatewayConnectionConfig(MulticloudDbClientConfig config) {
+        GatewayConnectionConfig gateway = new GatewayConnectionConfig();
+        Integer maxConnections = positiveInt(config,
+                CosmosConstants.CONFIG_GATEWAY_MAX_CONNECTION_POOL_SIZE);
+        if (maxConnections != null) {
+            gateway.setMaxConnectionPoolSize(maxConnections);
+        }
+
+        Integer http2MaxConnections = positiveInt(config,
+                CosmosConstants.CONFIG_GATEWAY_HTTP2_MAX_CONNECTION_POOL_SIZE);
+        Integer http2MinConnections = positiveInt(config,
+                CosmosConstants.CONFIG_GATEWAY_HTTP2_MIN_CONNECTION_POOL_SIZE);
+        Integer http2MaxStreams = positiveInt(config,
+                CosmosConstants.CONFIG_GATEWAY_HTTP2_MAX_CONCURRENT_STREAMS);
+
+        Http2ConnectionConfig http2 = new Http2ConnectionConfig().setEnabled(true);
+        if (http2MaxConnections != null) {
+            http2.setMaxConnectionPoolSize(http2MaxConnections);
+        }
+        if (http2MinConnections != null) {
+            http2.setMinConnectionPoolSize(http2MinConnections);
+        }
+        if (http2MaxStreams != null) {
+            http2.setMaxConcurrentStreams(http2MaxStreams);
+        }
+        gateway.setHttp2ConnectionConfig(http2);
+        return gateway;
+    }
+
+    private static Integer positiveInt(MulticloudDbClientConfig config, String key) {
+        String raw = config.connection().get(key);
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            int value = Integer.parseInt(raw.trim());
+            if (value <= 0) {
+                throw new IllegalArgumentException("connection." + key + " must be > 0");
+            }
+            return value;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("connection." + key + " must be an integer", e);
+        }
+    }
+
+    private static Boolean strictBoolean(String raw, String key) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        if ("true".equalsIgnoreCase(raw.trim())) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(raw.trim())) {
+            return false;
+        }
+        throw new IllegalArgumentException("connection." + key + " must be true or false");
+    }
+
+    private static void validateFixedTransportConfig(MulticloudDbClientConfig config) {
+        if (config.connection().containsKey(REMOVED_CONNECTION_MODE_CONFIG)) {
+            throw new IllegalArgumentException(
+                    "Cosmos connection property 'connectionMode' is no longer supported; "
+                            + "Gateway mode is always used");
+        }
+        if (config.connection().containsKey(REMOVED_GATEWAY_HTTP2_CONFIG)) {
+            throw new IllegalArgumentException(
+                    "Cosmos connection property 'gatewayHttp2Enabled' is not supported; "
+                            + "Gateway HTTP/2 is always enabled");
+        }
+    }
+
+    private static void configureThinClient(MulticloudDbClientConfig config) {
+        String configuredValue =
+                config.connection().get(CosmosConstants.CONFIG_THIN_CLIENT_ENABLED);
+        if (configuredValue == null) {
+            return;
+        }
+
+        String normalizedValue;
+        if ("true".equalsIgnoreCase(configuredValue)) {
+            normalizedValue = Boolean.TRUE.toString();
+        } else if ("false".equalsIgnoreCase(configuredValue)) {
+            normalizedValue = Boolean.FALSE.toString();
+        } else {
+            throw new IllegalArgumentException(
+                    "Cosmos connection property 'thinClientEnabled' must be 'true' or 'false'");
+        }
+
+        synchronized (CosmosProviderClient.class) {
+            String sdkProperty =
+                    System.getProperty(CosmosConstants.SDK_THIN_CLIENT_ENABLED_PROPERTY);
+            String sdkEnvironment = System.getenv(
+                    CosmosConstants.SDK_THIN_CLIENT_ENABLED_ENVIRONMENT_VARIABLE);
+            if ((sdkProperty == null || sdkProperty.isEmpty())
+                    && (sdkEnvironment == null || sdkEnvironment.isEmpty())) {
+                System.setProperty(
+                        CosmosConstants.SDK_THIN_CLIENT_ENABLED_PROPERTY, normalizedValue);
+            } else {
+                String operatorValue =
+                        sdkProperty != null && !sdkProperty.isEmpty() ? sdkProperty : sdkEnvironment;
+                if (!normalizedValue.equalsIgnoreCase(operatorValue)) {
+                    LOG.warn("Ignoring thinClientEnabled='{}' because the Azure Cosmos DB SDK "
+                                    + "system property or environment variable is set to '{}'",
+                            normalizedValue, operatorValue);
+                }
+            }
+        }
     }
 
     /**
@@ -162,7 +280,14 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        createWithDiagnostics(address, key, document, options);
+    }
+
+    @Override
+    public OperationDiagnostics createWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                      Map<String, Object> document, OperationOptions options) {
         checkOpen(OperationNames.CREATE);
+        Instant start = Instant.now();
         try {
             CosmosContainer container = getContainer(address);
             ObjectNode doc = toObjectNode(document);
@@ -174,6 +299,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             PartitionKey pk = resolvePartitionKey(key);
             CosmosItemResponse<ObjectNode> response = container.createItem(doc, pk, new CosmosItemRequestOptions());
             logItemDiagnostics(OperationNames.CREATE, address, response);
+            return buildItemDiagnostics(OperationNames.CREATE, response, Duration.between(start, Instant.now()));
         } catch (CosmosException e) {
             logExceptionDiagnostics(OperationNames.CREATE, address, e);
             throw CosmosErrorMapper.map(e, OperationNames.CREATE);
@@ -197,6 +323,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
     @Override
     public DocumentResult read(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
         checkOpen(OperationNames.READ);
+        Instant start = Instant.now();
         try {
             CosmosContainer container = getContainer(address);
             PartitionKey pk = resolvePartitionKey(key);
@@ -204,6 +331,8 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             CosmosItemRequestOptions readOpts = new CosmosItemRequestOptions();
             CosmosItemResponse<ObjectNode> response = container.readItem(cosmosId, pk, readOpts, ObjectNode.class);
             logItemDiagnostics(OperationNames.READ, address, response);
+            OperationDiagnostics diagnostics =
+                    buildItemDiagnostics(OperationNames.READ, response, Duration.between(start, Instant.now()));
             ObjectNode raw = response.getItem();
             if (raw == null) return null;
 
@@ -226,7 +355,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
                 }
                 metadata = metaBuilder.build();
             }
-            return new DocumentResult(item, metadata);
+            return new DocumentResult(item, metadata, diagnostics);
         } catch (CosmosException e) {
             if (e.getStatusCode() == 404) {
                 return null;
@@ -253,7 +382,14 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        updateWithDiagnostics(address, key, document, options);
+    }
+
+    @Override
+    public OperationDiagnostics updateWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                      Map<String, Object> document, OperationOptions options) {
         checkOpen(OperationNames.UPDATE);
+        Instant start = Instant.now();
         try {
             CosmosContainer container = getContainer(address);
             ObjectNode doc = toObjectNode(document);
@@ -266,6 +402,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             PartitionKey pk = resolvePartitionKey(key);
             CosmosItemResponse<ObjectNode> response = container.replaceItem(doc, cosmosId, pk, new CosmosItemRequestOptions());
             logItemDiagnostics(OperationNames.UPDATE, address, response);
+            return buildItemDiagnostics(OperationNames.UPDATE, response, Duration.between(start, Instant.now()));
         } catch (CosmosException e) {
             logExceptionDiagnostics(OperationNames.UPDATE, address, e);
             throw CosmosErrorMapper.map(e, OperationNames.UPDATE);
@@ -287,7 +424,14 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        upsertWithDiagnostics(address, key, document, options);
+    }
+
+    @Override
+    public OperationDiagnostics upsertWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                      Map<String, Object> document, OperationOptions options) {
         checkOpen(OperationNames.UPSERT);
+        Instant start = Instant.now();
         try {
             CosmosContainer container = getContainer(address);
             ObjectNode doc = toObjectNode(document);
@@ -299,6 +443,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             PartitionKey pk = resolvePartitionKey(key);
             CosmosItemResponse<ObjectNode> response = container.upsertItem(doc, pk, new CosmosItemRequestOptions());
             logItemDiagnostics(OperationNames.UPSERT, address, response);
+            return buildItemDiagnostics(OperationNames.UPSERT, response, Duration.between(start, Instant.now()));
         } catch (CosmosException e) {
             logExceptionDiagnostics(OperationNames.UPSERT, address, e);
             throw CosmosErrorMapper.map(e, OperationNames.UPSERT);
@@ -321,16 +466,24 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
+        deleteWithDiagnostics(address, key, options);
+    }
+
+    @Override
+    public OperationDiagnostics deleteWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                      OperationOptions options) {
         checkOpen(OperationNames.DELETE);
+        Instant start = Instant.now();
         try {
             CosmosContainer container = getContainer(address);
             PartitionKey pk = resolvePartitionKey(key);
             String cosmosId = key.sortKey() != null ? key.sortKey() : key.partitionKey();
             CosmosItemResponse<Object> response = container.deleteItem(cosmosId, pk, new CosmosItemRequestOptions());
             logItemDiagnostics(OperationNames.DELETE, address, response);
+            return buildItemDiagnostics(OperationNames.DELETE, response, Duration.between(start, Instant.now()));
         } catch (CosmosException e) {
             if (e.getStatusCode() == 404) {
-                return;
+                return null;
             }
             logExceptionDiagnostics(OperationNames.DELETE, address, e);
             throw CosmosErrorMapper.map(e, OperationNames.DELETE);
@@ -402,34 +555,12 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
 
             SqlQuerySpec sqlQuery = new SqlQuerySpec(expression, sqlParams);
             int pageSize = query.maxPageSize() != null ? query.maxPageSize() : CosmosConstants.PAGE_SIZE_DEFAULT;
-            List<Map<String, Object>> items = new ArrayList<>();
-            String continuationToken = null;
             java.time.Instant queryStart = java.time.Instant.now();
 
-            Iterable<FeedResponse<JsonNode>> pages;
-            if (query.continuationToken() != null) {
-                pages = container.queryItems(sqlQuery, queryOptions, JsonNode.class)
-                        .iterableByPage(query.continuationToken(), pageSize);
-            } else {
-                pages = container.queryItems(sqlQuery, queryOptions, JsonNode.class)
-                        .iterableByPage(pageSize);
-            }
-
-            for (FeedResponse<JsonNode> page : pages) {
-                for (JsonNode item : page.getResults()) {
-                    items.add(toMap(item));
-                }
-                continuationToken = page.getContinuationToken();
-                OperationDiagnostics diag = buildFeedDiagnostics(OperationNames.QUERY, address, page,
-                        items.size(), java.time.Duration.between(queryStart, java.time.Instant.now()));
-                return new QueryPage(items, continuationToken, diag);
-            }
-
-            OperationDiagnostics emptyDiag = OperationDiagnostics
-                    .builder(ProviderId.COSMOS, OperationNames.QUERY,
-                            java.time.Duration.between(queryStart, java.time.Instant.now()))
-                    .itemCount(0).build();
-            return new QueryPage(items, continuationToken, emptyDiag);
+            FeedResponse<JsonNode> page = CosmosPagedReader.firstPage(
+                    container.queryItems(sqlQuery, queryOptions, JsonNode.class),
+                    query.continuationToken(), pageSize);
+            return toQueryPage(page, OperationNames.QUERY, address, queryStart);
         } catch (CosmosException e) {
             logExceptionDiagnostics(OperationNames.QUERY, address, e);
             throw CosmosErrorMapper.map(e, OperationNames.QUERY);
@@ -479,34 +610,12 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             String sql = applyResultSetControl(translated.queryString(), query);
             SqlQuerySpec sqlQuery = new SqlQuerySpec(sql, sqlParams);
             int pageSize = query.maxPageSize() != null ? query.maxPageSize() : CosmosConstants.PAGE_SIZE_DEFAULT;
-            List<Map<String, Object>> items = new ArrayList<>();
-            String continuationToken = null;
             java.time.Instant queryStart = java.time.Instant.now();
 
-            Iterable<FeedResponse<JsonNode>> pages;
-            if (query.continuationToken() != null) {
-                pages = container.queryItems(sqlQuery, queryOptions, JsonNode.class)
-                        .iterableByPage(query.continuationToken(), pageSize);
-            } else {
-                pages = container.queryItems(sqlQuery, queryOptions, JsonNode.class)
-                        .iterableByPage(pageSize);
-            }
-
-            for (FeedResponse<JsonNode> page : pages) {
-                for (JsonNode item : page.getResults()) {
-                    items.add(toMap(item));
-                }
-                continuationToken = page.getContinuationToken();
-                OperationDiagnostics diag = buildFeedDiagnostics(OperationNames.QUERY_WITH_TRANSLATION, address,
-                        page, items.size(), java.time.Duration.between(queryStart, java.time.Instant.now()));
-                return new QueryPage(items, continuationToken, diag);
-            }
-
-            OperationDiagnostics emptyDiag = OperationDiagnostics
-                    .builder(ProviderId.COSMOS, OperationNames.QUERY,
-                            java.time.Duration.between(queryStart, java.time.Instant.now()))
-                    .itemCount(0).build();
-            return new QueryPage(items, continuationToken, emptyDiag);
+            FeedResponse<JsonNode> page = CosmosPagedReader.firstPage(
+                    container.queryItems(sqlQuery, queryOptions, JsonNode.class),
+                    query.continuationToken(), pageSize);
+            return toQueryPage(page, OperationNames.QUERY_WITH_TRANSLATION, address, queryStart);
         } catch (CosmosException e) {
             logExceptionDiagnostics(OperationNames.QUERY_WITH_TRANSLATION, address, e);
             throw CosmosErrorMapper.map(e, OperationNames.QUERY);
@@ -942,6 +1051,35 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
      * Builds {@link OperationDiagnostics} from a {@link FeedResponse}, logs them
      * at DEBUG level, and logs full native diagnostics when opted-in via config.
      */
+    /**
+     * Converts the single Cosmos feed page returned by {@link CosmosPagedReader} into the portable
+     * {@link QueryPage}. A {@code null} page means the result set was empty, which is reported as
+     * an empty page with no continuation token — the portable signal for "no more results".
+     *
+     * @param page       the page Cosmos returned, or {@code null} when the result set was empty
+     * @param operation  the operation name to stamp on the diagnostics
+     * @param address    the logical database + container that was queried
+     * @param queryStart the instant the query was issued, used to measure elapsed time
+     * @return the portable page
+     */
+    private QueryPage toQueryPage(FeedResponse<JsonNode> page, String operation, ResourceAddress address,
+            java.time.Instant queryStart) {
+        if (page == null) {
+            OperationDiagnostics emptyDiag = OperationDiagnostics
+                    .builder(ProviderId.COSMOS, operation,
+                            java.time.Duration.between(queryStart, java.time.Instant.now()))
+                    .itemCount(0).build();
+            return new QueryPage(new ArrayList<>(), null, emptyDiag);
+        }
+        List<Map<String, Object>> items = new ArrayList<>(page.getResults().size());
+        for (JsonNode item : page.getResults()) {
+            items.add(toMap(item));
+        }
+        OperationDiagnostics diag = buildFeedDiagnostics(operation, address, page, items.size(),
+                java.time.Duration.between(queryStart, java.time.Instant.now()));
+        return new QueryPage(items, page.getContinuationToken(), diag);
+    }
+
     private OperationDiagnostics buildFeedDiagnostics(String operation, ResourceAddress address,
             FeedResponse<?> page, int itemCount, java.time.Duration duration) {
         OperationDiagnostics diag = OperationDiagnostics
@@ -962,6 +1100,23 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             }
         }
         return diag;
+    }
+
+    private OperationDiagnostics buildItemDiagnostics(String operation, CosmosItemResponse<?> response,
+            java.time.Duration fallbackDuration) {
+        java.time.Duration duration = fallbackDuration;
+        if (response != null && response.getDiagnostics() != null && response.getDiagnostics().getDuration() != null) {
+            duration = response.getDiagnostics().getDuration();
+        }
+        OperationDiagnostics.Builder builder = OperationDiagnostics
+                .builder(ProviderId.COSMOS, operation, duration)
+                .requestId(response != null ? response.getActivityId() : null)
+                .statusCode(response != null ? response.getStatusCode() : null)
+                .requestCharge(response != null ? response.getRequestCharge() : 0.0);
+        if (response != null && response.getETag() != null) {
+            builder.etag(response.getETag());
+        }
+        return builder.build();
     }
 
     /**
@@ -990,4 +1145,3 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         return MAPPER.convertValue(node, MAP_TYPE);
     }
 }
-

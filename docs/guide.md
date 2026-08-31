@@ -74,6 +74,7 @@ portable API surface and error mapping reference, see
   - [System Property Stripping](#system-property-stripping)
 - [Document Size Enforcement](#document-size-enforcement)
 - [Provider Diagnostics](#provider-diagnostics)
+  - [Point Operation Diagnostics](#point-operation-diagnostics)
   - [Query Diagnostics](#query-diagnostics)
   - [Provider Field Availability](#provider-field-availability)
   - [Structured Logging](#structured-logging)
@@ -1667,7 +1668,33 @@ The error category is always `INVALID_REQUEST`.
 
 ## Provider Diagnostics
 
-Every operation can return structured diagnostics via `OperationDiagnostics`. Diagnostics are available on `QueryPage` and can be accessed after read/write operations through provider-specific logging (SLF4J).
+Operations can return structured diagnostics via `OperationDiagnostics`.
+Diagnostic fields are provider-dependent and may be `null` or zero when the
+provider SDK does not expose them.
+
+### Point Operation Diagnostics
+
+Point reads expose diagnostics on `DocumentResult`. Writes and deletes expose
+them through the corresponding `*WithDiagnostics` method:
+
+```java
+DocumentResult result = client.read(address, key);
+if (result != null && result.diagnostics() != null) {
+    System.out.printf("Read cost: %.2f%n", result.diagnostics().requestCharge());
+}
+
+OperationDiagnostics createDiagnostics =
+        client.createWithDiagnostics(address, key, document);
+OperationDiagnostics updateDiagnostics =
+        client.updateWithDiagnostics(address, key, replacement);
+OperationDiagnostics upsertDiagnostics =
+        client.upsertWithDiagnostics(address, key, document);
+OperationDiagnostics deleteDiagnostics =
+        client.deleteWithDiagnostics(address, key);
+```
+
+The existing `create`, `update`, `upsert`, and `delete` methods remain
+available for callers that do not need diagnostics.
 
 ### Query Diagnostics
 

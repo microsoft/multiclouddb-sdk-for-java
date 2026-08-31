@@ -24,15 +24,22 @@ public final class DocumentResult {
 
     private final ObjectNode document;
     private final DocumentMetadata metadata;
+    private final OperationDiagnostics diagnostics;
 
-    public DocumentResult(ObjectNode document, DocumentMetadata metadata) {
+    public DocumentResult(ObjectNode document, DocumentMetadata metadata, OperationDiagnostics diagnostics) {
         this.document = Objects.requireNonNull(document, "document must not be null");
         this.metadata = metadata;
+        this.diagnostics = diagnostics;
     }
 
     /** Convenience constructor for results without metadata. */
     public DocumentResult(ObjectNode document) {
-        this(document, null);
+        this(document, null, null);
+    }
+
+    /** Convenience constructor for results without diagnostics. */
+    public DocumentResult(ObjectNode document, DocumentMetadata metadata) {
+        this(document, metadata, null);
     }
 
     /**
@@ -52,6 +59,11 @@ public final class DocumentResult {
         return metadata;
     }
 
+    /** Read-operation diagnostics, or {@code null} if unavailable. */
+    public OperationDiagnostics diagnostics() {
+        return diagnostics;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -67,6 +79,8 @@ public final class DocumentResult {
 
     @Override
     public String toString() {
-        return "DocumentResult{document=" + document + ", metadata=" + metadata + "}";
+        return "DocumentResult{document=" + document
+                + ", metadata=" + metadata
+                + ", diagnostics=" + diagnostics + "}";
     }
 }

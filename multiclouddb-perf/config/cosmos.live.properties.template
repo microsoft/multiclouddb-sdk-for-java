@@ -1,0 +1,47 @@
+# Copy to cosmos.live.properties (gitignored) and fill in LIVE account values.
+multiclouddb.provider=cosmos
+multiclouddb.connection.endpoint=https://<your-account>.documents.azure.com:443/
+multiclouddb.connection.key=<primary-key>
+
+# ── Cosmos perf transport: Gateway over HTTP/2 ────────────────────────────
+# Gateway mode and HTTP/2 are fixed provider defaults. Cosmos SDK 4.82 probes
+# Gateway V2 thin-client proxy connectivity and falls back to Gateway V1 when needed.
+# Leave thinClientEnabled unset for that safe default. Set true only to force Gateway V2
+# after verifying support, or false to opt out.
+#
+# Transport-protocol parity with DynamoDB is deliberately NOT a goal. The AWS
+# synchronous client is HTTP/1.1-only, so holding the protocol constant would mean
+# handicapping Cosmos onto a path the service no longer optimizes for. Each provider
+# runs its own recommended data path instead.
+multiclouddb.connection.gatewayHttp2MaxConnectionPoolSize=64
+multiclouddb.connection.gatewayHttp2MinConnectionPoolSize=8
+multiclouddb.connection.gatewayHttp2MaxConcurrentStreams=32
+# Gateway V1 fallback pool.
+multiclouddb.connection.gatewayMaxConnectionPoolSize=64
+# Dynamo's PutItem returns no item; suppress the Cosmos write payload to match.
+multiclouddb.connection.contentResponseOnWriteEnabled=false
+
+# ── Diagnostic profile: Gateway V2 disabled ───────────────────────────────
+# Not the comparison baseline. Use only to isolate Gateway V2 routing while retaining
+# the provider's fixed Gateway HTTP/2 transport.
+#   multiclouddb.connection.thinClientEnabled=false
+# Reports record the effective transport_profile and aggregation refuses to mix
+# profiles for the same provider, so give such a run its own --title.
+
+multiclouddb.connection.requestTimeoutSeconds=30
+multiclouddb.database=perfdb
+multiclouddb.collection=perf
+
+# Fair-comparison controls. CLI flags override these values.
+# Keep targetOpsPerSec identical in every provider config in a comparison run.
+multiclouddb.perf.targetOpsPerSec=100
+# The harness sets the existing container to this manual throughput before warmup.
+multiclouddb.perf.cosmosRu=1000
+
+# Fair-comparison metadata.
+multiclouddb.region=eastus
+# Optional cross-cloud colocation label used by --region-policy warn|fail.
+multiclouddb.comparisonRegion=
+# Optional fallback display value; actual throughput is probed after applying the control above.
+multiclouddb.provisionedCapacity=400 RU/s (manual or autoscale max)
+multiclouddb.sdkVersion=dev

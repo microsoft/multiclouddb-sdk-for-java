@@ -1,0 +1,19 @@
+# Copy to spanner.live.properties (gitignored) and fill in LIVE account values.
+# Auth via GOOGLE_APPLICATION_CREDENTIALS env var (service-account JSON).
+multiclouddb.provider=spanner
+multiclouddb.connection.projectId=<gcp-project-id>
+multiclouddb.connection.instanceId=<spanner-instance>
+multiclouddb.connection.databaseId=perfdb
+multiclouddb.database=perfdb
+multiclouddb.collection=perf
+
+# Fair-comparison offered load. Keep identical in every provider config in a comparison run.
+# CLI --target-ops-per-sec overrides this value.
+multiclouddb.perf.targetOpsPerSec=100
+
+# Fair-comparison metadata.
+multiclouddb.region=us-central1
+# Optional cross-cloud colocation label used by --region-policy warn|fail.
+multiclouddb.comparisonRegion=
+multiclouddb.provisionedCapacity=100 PU (processing units)
+multiclouddb.sdkVersion=dev

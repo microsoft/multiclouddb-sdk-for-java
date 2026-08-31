@@ -35,10 +35,27 @@ public interface MulticloudDbClient extends AutoCloseable {
     void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
+     * Insert a new document and return operation diagnostics when available.
+     * Existing callers may keep using {@link #create}; this method exists for
+     * tooling such as the perf harness that needs provider-reported cost.
+     */
+    default OperationDiagnostics createWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                       Map<String, Object> document, OperationOptions options) {
+        create(address, key, document, options);
+        return null;
+    }
+
+    /**
      * Insert a new document using default options. Fails if key already exists.
      */
     default void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document) {
         create(address, key, document, OperationOptions.defaults());
+    }
+
+    /** Insert using default options and return diagnostics when available. */
+    default OperationDiagnostics createWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                       Map<String, Object> document) {
+        return createWithDiagnostics(address, key, document, OperationOptions.defaults());
     }
 
     /**
@@ -48,7 +65,8 @@ public interface MulticloudDbClient extends AutoCloseable {
      * @param key     document key
      * @param options operation options; set {@link OperationOptions#includeMetadata()} to
      *                {@code true} to request provider write-metadata
-     * @return the document result (document + optional metadata), or {@code null} if not found
+     * @return the document result (document + optional metadata + diagnostics), or {@code null}
+     *         if not found
      */
     DocumentResult read(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
 
@@ -71,12 +89,25 @@ public interface MulticloudDbClient extends AutoCloseable {
      */
     void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
 
+    /** Update and return operation diagnostics when available. */
+    default OperationDiagnostics updateWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                       Map<String, Object> document, OperationOptions options) {
+        update(address, key, document, options);
+        return null;
+    }
+
     /**
      * Update an existing document using default options. Fails if key does not
      * exist.
      */
     default void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document) {
         update(address, key, document, OperationOptions.defaults());
+    }
+
+    /** Update using default options and return diagnostics when available. */
+    default OperationDiagnostics updateWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                       Map<String, Object> document) {
+        return updateWithDiagnostics(address, key, document, OperationOptions.defaults());
     }
 
     /**
@@ -89,12 +120,25 @@ public interface MulticloudDbClient extends AutoCloseable {
      */
     void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
 
+    /** Upsert and return operation diagnostics when available. */
+    default OperationDiagnostics upsertWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                       Map<String, Object> document, OperationOptions options) {
+        upsert(address, key, document, options);
+        return null;
+    }
+
     /**
      * Upsert (create or replace) a document identified by key, using default
      * options.
      */
     default void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document) {
         upsert(address, key, document, OperationOptions.defaults());
+    }
+
+    /** Upsert using default options and return diagnostics when available. */
+    default OperationDiagnostics upsertWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                       Map<String, Object> document) {
+        return upsertWithDiagnostics(address, key, document, OperationOptions.defaults());
     }
 
     /**
@@ -120,11 +164,23 @@ public interface MulticloudDbClient extends AutoCloseable {
      */
     void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
 
+    /** Delete and return operation diagnostics when available. */
+    default OperationDiagnostics deleteWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                       OperationOptions options) {
+        delete(address, key, options);
+        return null;
+    }
+
     /**
      * Delete a document by key, using default options.
      */
     default void delete(ResourceAddress address, MulticloudDbKey key) {
         delete(address, key, OperationOptions.defaults());
+    }
+
+    /** Delete using default options and return diagnostics when available. */
+    default OperationDiagnostics deleteWithDiagnostics(ResourceAddress address, MulticloudDbKey key) {
+        return deleteWithDiagnostics(address, key, OperationOptions.defaults());
     }
 
     /**
