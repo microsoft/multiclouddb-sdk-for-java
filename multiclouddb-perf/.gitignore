@@ -1,0 +1,11 @@
+# Never commit live credentials
+config/*.live.properties
+
+# Never commit test results (raw data, statistics, or generated reports).
+# Keep the directory structure via .gitkeep only.
+results/**
+!results/
+!results/raw/
+!results/stats/
+!results/reports/
+!results/**/.gitkeep

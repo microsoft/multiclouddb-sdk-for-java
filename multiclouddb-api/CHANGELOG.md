@@ -7,6 +7,16 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- Point-operation diagnostics are now available through
+  `createWithDiagnostics(...)`, `updateWithDiagnostics(...)`,
+  `upsertWithDiagnostics(...)`, and `deleteWithDiagnostics(...)` on
+  `MulticloudDbClient`. `DocumentResult.diagnostics()` exposes diagnostics for
+  reads, while existing CRUD methods remain source-compatible.
+- `OperationDiagnostics.retryCount()` reports provider-observed retries when
+  available and otherwise returns `null`.
+
 ## [0.1.0-beta.2] — 2026-06-17
 
 ### Added

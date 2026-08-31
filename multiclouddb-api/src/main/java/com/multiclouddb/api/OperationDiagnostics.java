@@ -57,6 +57,12 @@ public final class OperationDiagnostics {
      */
     private final int itemCount;
 
+    /**
+     * Provider-observed retry count for the completed operation, or {@code null}
+     * when the SDK/runtime does not expose it.
+     */
+    private final Integer retryCount;
+
     private OperationDiagnostics(Builder builder) {
         this.provider = builder.provider;
         this.operation = builder.operation;
@@ -67,6 +73,7 @@ public final class OperationDiagnostics {
         this.etag = builder.etag;
         this.sessionToken = builder.sessionToken;
         this.itemCount = builder.itemCount;
+        this.retryCount = builder.retryCount;
     }
 
     /**
@@ -83,6 +90,7 @@ public final class OperationDiagnostics {
         this.etag = null;
         this.sessionToken = null;
         this.itemCount = 0;
+        this.retryCount = null;
     }
 
     public static Builder builder(ProviderId provider, String operation, Duration duration) {
@@ -114,6 +122,31 @@ public final class OperationDiagnostics {
     /** Number of items returned by a query page; 0 for point operations. */
     public int itemCount()       { return itemCount; }
 
+    /** Provider-observed retry count, or {@code null} when unavailable. */
+    public Integer retryCount()  { return retryCount; }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof OperationDiagnostics that)) return false;
+        return Double.compare(that.requestCharge, requestCharge) == 0
+                && itemCount == that.itemCount
+                && Objects.equals(provider, that.provider)
+                && Objects.equals(operation, that.operation)
+                && Objects.equals(duration, that.duration)
+                && Objects.equals(requestId, that.requestId)
+                && Objects.equals(statusCode, that.statusCode)
+                && Objects.equals(etag, that.etag)
+                && Objects.equals(sessionToken, that.sessionToken)
+                && Objects.equals(retryCount, that.retryCount);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(provider, operation, duration, requestId, statusCode,
+                requestCharge, etag, sessionToken, itemCount, retryCount);
+    }
+
     @Override
     public String toString() {
         return "OperationDiagnostics{provider=" + (provider != null ? provider.id() : "null")
@@ -123,7 +156,8 @@ public final class OperationDiagnostics {
                 + ", requestCharge=" + requestCharge
                 + ", etag=" + etag
                 + ", sessionToken=" + (sessionToken != null ? "<present>" : "null")
-                + ", itemCount=" + itemCount + "}";
+                + ", itemCount=" + itemCount
+                + ", retryCount=" + retryCount + "}";
     }
 
     /**
@@ -147,6 +181,7 @@ public final class OperationDiagnostics {
         private String etag;
         private String sessionToken;
         private int itemCount;
+        private Integer retryCount;
 
         private Builder(ProviderId provider, String operation, Duration duration) {
             this.provider = Objects.requireNonNull(provider, "provider");
@@ -160,6 +195,7 @@ public final class OperationDiagnostics {
         public Builder etag(String etag)                 { this.etag = etag; return this; }
         public Builder sessionToken(String sessionToken) { this.sessionToken = sessionToken; return this; }
         public Builder itemCount(int itemCount)          { this.itemCount = itemCount; return this; }
+        public Builder retryCount(Integer retryCount)    { this.retryCount = retryCount; return this; }
 
         public OperationDiagnostics build() { return new OperationDiagnostics(this); }
     }

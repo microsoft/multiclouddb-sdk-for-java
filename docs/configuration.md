@@ -22,7 +22,6 @@ Select a provider and supply its connection and auth properties.
     multiclouddb.provider=cosmos
     multiclouddb.connection.endpoint=https://localhost:8081
     multiclouddb.connection.key=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==
-    multiclouddb.connection.connectionMode=gateway
     ```
 
 === "Azure Cloud (key-based)"
@@ -32,7 +31,6 @@ Select a provider and supply its connection and auth properties.
     multiclouddb.provider=cosmos
     multiclouddb.connection.endpoint=https://your-account.documents.azure.com:443/
     multiclouddb.connection.key=your-master-key
-    multiclouddb.connection.connectionMode=direct
     ```
 
 === "Azure Identity (Entra ID) - Recommended"
@@ -48,8 +46,13 @@ Select a provider and supply its connection and auth properties.
 |-----|-------------|
 | `multiclouddb.connection.endpoint` | Cosmos DB account URI or emulator URI |
 | `multiclouddb.connection.key` | Master key (omit for Azure Identity auth) |
-| `multiclouddb.connection.connectionMode` | `gateway` (default) or `direct` |
 | `multiclouddb.connection.tenantId` | Azure AD tenant ID (optional, for Entra ID) |
+| `multiclouddb.connection.thinClientEnabled` | Gateway V2 thin-client override: unset for automatic probe/fallback (default), `false` to opt out, or `true` to force opt-in |
+| `multiclouddb.connection.gatewayMaxConnectionPoolSize` | Gateway HTTP/1.1 fallback maximum connection-pool size (optional, positive integer) |
+| `multiclouddb.connection.gatewayHttp2MinConnectionPoolSize` | Gateway HTTP/2 minimum connection-pool size (optional) |
+| `multiclouddb.connection.gatewayHttp2MaxConnectionPoolSize` | Gateway HTTP/2 maximum connection-pool size (optional) |
+| `multiclouddb.connection.gatewayHttp2MaxConcurrentStreams` | Maximum concurrent HTTP/2 streams per connection (optional) |
+| `multiclouddb.connection.contentResponseOnWriteEnabled` | Return the document body in write responses (`true`/`false`; default `true`) |
 | `multiclouddb.connection.consistencyLevel` | Read consistency override (optional — see below) |
 
 ### Authentication Modes
@@ -66,10 +69,41 @@ Select a provider and supply its connection and auth properties.
 - **Master key** - when `connection.key` is provided, uses shared-key authentication.
   Suitable for local emulator development only.
 
-### Connection Modes
+### Transport
 
-- **Gateway** (default) - HTTP-based routing through the Cosmos DB gateway. Required for the emulator.
-- **Direct** - TCP-based direct connectivity. Better performance for production workloads.
+The provider always uses **Gateway mode over HTTP/2**. Direct mode and HTTP/2
+enablement are intentionally not configurable.
+
+Gateway V2 thin-client proxy routing is eligible by default. With
+`thinClientEnabled` unset, the Azure Cosmos DB SDK probes Gateway V2
+connectivity and uses it when available; otherwise it automatically falls back
+to Gateway V1. Set `multiclouddb.connection.thinClientEnabled=false` for a hard
+opt-out, or `true` for a hard opt-in that bypasses the probe.
+
+The Azure SDK implements this switch as a JVM-wide setting. An existing
+`COSMOS.THINCLIENT_ENABLED` system property or `COSMOS_THINCLIENT_ENABLED`
+environment variable takes precedence over the connection property. When
+multiple Cosmos clients run in one JVM, configure the same value for all of
+them.
+
+The optional pool settings tune the corresponding Azure SDK connection pools.
+When omitted, the SDK defaults apply. HTTP/2 itself remains enabled regardless
+of these sizing values.
+
+### Write Response Payload
+
+By default Cosmos DB returns the full stored document in `create` / `update` / `upsert`
+responses. The portable API never surfaces that body — writes return no document on any
+provider — so it is pure overhead on the wire.
+
+```properties
+multiclouddb.connection.contentResponseOnWriteEnabled=false
+```
+
+Setting `false` trims write latency and bandwidth. Per-operation diagnostics (request charge,
+activity id, ETag, HTTP status) are still populated, and reads are unaffected. This also matches
+DynamoDB's `PutItem`, which returns no item by default, so it is the correct setting for
+transport-equivalent benchmarks. The default remains `true` for backwards compatibility.
 
 ### Consistency Level
 
@@ -154,6 +188,7 @@ multiclouddb.connection.consistencyLevel=EVENTUAL
 |-----|-------------|
 | `multiclouddb.connection.endpoint` | DynamoDB Local URI (omit for AWS) |
 | `multiclouddb.connection.region` | AWS region (e.g., `us-east-1`) |
+| `multiclouddb.connection.maxConnections` | Maximum connections in the synchronous Apache HTTP/1.1 pool (optional, positive integer) |
 | `multiclouddb.auth.accessKeyId` | AWS access key ID |
 | `multiclouddb.auth.secretAccessKey` | AWS secret access key |
 
@@ -162,6 +197,13 @@ multiclouddb.connection.consistencyLevel=EVENTUAL
     DynamoDB has no native "database" concept. The `ResourceAddress` database
     and collection are composed into a single table name using the pattern
     `database__collection` (double underscore separator).
+
+The DynamoDB provider uses the AWS SDK synchronous Apache HTTP/1.1 client. For a benchmark that
+matches a Cosmos Gateway pool of 64 connections:
+
+```properties
+multiclouddb.connection.maxConnections=64
+```
 
 ---
 
@@ -236,7 +278,6 @@ MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
     .provider(ProviderId.COSMOS)
     .connection("endpoint", "https://localhost:8081")
     .connection("key", "your-key")
-    .connection("connectionMode", "gateway")
     .build();
 
 MulticloudDbClient client = MulticloudDbClientFactory.create(config);

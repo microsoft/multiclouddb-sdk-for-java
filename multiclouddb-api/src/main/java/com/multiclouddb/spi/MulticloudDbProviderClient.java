@@ -43,6 +43,13 @@ public interface MulticloudDbProviderClient extends AutoCloseable {
      */
     void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
 
+    /** Insert and return provider diagnostics when available. */
+    default com.multiclouddb.api.OperationDiagnostics createWithDiagnostics(
+            ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        create(address, key, document, options);
+        return null;
+    }
+
     /**
      * Read a document by key.
      *
@@ -57,15 +64,36 @@ public interface MulticloudDbProviderClient extends AutoCloseable {
      */
     void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
 
+    /** Update and return provider diagnostics when available. */
+    default com.multiclouddb.api.OperationDiagnostics updateWithDiagnostics(
+            ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        update(address, key, document, options);
+        return null;
+    }
+
     /**
      * Upsert (create or replace) a document.
      */
     void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
 
+    /** Upsert and return provider diagnostics when available. */
+    default com.multiclouddb.api.OperationDiagnostics upsertWithDiagnostics(
+            ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        upsert(address, key, document, options);
+        return null;
+    }
+
     /**
      * Delete a document by key.
      */
     void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
+
+    /** Delete and return provider diagnostics when available. */
+    default com.multiclouddb.api.OperationDiagnostics deleteWithDiagnostics(
+            ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
+        delete(address, key, options);
+        return null;
+    }
 
     /**
      * Execute a query and return a single page of results.

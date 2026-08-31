@@ -10,6 +10,8 @@ import com.multiclouddb.api.MulticloudDbClient;
 import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.MulticloudDbException;
 import com.multiclouddb.api.MulticloudDbKey;
+import com.multiclouddb.api.OperationDiagnostics;
+import com.multiclouddb.api.OperationNames;
 import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
@@ -203,10 +205,32 @@ public abstract class CrudConformanceTests {
         assertNotNull(client.providerId());
     }
 
-    @Test @Order(10)
+    @Test @Order(99)
     @DisplayName("cleanup conformance test items")
     void cleanup() {
         safeDelete(MulticloudDbKey.of("conf-test-1", "conf-test-1"));
+    }
+
+    @Test @Order(10)
+    @DisplayName("successful point operations expose diagnostics")
+    void pointOperationsExposeDiagnostics() {
+        MulticloudDbKey key = MulticloudDbKey.of("diag-" + UUID.randomUUID(), "diag-" + UUID.randomUUID());
+        OperationDiagnostics createDiag = client.createWithDiagnostics(getAddress(), key, Map.of("title", "diag"));
+        assertDiagnostics(createDiag, OperationNames.CREATE);
+
+        DocumentResult readResult = client.read(getAddress(), key);
+        assertNotNull(readResult, "read should return the created document");
+        assertDiagnostics(readResult.diagnostics(), OperationNames.READ);
+
+        OperationDiagnostics updateDiag = client.updateWithDiagnostics(getAddress(), key, Map.of("title", "updated"));
+        assertDiagnostics(updateDiag, OperationNames.UPDATE);
+
+        OperationDiagnostics upsertDiag = client.upsertWithDiagnostics(getAddress(), key, Map.of("title", "upserted"));
+        assertDiagnostics(upsertDiag, OperationNames.UPSERT);
+
+        OperationDiagnostics deleteDiag = client.deleteWithDiagnostics(getAddress(), key);
+        assertDiagnostics(deleteDiag, OperationNames.DELETE);
+        assertNull(client.read(getAddress(), key), "document should be gone after delete");
     }
 
     // ── Partition-key-scoped query tests ──────────────────────────────────────
@@ -235,6 +259,14 @@ public abstract class CrudConformanceTests {
 
         for (int i = 1; i <= 3; i++) safeDelete(MulticloudDbKey.of("alpha", "pk-alpha-" + i));
         for (int i = 1; i <= 2; i++) safeDelete(MulticloudDbKey.of("beta", "pk-beta-" + i));
+    }
+
+    private void assertDiagnostics(OperationDiagnostics diagnostics, String operation) {
+        assertNotNull(diagnostics, "diagnostics must be present");
+        assertEquals(client.providerId(), diagnostics.provider(), "diagnostics provider must match client");
+        assertEquals(operation, diagnostics.operation(), "diagnostics operation must match");
+        assertNotNull(diagnostics.duration(), "diagnostics duration must be present");
+        assertFalse(diagnostics.duration().isNegative(), "diagnostics duration must not be negative");
     }
 
     @Test @Order(12)

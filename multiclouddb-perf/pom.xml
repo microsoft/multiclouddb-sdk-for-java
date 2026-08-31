@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.microsoft.multiclouddb</groupId>
+        <artifactId>multiclouddb-sdk-java-parent</artifactId>
+        <version>1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>multiclouddb-perf</artifactId>
+    <name>Multicloud DB Performance Harness</name>
+
+    <properties>
+        <!-- Default main class; the single CLI entry point (subcommands: run/report/cleanup). -->
+        <exec.mainClass>com.microsoft.multiclouddb.perf.PerfMain</exec.mainClass>
+    </properties>
+    <description>
+        MANUAL, live-account performance harness for the Multicloud DB SDK.
+        Runs the same measured workload against Azure Cosmos DB, Amazon DynamoDB,
+        or Google Cloud Spanner by switching a single properties file, and appends
+        one CSV row per measured operation for downstream aggregation.
+
+        The module is part of the reactor and can be built in any environment.
+        Its live-account runner refuses to execute in CI, preventing automated
+        workflows from changing provisioned capacity or incurring benchmark
+        traffic. See multiclouddb-perf/README.md.
+    </description>
+
+    <dependencies>
+        <!-- Public API (compile): MulticloudDbClient, QueryRequest, diagnostics. -->
+        <dependency>
+            <groupId>com.microsoft.multiclouddb</groupId>
+            <artifactId>multiclouddb-api</artifactId>
+        </dependency>
+
+        <!-- Reuse the e2e ConfigLoader (provider-switch by properties file). -->
+        <dependency>
+            <groupId>com.microsoft.multiclouddb</groupId>
+            <artifactId>multiclouddb-e2e</artifactId>
+            <version>1-SNAPSHOT</version>
+        </dependency>
+
+        <!-- Providers (runtime — loaded via ServiceLoader). -->
+        <dependency>
+            <groupId>com.microsoft.multiclouddb</groupId>
+            <artifactId>multiclouddb-provider-cosmos</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.microsoft.multiclouddb</groupId>
+            <artifactId>multiclouddb-provider-dynamo</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.microsoft.multiclouddb</groupId>
+            <artifactId>multiclouddb-provider-spanner</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Native SDK used only for the read-only metadata probe (region / provisioned throughput). -->
+        <dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-cosmos</artifactId>
+            <scope>compile</scope>
+        </dependency>
+
+        <!-- Native AWS SDK used only for opt-in provisioning admin (enable Streams / raise RU). -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
+            <scope>compile</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>jcl-over-slf4j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.3.0</version>
+                <configuration>
+                    <!-- Overridable via -Dexec.mainClass (command-line -D beats this default). -->
+                    <mainClass>${exec.mainClass}</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

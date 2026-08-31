@@ -3,6 +3,7 @@
 
 package com.multiclouddb.api;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -36,6 +37,7 @@ class OperationDiagnosticsTest {
         assertNull(diag.etag());
         assertNull(diag.sessionToken());
         assertEquals(0, diag.itemCount());
+        assertNull(diag.retryCount());
     }
 
     @Test
@@ -48,6 +50,7 @@ class OperationDiagnosticsTest {
                 .etag("etag-abc")
                 .sessionToken("session-xyz")
                 .itemCount(10)
+                .retryCount(2)
                 .build();
 
         assertEquals(ProviderId.DYNAMO, diag.provider());
@@ -59,6 +62,7 @@ class OperationDiagnosticsTest {
         assertEquals("etag-abc", diag.etag());
         assertEquals("session-xyz", diag.sessionToken());
         assertEquals(10, diag.itemCount());
+        assertEquals(Integer.valueOf(2), diag.retryCount());
     }
 
     @Test
@@ -95,5 +99,24 @@ class OperationDiagnosticsTest {
         QueryPage page = new QueryPage(null, "");
         assertFalse(page.hasMore());
         assertNull(page.continuationToken());
+    }
+
+    @Test
+    void documentResultEqualityIgnoresRequestScopedDiagnostics() {
+        var document = JsonNodeFactory.instance.objectNode().put("id", "one");
+        OperationDiagnostics firstDiagnostics = OperationDiagnostics
+                .builder(ProviderId.COSMOS, OperationNames.READ, Duration.ofMillis(10))
+                .requestId("first")
+                .build();
+        OperationDiagnostics secondDiagnostics = OperationDiagnostics
+                .builder(ProviderId.COSMOS, OperationNames.READ, Duration.ofMillis(20))
+                .requestId("second")
+                .build();
+
+        DocumentResult first = new DocumentResult(document, null, firstDiagnostics);
+        DocumentResult second = new DocumentResult(document.deepCopy(), null, secondDiagnostics);
+
+        assertEquals(first, second);
+        assertEquals(first.hashCode(), second.hashCode());
     }
 }

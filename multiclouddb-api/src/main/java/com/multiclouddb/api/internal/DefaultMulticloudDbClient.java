@@ -83,13 +83,20 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
 
     @Override
     public void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        createWithDiagnostics(address, key, document, options);
+    }
+
+    @Override
+    public OperationDiagnostics createWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                      Map<String, Object> document, OperationOptions options) {
         checkOpen(OperationNames.CREATE);
         Instant start = Instant.now();
         try {
             DocumentSizeValidator.validate(document, OperationNames.CREATE);
-            providerClient.create(address, key, document, options);
+            OperationDiagnostics diagnostics = providerClient.createWithDiagnostics(address, key, document, options);
             LOG.debug("create completed: address={}, key={}, duration={}ms",
                     address, key, Duration.between(start, Instant.now()).toMillis());
+            return diagnostics;
         } catch (MulticloudDbException e) {
             throw enrichException(e, "create", start);
         } catch (Exception e) {
@@ -115,13 +122,20 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
 
     @Override
     public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        updateWithDiagnostics(address, key, document, options);
+    }
+
+    @Override
+    public OperationDiagnostics updateWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                      Map<String, Object> document, OperationOptions options) {
         checkOpen(OperationNames.UPDATE);
         Instant start = Instant.now();
         try {
             DocumentSizeValidator.validate(document, OperationNames.UPDATE);
-            providerClient.update(address, key, document, options);
+            OperationDiagnostics diagnostics = providerClient.updateWithDiagnostics(address, key, document, options);
             LOG.debug("update completed: address={}, key={}, duration={}ms",
                     address, key, Duration.between(start, Instant.now()).toMillis());
+            return diagnostics;
         } catch (MulticloudDbException e) {
             throw enrichException(e, "update", start);
         } catch (Exception e) {
@@ -131,13 +145,20 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
 
     @Override
     public void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        upsertWithDiagnostics(address, key, document, options);
+    }
+
+    @Override
+    public OperationDiagnostics upsertWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                      Map<String, Object> document, OperationOptions options) {
         checkOpen(OperationNames.UPSERT);
         Instant start = Instant.now();
         try {
             DocumentSizeValidator.validate(document, OperationNames.UPSERT);
-            providerClient.upsert(address, key, document, options);
+            OperationDiagnostics diagnostics = providerClient.upsertWithDiagnostics(address, key, document, options);
             LOG.debug("upsert completed: address={}, key={}, duration={}ms",
                     address, key, Duration.between(start, Instant.now()).toMillis());
+            return diagnostics;
         } catch (MulticloudDbException e) {
             throw enrichException(e, "upsert", start);
         } catch (Exception e) {
@@ -147,12 +168,19 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
 
     @Override
     public void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
+        deleteWithDiagnostics(address, key, options);
+    }
+
+    @Override
+    public OperationDiagnostics deleteWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                      OperationOptions options) {
         checkOpen(OperationNames.DELETE);
         Instant start = Instant.now();
         try {
-            providerClient.delete(address, key, options);
+            OperationDiagnostics diagnostics = providerClient.deleteWithDiagnostics(address, key, options);
             LOG.debug("delete completed: address={}, key={}, duration={}ms",
                     address, key, Duration.between(start, Instant.now()).toMillis());
+            return diagnostics;
         } catch (MulticloudDbException e) {
             throw enrichException(e, "delete", start);
         } catch (Exception e) {
