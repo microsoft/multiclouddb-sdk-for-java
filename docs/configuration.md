@@ -22,7 +22,6 @@ Select a provider and supply its connection and auth properties.
     multiclouddb.provider=cosmos
     multiclouddb.connection.endpoint=https://localhost:8081
     multiclouddb.connection.key=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==
-    multiclouddb.connection.connectionMode=gateway
     ```
 
 === "Azure Cloud (key-based)"
@@ -32,7 +31,6 @@ Select a provider and supply its connection and auth properties.
     multiclouddb.provider=cosmos
     multiclouddb.connection.endpoint=https://your-account.documents.azure.com:443/
     multiclouddb.connection.key=your-master-key
-    multiclouddb.connection.connectionMode=direct
     ```
 
 === "Azure Identity (Entra ID) - Recommended"
@@ -48,8 +46,8 @@ Select a provider and supply its connection and auth properties.
 |-----|-------------|
 | `multiclouddb.connection.endpoint` | Cosmos DB account URI or emulator URI |
 | `multiclouddb.connection.key` | Master key (omit for Azure Identity auth) |
-| `multiclouddb.connection.connectionMode` | `gateway` (default) or `direct` |
 | `multiclouddb.connection.tenantId` | Azure AD tenant ID (optional, for Entra ID) |
+| `multiclouddb.connection.thinClientEnabled` | Gateway V2 thin-client override: unset for automatic probe/fallback (default), `false` to opt out, or `true` to force opt-in |
 | `multiclouddb.connection.consistencyLevel` | Read consistency override (optional — see below) |
 
 ### Authentication Modes
@@ -66,10 +64,22 @@ Select a provider and supply its connection and auth properties.
 - **Master key** - when `connection.key` is provided, uses shared-key authentication.
   Suitable for local emulator development only.
 
-### Connection Modes
+### Transport
 
-- **Gateway** (default) - HTTP-based routing through the Cosmos DB gateway. Required for the emulator.
-- **Direct** - TCP-based direct connectivity. Better performance for production workloads.
+The provider always uses **Gateway mode over HTTP/2**. Direct mode and HTTP/2
+enablement are intentionally not configurable.
+
+Gateway V2 thin-client proxy routing is eligible by default. With
+`thinClientEnabled` unset, the Azure Cosmos DB SDK probes Gateway V2
+connectivity and uses it when available; otherwise it automatically falls back
+to Gateway V1. Set `multiclouddb.connection.thinClientEnabled=false` for a hard
+opt-out, or `true` for a hard opt-in that bypasses the probe.
+
+The Azure SDK implements this switch as a JVM-wide setting. An existing
+`COSMOS.THINCLIENT_ENABLED` system property or `COSMOS_THINCLIENT_ENABLED`
+environment variable takes precedence over the connection property. When
+multiple Cosmos clients run in one JVM, configure the same value for all of
+them.
 
 ### Consistency Level
 
@@ -236,7 +246,6 @@ MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
     .provider(ProviderId.COSMOS)
     .connection("endpoint", "https://localhost:8081")
     .connection("key", "your-key")
-    .connection("connectionMode", "gateway")
     .build();
 
 MulticloudDbClient client = MulticloudDbClientFactory.create(config);

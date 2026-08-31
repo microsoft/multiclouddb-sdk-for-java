@@ -59,7 +59,7 @@
         <!-- Dependency versions -->
         <jackson.version>2.22.1</jackson.version>
         <slf4j.version>2.0.12</slf4j.version>
-        <azure-cosmos.version>4.78.0</azure-cosmos.version>
+        <azure-cosmos.version>4.82.0</azure-cosmos.version>
         <azure-core.version>1.57.1</azure-core.version>
         <azure-json.version>1.5.0</azure-json.version>
         <azure-identity.version>1.18.2</azure-identity.version>

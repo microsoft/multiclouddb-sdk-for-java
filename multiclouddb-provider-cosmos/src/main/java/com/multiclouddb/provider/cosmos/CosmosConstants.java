@@ -31,19 +31,16 @@ public final class CosmosConstants {
     public static final String CONFIG_TENANT_ID = "tenantId";
 
 
-    /** Connection config key for the connection mode ({@code direct} or {@code gateway}). */
-    public static final String CONFIG_CONNECTION_MODE = "connectionMode";
+    /**
+     * Optional Gateway V2 thin-client routing override.
+     *
+     * <p>When absent, the Azure Cosmos DB SDK probes Gateway V2 and falls back to Gateway V1 when
+     * necessary. Set to {@code false} to opt out, or {@code true} to force the SDK opt-in.
+     */
+    public static final String CONFIG_THIN_CLIENT_ENABLED = "thinClientEnabled";
 
-    // ── Connection mode values ────────────────────────────────────────────────
-
-    /** Gateway connection mode — recommended for emulator and restricted networks. */
-    public static final String CONNECTION_MODE_GATEWAY = "gateway";
-
-    /** Direct connection mode — lower latency, recommended for production. */
-    public static final String CONNECTION_MODE_DIRECT = "direct";
-
-    /** Default connection mode applied when {@code connectionMode} is not configured. */
-    public static final String CONNECTION_MODE_DEFAULT = CONNECTION_MODE_GATEWAY;
+    static final String SDK_THIN_CLIENT_ENABLED_PROPERTY = "COSMOS.THINCLIENT_ENABLED";
+    static final String SDK_THIN_CLIENT_ENABLED_ENVIRONMENT_VARIABLE = "COSMOS_THINCLIENT_ENABLED";
 
     // ── Consistency ───────────────────────────────────────────────────────────
 

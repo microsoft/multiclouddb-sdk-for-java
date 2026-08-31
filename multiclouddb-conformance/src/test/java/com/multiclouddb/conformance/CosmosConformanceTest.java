@@ -39,7 +39,6 @@ class CosmosConformanceTest extends CrudConformanceTests {
                 .provider(ProviderId.COSMOS)
                 .connection("endpoint", ENDPOINT)
                 .connection("key", KEY)
-                .connection("connectionMode", "gateway")
                 .build();
         return MulticloudDbClientFactory.create(config);
     }

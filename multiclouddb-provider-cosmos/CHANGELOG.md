@@ -7,6 +7,25 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- `thinClientEnabled` connection setting for explicit Gateway V2 thin-client
+  opt-in or opt-out. When unset, Gateway V2 is eligible by default and the
+  Azure Cosmos DB SDK probes connectivity before routing, with automatic
+  fallback to Gateway V1. Existing `COSMOS.THINCLIENT_ENABLED` system-property
+  or `COSMOS_THINCLIENT_ENABLED` environment-variable settings take precedence.
+
+### Changed
+
+- Cosmos clients now always use Gateway mode with HTTP/2 enabled. Upgraded
+  `azure-cosmos` from 4.78.0 to 4.82.0 for probe-gated Gateway V2 routing.
+
+### Removed
+
+- Removed `connectionMode` and its public constants. Direct mode is no longer
+  selectable. Stale `connectionMode` and `gatewayHttp2Enabled` settings now
+  fail fast instead of being silently ignored.
+
 ## [0.1.0-beta.2] — 2026-06-17
 
 > **Requires `multiclouddb-api` 0.1.0-beta.2 or later** — this release consumes API surface (change-feed cursors, `CLIENT_CLOSED` envelope, `EXTENDED_CHANGE_FEED_HISTORY` capability) introduced in API beta.2. The dependency is pinned in the published POM.

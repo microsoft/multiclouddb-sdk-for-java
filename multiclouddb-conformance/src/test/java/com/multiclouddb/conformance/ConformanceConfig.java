@@ -129,7 +129,6 @@ public final class ConformanceConfig {
                 .provider(ProviderId.COSMOS)
                 .connection("endpoint", resolve("cosmos.endpoint", "COSMOS_ENDPOINT", DEFAULT_COSMOS_ENDPOINT))
                 .connection("key", resolve("cosmos.key", "COSMOS_KEY", DEFAULT_COSMOS_KEY))
-                .connection("connectionMode", "gateway")
                 .build();
     }
 
