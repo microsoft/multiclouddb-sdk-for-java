@@ -152,6 +152,25 @@ public final class DynamoItemMapper {
     }
 
     /**
+     * Convert a caller-supplied partial-update field value into an {@link AttributeValue},
+     * preserving null, scalar, map, and list shapes without stringifying structured values.
+     * <p>
+     * Unlike {@link #toAttributeValue(Object)} (which is for flat query parameters and
+     * stringifies containers), this routes through Jackson so a {@code Map} becomes a DynamoDB
+     * {@code M}, a {@code List} becomes an {@code L}, and {@code null} becomes {@code NULL}.
+     * This is the conversion used to build partial-update {@code SET} expression values.
+     *
+     * @param value the field value (may be {@code null}, scalar, map, or list)
+     * @return the structured DynamoDB attribute value
+     */
+    public static AttributeValue objectToAttributeValue(Object value) {
+        if (value == null) {
+            return AttributeValue.fromNul(true);
+        }
+        return jsonNodeToAttributeValue(MAPPER.valueToTree(value));
+    }
+
+    /**
      * Convert a caller-supplied {@code Map<String, Object>} document into a
      * DynamoDB attribute map. Uses Jackson internally to handle nested structures.
      */

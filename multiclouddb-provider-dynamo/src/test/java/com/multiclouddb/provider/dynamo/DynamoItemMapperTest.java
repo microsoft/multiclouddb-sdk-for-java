@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -100,5 +101,15 @@ class DynamoItemMapperTest {
         assertEquals("42", DynamoItemMapper.toAttributeValue(42).n());
         assertTrue(DynamoItemMapper.toAttributeValue(true).bool());
         assertTrue(DynamoItemMapper.toAttributeValue(null).nul());
+    }
+
+    @Test
+    void partialUpdateValuePreservesNullMapAndListShapes() {
+        assertEquals(AttributeValue.Type.NUL,
+                DynamoItemMapper.objectToAttributeValue(null).type());
+        assertEquals(AttributeValue.Type.M,
+                DynamoItemMapper.objectToAttributeValue(Map.of("nested", true)).type());
+        assertEquals(AttributeValue.Type.L,
+                DynamoItemMapper.objectToAttributeValue(List.of("a", "b")).type());
     }
 }

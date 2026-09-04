@@ -25,8 +25,48 @@ contract.
 | `DocumentMetadata` | Write timestamps, TTL expiry, and version/ETag |
 | `CapabilitySet` | Runtime introspection of supported provider capabilities |
 | `MulticloudDbException` | Structured error with portable error category |
-| `OperationOptions` | Per-operation timeout, TTL, and metadata controls |
+| `OperationOptions` | Per-operation timeout and metadata controls; `ttlSeconds` is create/upsert-only |
 | `OperationDiagnostics` | Latency, request charge, request ID, and item count |
+
+### `update()` Partial-Update Contract
+
+```java
+void update(
+    ResourceAddress address,
+    MulticloudDbKey key,
+    Map<String, Object> fields,
+    OperationOptions options);
+```
+
+- Sets or replaces only the supplied top-level fields; omitted fields remain.
+- Map/list values replace the complete top-level value. Java `null` stores null.
+- A missing item returns `NOT_FOUND` and is not created.
+- Non-null `options.ttlSeconds()` returns pre-I/O, non-retryable
+  `INVALID_REQUEST`.
+- The shared serialized field-map limit is 408,576 bytes.
+
+`Capability.PARTIAL_UPDATE` is supported by Cosmos DB and DynamoDB. The
+unchanged Spanner provider does not advertise it, so the default client returns
+non-retryable `UNSUPPORTED_CAPABILITY` with `capability=partial_update` before
+provider delegation.
+
+Cosmos and Dynamo report `PARTIAL_UPDATE_EXTENDED_PAYLOAD=false` because a
+native request or resulting-item envelope can bind first, and
+`PARTIAL_UPDATE_CASE_SENSITIVE_FIELDS=true` because both preserve literal field
+case. Spanner does not declare either extension because it does not participate
+in this feature release.
+The Cosmos result-size case is non-retryable `UNSUPPORTED_CAPABILITY` with
+`reason=cosmos_result_item_size_limit` and
+`maximumResultBytes=2097152`.
+The Dynamo result-size case is non-retryable `UNSUPPORTED_CAPABILITY` with
+`reason=dynamodb_result_item_size_limit` and
+`maximumResultBytes=409600`. Other Dynamo `ValidationException` errors remain
+`INVALID_REQUEST`.
+
+For complete replacement, call `upsert()` with the complete desired document.
+`upsert()` creates a missing item, so it is not an update-only replacement.
+See [guide.md - update](guide.md#update---partial-update-existing) for native
+request counts, costs, and migration guidance.
 
 ### Query Expression Types
 

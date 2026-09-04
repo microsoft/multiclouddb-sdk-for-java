@@ -51,11 +51,39 @@ public interface MulticloudDbProviderClient extends AutoCloseable {
     DocumentResult read(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
 
     /**
-     * Update an existing document. Fails if the key does not exist.
+     * Apply a shallow, set/replace-only partial update to an existing document.
+     * <p>
+     * Providers receive {@code fields} <em>already validated</em> by the default client:
+     * the field map is non-null and non-empty, every name is non-null/non-blank, no name is
+     * reserved, underscore-prefixed, or case-colliding, {@code options.ttlSeconds()} is null,
+     * and the serialized field map is at most 408,576 bytes. The default client also owns the
+     * core {@link com.multiclouddb.api.Capability#PARTIAL_UPDATE} gate and checks it before
+     * delegating, so provider adapters MUST NOT duplicate that gate.
+     * <p>
+     * For field names and value shapes supported by the provider mapping, every provider must
+     * produce identical observable postconditions: present fields are set/replaced, omitted
+     * fields are preserved, object/array values replace the whole top-level value (shallow),
+     * null stores JSON null, all assignments commit atomically, and a missing document throws
+     * {@link MulticloudDbErrorCategory#NOT_FOUND} without creating it. Providers must add no
+     * update-TTL assignment.
+     * <p>
+     * Only adapters that advertise
+     * {@link com.multiclouddb.api.Capability#PARTIAL_UPDATE} receive this call. Feature 002
+     * leaves the Spanner adapter unchanged and unadvertised, so the default client rejects
+     * Spanner calls before delegation. A participating provider whose identifier model
+     * cannot preserve case-distinct logical fields must declare
+     * {@link com.multiclouddb.api.Capability#PARTIAL_UPDATE_CASE_SENSITIVE_FIELDS} unsupported
+     * and reject a case-only alias as {@link MulticloudDbErrorCategory#UNSUPPORTED_CAPABILITY}
+     * rather than silently overwriting another field. A local request-envelope rejection tied to
+     * {@link com.multiclouddb.api.Capability#PARTIAL_UPDATE_EXTENDED_PAYLOAD} must perform
+     * zero provider I/O. A state-dependent resulting-item limit may instead be returned by
+     * the provider after the single native update attempt and must be normalized to the same
+     * capability without adding a read/merge preflight.
      *
+     * @param fields validated literal top-level fields to set/replace
      * @throws MulticloudDbException with category NOT_FOUND if the key does not exist
      */
-    void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
+    void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> fields, OperationOptions options);
 
     /**
      * Upsert (create or replace) a document.

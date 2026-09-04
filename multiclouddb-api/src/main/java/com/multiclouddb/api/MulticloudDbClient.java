@@ -60,23 +60,71 @@ public interface MulticloudDbClient extends AutoCloseable {
     }
 
     /**
-     * Update an existing document. Fails if a document with the given key does not
-     * exist.
+     * Apply a portable <strong>shallow, set/replace-only partial update</strong> to an
+     * existing document.
+     * <p>
+     * Each entry in {@code fields} is one literal top-level field. Present fields are
+     * set/replaced; omitted fields are preserved; an object or array value replaces that
+     * entire top-level value (the merge is shallow, never recursive); a Java {@code null}
+     * stores JSON null and does <em>not</em> remove the field. Field names are literal, not
+     * path syntax — names exactly {@code .}, {@code /}, and {@code ~} address top-level
+     * fields, and an accepted name such as {@code " customer "} is never trimmed. Provider
+     * mappings still apply. All requested assignments commit atomically, and because every
+     * assignment is absolute
+     * the operation is replay-idempotent.
+     * <p>
+     * A missing document is never created: after the requested field set has valid provider
+     * mappings, an absent key throws {@link MulticloudDbException} with category
+     * {@link MulticloudDbErrorCategory#NOT_FOUND}. To create-or-replace a whole document use
+     * {@link #upsert(ResourceAddress, MulticloudDbKey, Map, OperationOptions)} instead;
+     * {@code upsert()} creates a missing document, so read-then-upsert is not an atomic
+     * guarded replacement.
+     * <p>
+     * Shared preflight (before any provider I/O) rejects, as non-retryable
+     * {@link MulticloudDbErrorCategory#INVALID_REQUEST}: a null or empty map; any null,
+     * empty, or blank name; a name equal (ignoring case) to {@code id}, {@code partitionKey},
+     * {@code sortKey}, {@code ttl}, {@code ttlExpiry}, or {@code data}; a name beginning with
+     * {@code _}; two names that collide ignoring case (for example {@code foo} and
+     * {@code Foo}); a non-null {@link OperationOptions#ttlSeconds()} (TTL is supported only by
+     * {@code create()}/{@code upsert()}); and a serialized field map larger than exactly
+     * 408,576 bytes (399 KiB).
+     * <p>
+     * The operation is available only when the provider advertises
+     * {@link Capability#PARTIAL_UPDATE}. Cosmos DB and DynamoDB advertise it in this release.
+     * The unchanged Spanner provider does not, so a valid call returns non-retryable
+     * {@link MulticloudDbErrorCategory#UNSUPPORTED_CAPABILITY} after shared validation and
+     * before provider delegation. A participating provider whose identifier model cannot
+     * preserve case-distinct fields must declare
+     * {@link Capability#PARTIAL_UPDATE_CASE_SENSITIVE_FIELDS} unsupported and reject the
+     * alias explicitly.
+     * <p>
+     * The separate {@link Capability#PARTIAL_UPDATE_EXTENDED_PAYLOAD} models only
+     * whether supported provider field mappings can reach the common limit without a lower
+     * native request or resulting-item envelope. DynamoDB can reject after one attempted
+     * {@code UpdateItem} when the existing item plus otherwise-valid fields would exceed
+     * 409,600 bytes; that state-dependent failure is non-retryable
+     * {@link MulticloudDbErrorCategory#UNSUPPORTED_CAPABILITY}.
      *
      * @param address  target database + collection
-     * @param key      document key
-     * @param document document payload
-     * @param options  operation options
-     * @throws MulticloudDbException with category NOT_FOUND if the key does not exist
+     * @param key      document key identifying an existing document
+     * @param fields   literal top-level fields to set/replace; non-null and non-empty
+     * @param options  operation options; {@code ttlSeconds} must be null for {@code update()}
+     * @throws MulticloudDbException category {@link MulticloudDbErrorCategory#NOT_FOUND} if the
+     *         key does not exist, or {@link MulticloudDbErrorCategory#INVALID_REQUEST} for an
+     *         invalid field map, name, collision, update TTL, or over-size payload;
+     *         {@link MulticloudDbErrorCategory#UNSUPPORTED_CAPABILITY} if the provider does
+     *         not advertise partial update or a native envelope rejects the request
      */
-    void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
+    void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> fields, OperationOptions options);
 
     /**
-     * Update an existing document using default options. Fails if key does not
-     * exist.
+     * Apply a shallow partial update using default options. Fails with {@code NOT_FOUND} if
+     * the key does not exist. See
+     * {@link #update(ResourceAddress, MulticloudDbKey, Map, OperationOptions)} for the full
+     * partial-update contract.
      */
-    default void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document) {
-        update(address, key, document, OperationOptions.defaults());
+    default void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> fields) {
+        update(address, key, fields, OperationOptions.defaults());
     }
 
     /**
@@ -109,8 +157,8 @@ public interface MulticloudDbClient extends AutoCloseable {
      * {@link #read(ResourceAddress, MulticloudDbKey, OperationOptions)} — it
      * returns {@code null} on every provider when the key does not exist, and
      * does not mutate state. {@code update()} also throws {@code NOT_FOUND} on
-     * a missing key, but it requires a document body and <strong>overwrites</strong>
-     * the existing document on hit, so it is not a safe pure existence probe.
+     * a missing key, but it applies a shallow partial update to the named fields
+     * on hit, so it mutates state and is not a safe pure existence probe.
      *
      * @param address target database + collection
      * @param key     document key

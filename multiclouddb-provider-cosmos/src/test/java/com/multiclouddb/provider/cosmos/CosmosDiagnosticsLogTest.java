@@ -9,6 +9,8 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.azure.cosmos.CosmosDiagnostics;
 import com.azure.cosmos.CosmosException;
+import com.azure.cosmos.models.CosmosBatchOperationResult;
+import com.azure.cosmos.models.CosmosBatchResponse;
 import com.azure.cosmos.models.CosmosItemResponse;
 import com.azure.cosmos.models.FeedResponse;
 import com.multiclouddb.api.ResourceAddress;
@@ -205,6 +207,42 @@ class CosmosDiagnosticsLogTest {
         assertTrue(messageContains(Level.WARN, "testcol"), "WARN should contain collection name");
     }
 
+    @Test
+    @DisplayName("logBatch emits concise DEBUG metadata")
+    void logBatchEmitsDebugMetadata() {
+        CosmosBatchResponse response = mock(CosmosBatchResponse.class);
+        CosmosDiagnostics diagnostics = mock(CosmosDiagnostics.class);
+        when(diagnostics.getDuration()).thenReturn(Duration.ofMillis(12));
+        when(response.getDiagnostics()).thenReturn(diagnostics);
+        when(response.getActivityId()).thenReturn("batch-activity");
+        when(response.getStatusCode()).thenReturn(200);
+        when(response.getResults()).thenReturn(List.of(
+                mock(CosmosBatchOperationResult.class),
+                mock(CosmosBatchOperationResult.class)));
+
+        CosmosDiagnosticsLogger.logBatch("update", ADDR, response);
+
+        assertTrue(messageContains(Level.DEBUG, "batch-activity"));
+        assertTrue(messageContains(Level.DEBUG, "operations=2"));
+    }
+
+    @Test
+    @DisplayName("logBatch emits WARN with diagnostics on failure")
+    void logBatchWarnsOnFailure() {
+        CosmosBatchResponse response = mock(CosmosBatchResponse.class);
+        CosmosDiagnostics diagnostics = mock(CosmosDiagnostics.class);
+        when(diagnostics.getDuration()).thenReturn(Duration.ofMillis(12));
+        when(diagnostics.toString()).thenReturn("BATCH-DIAG");
+        when(response.getDiagnostics()).thenReturn(diagnostics);
+        when(response.isSuccessStatusCode()).thenReturn(false);
+        when(response.getStatusCode()).thenReturn(424);
+        when(response.getResults()).thenReturn(List.of());
+
+        CosmosDiagnosticsLogger.logBatch("update", ADDR, response);
+
+        assertTrue(messageContains(Level.WARN, "BATCH-DIAG"));
+    }
+
     // ── logFeed — query diagnostics ───────────────────────────────────────────
 
     @Test
@@ -382,4 +420,3 @@ class CosmosDiagnosticsLogTest {
                 "Query WARN threshold must be lower than query ERROR threshold");
     }
 }
-

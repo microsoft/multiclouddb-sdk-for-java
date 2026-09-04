@@ -26,7 +26,7 @@ portable API surface and error mapping reference, see
 - [CRUD Semantics](#crud-semantics)
   - [create - Insert Only](#create---insert-only)
   - [read - Point Read](#read---point-read)
-  - [update - Replace Existing](#update---replace-existing)
+  - [update - Partial Update Existing](#update---partial-update-existing)
   - [upsert - Create or Replace](#upsert---create-or-replace)
   - [delete - Idempotent Delete](#delete---idempotent-delete-silent-on-missing-key)
   - [Document Field Injection](#document-field-injection)
@@ -545,28 +545,77 @@ if (result != null) {
 Point reads are always efficient because the full key is provided. The provider
 can go directly to the partition/item without scanning.
 
-### update - Replace Existing
+### update - Partial Update Existing
 
-`update()` replaces an existing document. If the document does **not** exist,
-the operation **fails** with a not-found error. Use this when you need strict
-update-only semantics.
+`update()` performs a shallow, top-level partial update. Every supplied field is
+set or replaced, while omitted fields remain unchanged. A supplied map or list
+replaces that complete top-level value; `update()` does not interpret nested
+paths or provide remove/increment operations. A Java `null` stores a provider
+null rather than deleting the field.
+
+If the document does **not** exist, the operation fails with `NOT_FOUND` and
+does not create it.
 
 ```java
-Map<String, Object> updated = new LinkedHashMap<>();
-updated.put("total", 109.95);
-updated.put("status", "shipped");
+Map<String, Object> fields = new LinkedHashMap<>();
+fields.put("status", "shipped");
+fields.put("reviewedAt", null);
 
-client.update(addr, MulticloudDbKey.of("customer-456", "order-123"), updated);   // Fails if not exists
+client.update(addr, MulticloudDbKey.of("customer-456", "order-123"), fields);
+// Existing "total", "customerName", and other omitted fields are preserved.
 ```
 
-**Key behavior across providers:**
+**Native path, request count, and cost:**
 
-| Behavior | Cosmos DB | DynamoDB | Spanner |
-|----------|-----------|----------|---------|
-| Operation | `replaceItem()` | `putItem()` with `attribute_exists` condition | `newUpdateBuilder` mutation |
-| If exists | Replace | Replace | Replace |
-| If not exists | Throws NOT_FOUND | Throws NOT_FOUND | Throws NOT_FOUND |
-| Return value | None (void) | None (void) | None (void) |
+| Provider | Native path and request count | Native envelope and cost |
+|----------|-------------------------------|--------------------------|
+| **Cosmos DB** | Up to 10 fields use one `patchItem`; wider updates use one same-item transactional-batch request containing patch chunks of at most 10 fields. | At most 100 batch operations and 2,097,152 serialized bytes. The resulting document is capped at 2,097,152 bytes. RU cost grows with the patch operations/chunks. |
+| **DynamoDB** | One conditional, aliased `UpdateItem SET ...` request with `attribute_exists(partitionKey)`. | Generated update expressions above 4,096 UTF-8 bytes fail before I/O. DynamoDB can reject the one attempted update if the resulting item would exceed 409,600 bytes. Accepted calls consume one item update's write capacity. |
+| **Spanner** | No provider call in this release. | The unchanged provider does not advertise `PARTIAL_UPDATE`; the shared client rejects valid calls before Spanner I/O. |
+
+Cosmos and Dynamo declare all 20 known capability names, including
+`Capability.PARTIAL_UPDATE` and
+`PARTIAL_UPDATE_CASE_SENSITIVE_FIELDS=true`. Both declare
+`PARTIAL_UPDATE_EXTENDED_PAYLOAD` unsupported because their native envelopes
+can bind before the SDK's common 408,576-byte limit.
+
+Spanner retains its existing 17 capability declarations. Because it does not
+advertise `PARTIAL_UPDATE`, valid calls fail locally with non-retryable
+`UNSUPPORTED_CAPABILITY` and `capability=partial_update`; shared invalid-request
+validation still runs first.
+For DynamoDB, `reason=dynamodb_update_expression_limit` is a local, zero-I/O
+rejection. `reason=dynamodb_result_item_size_limit` includes
+`maximumResultBytes=409600` and is returned after one attempted `UpdateItem`;
+the SDK does not add a read/merge preflight. Other DynamoDB
+`ValidationException` failures remain `INVALID_REQUEST`.
+
+For Cosmos DB, HTTP 413 from an attempted update maps to
+`reason=cosmos_result_item_size_limit` with
+`maximumResultBytes=2097152`. The SDK does not read the existing document
+before the patch or batch; the failed native write leaves it unchanged.
+
+Cosmos CRUD/update HTTP 408 and 410 failures map to retryable
+`TRANSIENT_FAILURE`, with 410 substatus retained. For a failed transactional
+batch, the SDK skips dependent HTTP 424 results and selects the first usable
+non-424 operation failure, then a usable aggregate failure, then a sanitized
+`PROVIDER_ERROR` when no root status exists.
+
+`OperationOptions.ttlSeconds()` is invalid for `update()`. A non-null update TTL
+fails before provider I/O with non-retryable `INVALID_REQUEST`.
+
+#### Migrating full-document replacement
+
+Cosmos and Dynamo callers that previously relied on `update()` to remove
+omitted fields must move the complete desired document to `upsert()`:
+
+```java
+client.upsert(addr, key, completeDesiredDocument);
+```
+
+`upsert()` creates a missing document. A read-then-upsert sequence is not an
+atomic guarded replacement and can recreate an item that was concurrently
+deleted or expired. TTL-bearing full writes also belong on `create()` or
+`upsert()`, not `update()`.
 
 ### upsert - Create or Replace
 
@@ -609,9 +658,9 @@ client.delete(addr, MulticloudDbKey.of("customer-456", "order-123"));
 
 If you need to detect whether a key exists, use `read()` — it returns
 `null` on every provider when the key does not exist, and does not mutate
-state. `update()` also throws `NOT_FOUND` on a missing key, but it
-requires a document body and **overwrites the existing document on hit**,
-so it is not a safe pure existence probe.
+state. `update()` also throws `NOT_FOUND` on a missing key, but it requires a
+non-empty field map and mutates the existing document on hit, so it is not a
+safe pure existence probe.
 
 **Key behavior across providers:**
 
@@ -624,9 +673,9 @@ so it is not a safe pure existence probe.
 
 ### Document Field Injection
 
-When you call `create()`, `update()`, or `upsert()`, the SDK **injects key
-fields into the document** automatically. You don't need to manually set `"id"`
-or `"partitionKey"` in your JSON - the provider handles this:
+When you call `create()` or `upsert()`, the SDK **injects key fields into the
+document** automatically. You don't need to manually set `"id"` or
+`"partitionKey"` in your JSON - the provider handles this:
 
 ```java
 Map<String, Object> doc = new LinkedHashMap<>();
@@ -648,6 +697,9 @@ client.upsert(addr, MulticloudDbKey.of("acme", "port-1"), doc);
 > **Important**: If your document JSON already contains an `"id"` field, it
 > will be **overwritten** by the key parameter. The key is always the source
 > of truth for the document's identity.
+
+`update()` routes by the separately supplied key and rejects attempts to assign
+`id`, `partitionKey`, `sortKey`, TTL fields, or provider metadata fields.
 
 ---
 
@@ -1541,7 +1593,8 @@ The portable 24-hour baseline incurs no extra cost on any provider.
 ---
 ## Document TTL (Time-to-Live)
 
-Set a per-document expiry at write time using `OperationOptions.ttlSeconds()`. Supported on `create()`, `upsert()`, and `update()`.
+Set a per-document expiry at write time using `OperationOptions.ttlSeconds()`.
+TTL is supported only on `create()` and `upsert()`.
 
 ### Prerequisite: Enable Container-Level TTL
 
@@ -1565,9 +1618,6 @@ client.create(address, key, doc, opts);
 
 // TTL on upsert (create-or-replace)
 client.upsert(address, key, doc, opts);
-
-// TTL on update - carries TTL forward through the full-replace write
-client.update(address, key, updatedDoc, opts);
 ```
 
 ### Checking TTL Support
@@ -1583,10 +1633,10 @@ if (client.capabilities().isSupported(Capability.ROW_LEVEL_TTL)) {
 }
 ```
 
-> **Important:** If you omit `ttlSeconds` on an `update()` call, the previously
-> stored TTL attribute will be overwritten with no TTL (documents become
-> permanent). Always pass the same `OperationOptions` on every write if you
-> want TTL to persist.
+Passing a non-null `ttlSeconds` to `update()` is always rejected before provider
+I/O with non-retryable `INVALID_REQUEST`. To replace a complete document and set
+TTL, call `upsert()` with the complete desired document and remember that
+`upsert()` creates the item when it is missing.
 
 ---
 
@@ -1639,9 +1689,16 @@ system properties (`_ts`, `_etag`, `_rid`, `_self`, `_attachments`, `partitionKe
 
 ## Document Size Enforcement
 
-The SDK enforces a **399 KB** (408,576 bytes) maximum document size before any
-data leaves the client. This limit applies to `create()`, `upsert()`, and
-`update()` on all providers.
+The SDK enforces a **399 KB** (408,576 bytes) maximum serialized write payload
+before any data leaves the client. This applies to the full document passed to
+`create()`/`upsert()` and to the field map passed to `update()`.
+
+For `update()`, this measures only the incoming field map, not the existing
+item plus those fields. DynamoDB can therefore reject an otherwise-valid update
+when the resulting item would exceed 409,600 bytes. That atomic native
+rejection is surfaced as non-retryable `UNSUPPORTED_CAPABILITY` with
+`reason=dynamodb_result_item_size_limit`; it occurs after one attempted
+`UpdateItem`, not during the zero-I/O shared preflight.
 
 ### Why 399 KB, not 400 KB?
 

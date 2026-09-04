@@ -7,6 +7,13 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- `update()` now sends one conditional, aliased `UpdateItem SET` request instead of replacing the item with `PutItem`. Omitted fields are preserved; a failed `attribute_exists(partitionKey)` guard maps to `NOT_FOUND` without create.
+- Structured null/map/list values use native DynamoDB `NULL`/`M`/`L` shapes. The generated update expression is rejected before I/O above 4,096 UTF-8 bytes; an accepted call consumes one item update's write capacity.
+- A size-specific update `ValidationException` is normalized to non-retryable `UNSUPPORTED_CAPABILITY` with `reason=dynamodb_result_item_size_limit` and `maximumResultBytes=409600` when the existing item plus fields would exceed DynamoDB's 400 KiB result-item limit. This path follows one attempted `UpdateItem`, preserves the native cause/metadata, and adds no read/merge preflight; other validation failures remain `INVALID_REQUEST`.
+- Declares `PARTIAL_UPDATE` and `PARTIAL_UPDATE_CASE_SENSITIVE_FIELDS` supported, and `PARTIAL_UPDATE_EXTENDED_PAYLOAD` unsupported because either the 4,096-byte expression envelope or state-dependent 409,600-byte result-item envelope can bind before the common 408,576-byte field-map limit.
+
 ## [0.1.0-beta.2] — 2026-06-22
 
 > **Requires `multiclouddb-api` 0.1.0-beta.2 or later** — this release consumes API surface (change-feed cursors, `CLIENT_CLOSED` envelope, `ChangeFeedConfig.extendedRetention(...)` opt-in gating) introduced in API beta.2. The dependency is pinned in the published POM.

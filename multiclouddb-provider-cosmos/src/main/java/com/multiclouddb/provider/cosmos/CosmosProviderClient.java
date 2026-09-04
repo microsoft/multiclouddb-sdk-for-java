@@ -88,7 +88,9 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
 
         CosmosClientBuilder builder = new CosmosClientBuilder()
                 .endpoint(endpoint)
-                .contentResponseOnWriteEnabled(true);
+                // Portable writes return void; suppress per-write response item bodies to save
+                // bandwidth/memory while retaining status/activityId/RU/diagnostics (feature 002).
+                .contentResponseOnWriteEnabled(false);
 
         if (key != null && !key.isBlank()) {
             builder.key(key);
@@ -137,6 +139,13 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         this.changeFeedReader = new CosmosChangeFeedReader(ProviderId.COSMOS, effectiveRetentionMillis);
         LOG.info("Cosmos client created for endpoint: {}", endpoint);
         LOG.info("Cosmos read consistency: {}", readConsistencyOverride != null ? readConsistencyOverride : "account default");
+    }
+
+    /** Package-private constructor for focused unit tests. */
+    CosmosProviderClient(CosmosClient cosmosClient) {
+        this.cosmosClient = Objects.requireNonNull(cosmosClient, "cosmosClient");
+        this.config = MulticloudDbClientConfig.builder().provider(ProviderId.COSMOS).build();
+        this.changeFeedReader = null;
     }
 
     /**
@@ -237,35 +246,47 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
     }
 
     /**
-     * Replaces an existing document in the specified container.
+     * Applies a portable shallow, set/replace-only partial update to an existing document.
      * <p>
-     * Uses the Cosmos DB {@code replaceItem} API, which requires the item to already
-     * exist — the operation fails with {@link com.multiclouddb.api.MulticloudDbErrorCategory#NOT_FOUND}
-     * if no matching item is found. The system fields {@code id} and {@code partitionKey}
-     * are injected before the write, consistent with {@link #create}.
+     * The provider converts each already validated field to one {@code set} patch operation
+     * whose path is the raw field name encoded as a single RFC 6901 JSON Pointer segment. At
+     * most {@link CosmosPartialUpdatePlanner#MAX_FIELDS_PER_PATCH} fields become one direct
+     * {@code patchItem}; wider requests become one same-item, same-partition transactional
+     * batch. No adapter-side read, key injection, update-TTL assignment, duplicate capability
+     * gate, or retry loop is performed — the default client owns the core
+     * {@link com.multiclouddb.api.Capability#PARTIAL_UPDATE} gate. A missing document is
+     * normalized to {@link com.multiclouddb.api.MulticloudDbErrorCategory#NOT_FOUND}; a wide
+     * request that exceeds the native transactional-batch envelope fails locally with
+     * {@link com.multiclouddb.api.MulticloudDbErrorCategory#UNSUPPORTED_CAPABILITY} and zero
+     * Cosmos I/O.
      *
      * @param address  the logical database + container
-     * @param key      the document key identifying the item to replace
-     * @param document the new document payload; replaces the entire stored document
-     * @param options  operation options (currently unused by this provider)
-     * @throws com.multiclouddb.api.MulticloudDbException category {@code NOT_FOUND} (404) if the item
-     *         does not exist
+     * @param key      the document key identifying the item to update
+     * @param fields   validated literal top-level fields to set/replace
+     * @param options  operation options (update TTL is rejected by shared preflight)
+     * @throws com.multiclouddb.api.MulticloudDbException category {@code NOT_FOUND} (404) if the
+     *         item does not exist
      */
     @Override
-    public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> fields, OperationOptions options) {
         checkOpen(OperationNames.UPDATE);
         try {
-            CosmosContainer container = getContainer(address);
-            ObjectNode doc = toObjectNode(document);
             String cosmosId = key.sortKey() != null ? key.sortKey() : key.partitionKey();
-            doc.put(CosmosConstants.FIELD_ID, cosmosId);
-            doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
-            if (options != null && options.ttlSeconds() != null) {
-                doc.put(CosmosConstants.FIELD_TTL, options.ttlSeconds());
-            }
             PartitionKey pk = resolvePartitionKey(key);
-            CosmosItemResponse<ObjectNode> response = container.replaceItem(doc, cosmosId, pk, new CosmosItemRequestOptions());
-            logItemDiagnostics(OperationNames.UPDATE, address, response);
+            CosmosPartialUpdatePlanner.Plan plan = CosmosPartialUpdatePlanner.plan(cosmosId, pk, fields);
+            CosmosContainer container = getContainer(address);
+            if (plan.isDirect()) {
+                CosmosItemResponse<ObjectNode> response = container.patchItem(
+                        cosmosId, pk, plan.patchChunks().get(0),
+                        new CosmosPatchItemRequestOptions(), ObjectNode.class);
+                logItemDiagnostics(OperationNames.UPDATE, address, response);
+            } else {
+                CosmosBatchResponse response = container.executeCosmosBatch(plan.batch());
+                CosmosDiagnosticsLogger.logBatch(OperationNames.UPDATE, address, response);
+                if (!response.isSuccessStatusCode()) {
+                    throw CosmosErrorMapper.mapFailedBatch(response, OperationNames.UPDATE);
+                }
+            }
         } catch (CosmosException e) {
             logExceptionDiagnostics(OperationNames.UPDATE, address, e);
             throw CosmosErrorMapper.map(e, OperationNames.UPDATE);
@@ -990,4 +1011,3 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         return MAPPER.convertValue(node, MAP_TYPE);
     }
 }
-

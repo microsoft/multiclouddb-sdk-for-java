@@ -10,6 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.services.dynamodb.model.DynamoDbException;
 
@@ -120,15 +121,98 @@ class DynamoErrorMappingTest {
         assertSame(ex, result.getCause());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "Item size has exceeded the maximum allowed size",
+            "Item size to update has exceeded the maximum allowed size",
+            "Item size has exceeded the maximum allowed size "
+                    + "(Service: DynamoDb, Status Code: 400, Request ID: req-size-1)"
+    })
+    @DisplayName("Update item-size ValidationException maps to the extended-payload capability")
+    void updateResultItemSizeLimitMapsToUnsupportedCapability(String message) {
+        DynamoDbException ex = mockDynamoException(400, "ValidationException", message);
+        when(ex.requestId()).thenReturn("req-size-1");
+
+        MulticloudDbException result = DynamoErrorMapper.map(ex, OperationNames.UPDATE);
+
+        assertEquals(MulticloudDbErrorCategory.UNSUPPORTED_CAPABILITY,
+                result.error().category());
+        assertEquals(OperationNames.UPDATE, result.error().operation());
+        assertFalse(result.error().retryable());
+        assertEquals(400, result.error().statusCode());
+        assertEquals("partial_update_extended_payload",
+                result.error().providerDetails().get("capability"));
+        assertEquals("dynamodb_result_item_size_limit",
+                result.error().providerDetails().get("reason"));
+        assertEquals("409600",
+                result.error().providerDetails().get("maximumResultBytes"));
+        assertEquals("ValidationException",
+                result.error().providerDetails().get("errorCode"));
+        assertEquals("DynamoDb", result.error().providerDetails().get("serviceName"));
+        assertEquals("req-size-1", result.error().providerDetails().get("requestId"));
+        assertSame(ex, result.getCause());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "One or more parameter values were invalid: Type mismatch for key",
+            "Item collection size has exceeded the maximum allowed size",
+            "Expression size has exceeded the maximum allowed size"
+    })
+    @DisplayName("Other update ValidationException messages remain invalid requests")
+    void otherUpdateValidationMessagesRemainInvalidRequest(String message) {
+        DynamoDbException ex = mockDynamoException(400, "ValidationException", message);
+
+        MulticloudDbException result = DynamoErrorMapper.map(ex, OperationNames.UPDATE);
+
+        assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, result.error().category());
+        assertFalse(result.error().providerDetails().containsKey("capability"));
+        assertFalse(result.error().providerDetails().containsKey("maximumResultBytes"));
+    }
+
+    @Test
+    @DisplayName("Item-size text with a different native code remains normally mapped")
+    void resultItemSizeTextWithDifferentCodeDoesNotUseCapabilityMapping() {
+        DynamoDbException ex = mockDynamoException(
+                400,
+                "ResourceNotFoundException",
+                "Item size has exceeded the maximum allowed size");
+
+        MulticloudDbException result = DynamoErrorMapper.map(ex, OperationNames.UPDATE);
+
+        assertEquals(MulticloudDbErrorCategory.NOT_FOUND, result.error().category());
+        assertFalse(result.error().providerDetails().containsKey("capability"));
+    }
+
+    @Test
+    @DisplayName("Item-size ValidationException outside update remains invalid request")
+    void resultItemSizeValidationOutsideUpdateRemainsInvalidRequest() {
+        DynamoDbException ex = mockDynamoException(
+                400,
+                "ValidationException",
+                "Item size has exceeded the maximum allowed size");
+
+        MulticloudDbException result = DynamoErrorMapper.map(ex, OperationNames.UPSERT);
+
+        assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, result.error().category());
+        assertFalse(result.error().providerDetails().containsKey("capability"));
+    }
+
     private DynamoDbException mockDynamoException(int statusCode, String errorCode) {
+        return mockDynamoException(statusCode, errorCode, "Mock DynamoDB error: " + errorCode);
+    }
+
+    private DynamoDbException mockDynamoException(
+            int statusCode, String errorCode, String message) {
         DynamoDbException ex = mock(DynamoDbException.class);
         when(ex.statusCode()).thenReturn(statusCode);
-        when(ex.getMessage()).thenReturn("Mock DynamoDB error: " + errorCode);
+        when(ex.getMessage()).thenReturn(message);
         when(ex.requestId()).thenReturn(null);
         when(ex.isThrottlingException()).thenReturn(false);
 
         AwsErrorDetails details = mock(AwsErrorDetails.class);
         when(details.errorCode()).thenReturn(errorCode);
+        when(details.errorMessage()).thenReturn(message);
         when(details.serviceName()).thenReturn("DynamoDb");
         when(ex.awsErrorDetails()).thenReturn(details);
 

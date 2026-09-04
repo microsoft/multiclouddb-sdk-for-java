@@ -19,8 +19,6 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * <ul>
  *   <li>FR-054: {@link OperationOptions#ttlSeconds()} is accepted on {@code create()} without error.</li>
  *   <li>FR-055: {@link OperationOptions#ttlSeconds()} is accepted on {@code upsert()} without error.</li>
- *   <li>FR-056: {@link OperationOptions#ttlSeconds()} is accepted on {@code update()} without error
- *       (consistent TTL enforcement across all write operations).</li>
  *   <li>FR-057: {@link DocumentResult#metadata()} is populated when
  *       {@link OperationOptions#includeMetadata()} is {@code true}.</li>
  *   <li>FR-058: {@link DocumentMetadata#version()} is non-null for providers that support
@@ -79,25 +77,6 @@ public abstract class TtlAndMetadataConformanceTest {
         assertDoesNotThrow(
                 () -> client.upsert(getAddress(), key, doc, opts),
                 "upsert() with ttlSeconds=3600 must not throw");
-    }
-
-    // -------------------------------------------- FR-056: TTL on update()
-
-    @Test
-    @Order(3)
-    @DisplayName("FR-056: update() with ttlSeconds is accepted without error")
-    void updateWithTtlIsAccepted() {
-        MulticloudDbKey key = ConformanceHarness.uniqueKey("ttl-update");
-        Map<String, Object> seed = Map.of("name", "ttl-update-seed");
-
-        // Create first so update() has something to replace
-        client.create(getAddress(), key, seed, OperationOptions.defaults());
-
-        Map<String, Object> updated = Map.of("name", "ttl-update-test");
-        OperationOptions opts = OperationOptions.builder().ttlSeconds(7200).build();
-        assertDoesNotThrow(
-                () -> client.update(getAddress(), key, updated, opts),
-                "update() with ttlSeconds=7200 must not throw");
     }
 
     // -------------------------------------------- FR-057: metadata is populated

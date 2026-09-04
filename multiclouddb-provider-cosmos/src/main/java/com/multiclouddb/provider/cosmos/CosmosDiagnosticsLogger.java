@@ -5,6 +5,7 @@ package com.multiclouddb.provider.cosmos;
 
 import com.azure.cosmos.CosmosDiagnostics;
 import com.azure.cosmos.CosmosException;
+import com.azure.cosmos.models.CosmosBatchResponse;
 import com.azure.cosmos.models.CosmosItemResponse;
 import com.azure.cosmos.models.FeedResponse;
 import com.multiclouddb.api.ResourceAddress;
@@ -82,6 +83,37 @@ final class CosmosDiagnosticsLogger {
             LOG.warn("cosmos.slow op={} db={} col={} activityId={} latencyMs={} ruCharge={} diagnostics={}",
                     operation, address.database(), address.collection(),
                     activityId, latencyMs, ruCharge, diag);
+        }
+    }
+
+    /**
+     * Logs safe diagnostics from a transactional-batch {@link CosmosBatchResponse}: aggregate
+     * status/substatus, activity id, request charge, result count, latency, and native
+     * diagnostics. Never logs field values, serialized request bodies, response item bodies,
+     * credentials, or secrets.
+     *
+     * @param operation human-readable operation name (e.g. {@code "update"})
+     * @param address   the target database + container
+     * @param response  the Cosmos SDK transactional-batch response
+     */
+    static void logBatch(String operation, ResourceAddress address,
+            CosmosBatchResponse response) {
+        CosmosDiagnostics diag = response.getDiagnostics();
+        long latencyMs = durationMs(diag);
+        int resultCount = response.getResults() != null ? response.getResults().size() : 0;
+
+        LOG.debug("cosmos.batch op={} db={} col={} activityId={} statusCode={} subStatus={} "
+                        + "ruCharge={} operations={} latencyMs={}",
+                operation, address.database(), address.collection(),
+                response.getActivityId(), response.getStatusCode(), response.getSubStatusCode(),
+                response.getRequestCharge(), resultCount, latencyMs);
+
+        if (!response.isSuccessStatusCode() && diag != null) {
+            LOG.warn("cosmos.batch-failed op={} db={} col={} activityId={} statusCode={} subStatus={} "
+                            + "ruCharge={} operations={} latencyMs={} diagnostics={}",
+                    operation, address.database(), address.collection(),
+                    response.getActivityId(), response.getStatusCode(), response.getSubStatusCode(),
+                    response.getRequestCharge(), resultCount, latencyMs, diag);
         }
     }
 

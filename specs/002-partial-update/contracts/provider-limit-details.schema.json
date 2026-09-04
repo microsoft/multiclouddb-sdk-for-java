@@ -1,0 +1,264 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://multiclouddb.example/specs/002-partial-update/provider-limit-details.schema.json",
+  "title": "Partial update provider limit details",
+  "description": "String-valued MulticloudDbError.providerDetails for Cosmos or Dynamo partial-update envelope rejection tied to partial_update_extended_payload. Cosmos batch and Dynamo expression rejections are local and zero-I/O; Cosmos and Dynamo result-item rejections are returned after one attempted native update. The extension applies after participating-provider field mapping. This schema does not cover the default client's core partial_update gate.",
+  "type": "object",
+  "required": [
+    "reason",
+    "capability"
+  ],
+  "properties": {
+    "reason": {
+      "type": "string",
+      "enum": [
+        "cosmos_transactional_batch_limit",
+        "cosmos_result_item_size_limit",
+        "dynamodb_update_expression_limit",
+        "dynamodb_result_item_size_limit"
+      ]
+    },
+    "capability": {
+      "type": "string",
+      "const": "partial_update_extended_payload"
+    },
+    "actualOperations": {
+      "type": "string",
+      "pattern": "^[0-9]+$"
+    },
+    "maximumOperations": {
+      "type": "string",
+      "const": "100"
+    },
+    "actualBytes": {
+      "type": "string",
+      "description": "UTF-8 byte length of the complete prospective Cosmos transactional-batch body; mandatory on every Cosmos transactional-batch limit rejection.",
+      "pattern": "^[0-9]+$"
+    },
+    "maximumBytes": {
+      "type": "string",
+      "const": "2097152"
+    },
+    "actualExpressionBytes": {
+      "type": "string",
+      "pattern": "^[0-9]+$"
+    },
+    "maximumExpressionBytes": {
+      "type": "string",
+      "const": "4096"
+    },
+    "maximumResultBytes": {
+      "type": "string",
+      "enum": [
+        "2097152",
+        "409600"
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "title": "Cosmos transactional batch limit",
+      "properties": {
+        "reason": {
+          "const": "cosmos_transactional_batch_limit"
+        }
+      },
+      "required": [
+        "actualOperations",
+        "maximumOperations",
+        "actualBytes",
+        "maximumBytes"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "actualExpressionBytes"
+            ]
+          },
+          {
+            "required": [
+              "maximumExpressionBytes"
+            ]
+          },
+          {
+            "required": [
+              "maximumResultBytes"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "Cosmos resulting-item size limit",
+      "properties": {
+        "reason": {
+          "const": "cosmos_result_item_size_limit"
+        },
+        "maximumResultBytes": {
+          "const": "2097152"
+        }
+      },
+      "required": [
+        "maximumResultBytes"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "actualOperations"
+            ]
+          },
+          {
+            "required": [
+              "maximumOperations"
+            ]
+          },
+          {
+            "required": [
+              "actualBytes"
+            ]
+          },
+          {
+            "required": [
+              "maximumBytes"
+            ]
+          },
+          {
+            "required": [
+              "actualExpressionBytes"
+            ]
+          },
+          {
+            "required": [
+              "maximumExpressionBytes"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "DynamoDB update expression limit",
+      "properties": {
+        "reason": {
+          "const": "dynamodb_update_expression_limit"
+        }
+      },
+      "required": [
+        "actualExpressionBytes",
+        "maximumExpressionBytes"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "actualOperations"
+            ]
+          },
+          {
+            "required": [
+              "maximumOperations"
+            ]
+          },
+          {
+            "required": [
+              "actualBytes"
+            ]
+          },
+          {
+            "required": [
+              "maximumBytes"
+            ]
+          },
+          {
+            "required": [
+              "maximumResultBytes"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "DynamoDB resulting-item size limit",
+      "properties": {
+        "reason": {
+          "const": "dynamodb_result_item_size_limit"
+        },
+        "maximumResultBytes": {
+          "const": "409600"
+        }
+      },
+      "required": [
+        "maximumResultBytes"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "actualOperations"
+            ]
+          },
+          {
+            "required": [
+              "maximumOperations"
+            ]
+          },
+          {
+            "required": [
+              "actualBytes"
+            ]
+          },
+          {
+            "required": [
+              "maximumBytes"
+            ]
+          },
+          {
+            "required": [
+              "actualExpressionBytes"
+            ]
+          },
+          {
+            "required": [
+              "maximumExpressionBytes"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "additionalProperties": {
+    "type": "string"
+  },
+  "examples": [
+    {
+      "reason": "cosmos_transactional_batch_limit",
+      "capability": "partial_update_extended_payload",
+      "actualOperations": "101",
+      "maximumOperations": "100",
+      "actualBytes": "123456",
+      "maximumBytes": "2097152"
+    },
+    {
+      "reason": "cosmos_result_item_size_limit",
+      "capability": "partial_update_extended_payload",
+      "maximumResultBytes": "2097152",
+      "requestId": "example-activity-id",
+      "subStatusCode": "0"
+    },
+    {
+      "reason": "dynamodb_update_expression_limit",
+      "capability": "partial_update_extended_payload",
+      "actualExpressionBytes": "4097",
+      "maximumExpressionBytes": "4096"
+    },
+    {
+      "reason": "dynamodb_result_item_size_limit",
+      "capability": "partial_update_extended_payload",
+      "maximumResultBytes": "409600",
+      "errorCode": "ValidationException",
+      "requestId": "example-request-id",
+      "serviceName": "DynamoDb"
+    }
+  ]
+}

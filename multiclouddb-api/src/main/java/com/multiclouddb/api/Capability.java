@@ -66,6 +66,21 @@ public final class Capability {
     public static final String REGEX_MATCH                  = "regex_match";
     public static final String CASE_FUNCTIONS               = "case_functions";
 
+    /** Portable shallow set/replace partial update (universal base contract). */
+    public static final String PARTIAL_UPDATE               = "partial_update";
+    /**
+     * Guarantee that supported partial-update field mappings do not hit a stricter
+     * provider request or resulting-item envelope below the common 408,576-byte
+     * field-map limit.
+     */
+    public static final String PARTIAL_UPDATE_EXTENDED_PAYLOAD = "partial_update_extended_payload";
+
+    /**
+     * Guarantee that partial-update field names differing only by case retain
+     * distinct literal identities instead of aliasing one provider column.
+     */
+    public static final String PARTIAL_UPDATE_CASE_SENSITIVE_FIELDS = "partial_update_case_sensitive_fields";
+
     // ── Pre-built singleton instances ─────────────────────────────────────────
     // Each well-known capability has a SUPPORTED and an _UNSUPPORTED singleton.
     // Use these in provider CapabilitySet declarations instead of constructing
@@ -140,6 +155,21 @@ public final class Capability {
     public static final Capability CASE_FUNCTIONS_CAP               = intern(CASE_FUNCTIONS, true);
     /** Unsupported singleton — case functions. */
     public static final Capability CASE_FUNCTIONS_UNSUPPORTED       = intern(CASE_FUNCTIONS, false);
+
+    /** Supported singleton — portable shallow partial update. */
+    public static final Capability PARTIAL_UPDATE_CAP              = intern(PARTIAL_UPDATE, true);
+    /** Unsupported singleton — partial update (future provider without the core operation). */
+    public static final Capability PARTIAL_UPDATE_UNSUPPORTED      = intern(PARTIAL_UPDATE, false);
+
+    /** Supported singleton — no lower native request/result envelope for supported mappings. */
+    public static final Capability PARTIAL_UPDATE_EXTENDED_PAYLOAD_CAP         = intern(PARTIAL_UPDATE_EXTENDED_PAYLOAD, true);
+    /** Unsupported singleton — a provider request or resulting-item envelope may bind first. */
+    public static final Capability PARTIAL_UPDATE_EXTENDED_PAYLOAD_UNSUPPORTED = intern(PARTIAL_UPDATE_EXTENDED_PAYLOAD, false);
+
+    /** Supported singleton — case-variant partial-update fields remain distinct. */
+    public static final Capability PARTIAL_UPDATE_CASE_SENSITIVE_FIELDS_CAP = intern(PARTIAL_UPDATE_CASE_SENSITIVE_FIELDS, true);
+    /** Unsupported singleton — case-variant fields can alias one provider column. */
+    public static final Capability PARTIAL_UPDATE_CASE_SENSITIVE_FIELDS_UNSUPPORTED = intern(PARTIAL_UPDATE_CASE_SENSITIVE_FIELDS, false);
 
     // ── Instance fields ───────────────────────────────────────────────────────
 

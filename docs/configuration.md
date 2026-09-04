@@ -12,6 +12,29 @@ Select a provider and supply its connection and auth properties.
 | `multiclouddb.provider` | Provider ID | `cosmos`, `dynamo`, `spanner` |
 | `multiclouddb.feature.*` | Feature flags | Provider-specific opt-ins |
 
+## Partial Update and Operation Options
+
+Partial update has no provider-specific configuration switch. All built-in
+providers declare `Capability.PARTIAL_UPDATE`, and `update()` always uses
+shallow top-level set/replace semantics.
+
+`OperationOptions.ttlSeconds()` is valid only for `create()` and `upsert()`.
+Supplying it to `update()` returns non-retryable `INVALID_REQUEST` before
+provider I/O.
+
+The native partial-update ceilings are not configurable:
+
+| Provider | Partial-update envelope |
+|----------|-------------------------|
+| Cosmos DB | One direct patch for up to 10 fields; one same-item transactional batch for wider updates, capped at 100 operations and 2,097,152 serialized bytes; resulting document capped at 2,097,152 bytes by Cosmos DB after the attempted update |
+| DynamoDB | One `UpdateItem`; generated expression capped at 4,096 UTF-8 bytes before I/O, and resulting item capped at 409,600 bytes by DynamoDB after the attempted update |
+| Spanner | Not part of this release; the unchanged provider does not advertise `PARTIAL_UPDATE` |
+
+Cosmos and Dynamo report `Capability.PARTIAL_UPDATE=true`,
+`PARTIAL_UPDATE_EXTENDED_PAYLOAD=false`, and
+`PARTIAL_UPDATE_CASE_SENSITIVE_FIELDS=true`. Spanner retains its existing
+capability set; a valid update is rejected by the shared core gate before any
+Spanner I/O.
 ---
 
 ## Azure Cosmos DB
@@ -92,7 +115,7 @@ instance. Writes are unaffected — Cosmos DB write durability is independent of
 
 > **Note:** Any non-aggregate query without an explicit `ORDER BY` has
 > `ORDER BY c.id ASC` appended automatically, including single-partition queries
-> (see [Compatibility — Result-set ordering](compatibility.md#result-set-ordering)).
+> (see [Compatibility — Default Sort-Key Ordering](compatibility.md#default-sort-key-ordering)).
 > Aggregate and `GROUP BY` queries are excluded from this default ordering behavior.
 > Selecting EVENTUAL consistency reduces per-item read cost but does not eliminate
 > the sort-merge RU overhead introduced by this default ordering.

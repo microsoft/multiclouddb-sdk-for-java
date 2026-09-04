@@ -114,12 +114,26 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
     }
 
     @Override
-    public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> fields, OperationOptions options) {
         checkOpen(OperationNames.UPDATE);
         Instant start = Instant.now();
         try {
-            DocumentSizeValidator.validate(document, OperationNames.UPDATE);
-            providerClient.update(address, key, document, options);
+            // Portable partial-update preflight, shared by all providers, runs in a fixed
+            // order and performs zero provider I/O on failure:
+            //   1) field-map / name / reserved / underscore / case-collision validation and
+            //      rejection of a non-null update TTL (PartialUpdateValidator),
+            //   2) the common serialized-size check (max 408,576 bytes), then
+            //   3) the internal core PARTIAL_UPDATE capability gate.
+            PartialUpdateValidator.validate(fields, options, OperationNames.UPDATE);
+            DocumentSizeValidator.validate(fields, OperationNames.UPDATE);
+            // Core release gate: Cosmos DB and DynamoDB advertise partial_update. The
+            // unchanged Spanner provider does not, so valid calls fail here locally and
+            // non-retryably with operation=update and
+            // providerDetails.capability=partial_update. The gate never consults
+            // PARTIAL_UPDATE_EXTENDED_PAYLOAD; supported calls delegate exactly once.
+            checkCapability(Capability.PARTIAL_UPDATE, OperationNames.UPDATE,
+                    "Partial update (partial_update) is not supported by provider " + config.provider().id());
+            providerClient.update(address, key, fields, options);
             LOG.debug("update completed: address={}, key={}, duration={}ms",
                     address, key, Duration.between(start, Instant.now()).toMillis());
         } catch (MulticloudDbException e) {

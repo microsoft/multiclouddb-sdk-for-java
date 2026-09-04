@@ -48,6 +48,8 @@ import software.amazon.awssdk.services.dynamodb.model.KeySchemaElement;
 import software.amazon.awssdk.services.dynamodb.model.KeyType;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.PutItemResponse;
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemResponse;
 import software.amazon.awssdk.services.dynamodb.model.ReturnConsumedCapacity;
 import software.amazon.awssdk.services.dynamodb.model.DescribeTableRequest;
 import software.amazon.awssdk.services.dynamodb.model.DescribeTableResponse;
@@ -299,41 +301,52 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
     }
 
     /**
-     * Replaces an existing item in DynamoDB (conditional put).
+     * Applies a portable shallow, set/replace-only partial update to an existing item.
      * <p>
-     * Uses a {@code PutItem} with an {@code attribute_exists(partitionKey)} condition
-     * expression. If no item with the given key exists, the operation fails with
-     * {@link com.multiclouddb.api.MulticloudDbErrorCategory#CONFLICT} (mapped from
-     * DynamoDB's {@code ConditionalCheckFailedException}).
+     * Uses exactly one conditional {@code UpdateItem} built by {@link DynamoPartialUpdatePlanner}:
+     * one {@code SET #fN = :vN} clause per validated field with stable ordinal aliases (so
+     * reserved words and literal {@code .}/{@code /}/{@code ~} names never appear in the
+     * expression), an aliased {@code attribute_exists} guard, structured mapped values, and no
+     * TTL assignment. No adapter-side read, duplicate capability gate, or retry loop is added —
+     * the default client owns the core {@link com.multiclouddb.api.Capability#PARTIAL_UPDATE}
+     * gate. A failed existence guard maps to
+     * {@link com.multiclouddb.api.MulticloudDbErrorCategory#NOT_FOUND}; an update expression
+     * above 4,096 UTF-8 bytes fails locally with
+     * {@link com.multiclouddb.api.MulticloudDbErrorCategory#UNSUPPORTED_CAPABILITY} and zero
+     * DynamoDB I/O. If the existing item plus accepted fields would exceed DynamoDB's
+     * 409,600-byte result-item limit, the single attempted {@code UpdateItem} returns a
+     * size-specific {@code ValidationException}; that variant is normalized to the same
+     * non-retryable capability error without an adapter read/merge preflight.
      *
      * @param address  the logical database + collection
-     * @param key      the document key identifying the item to replace
-     * @param document the new document payload; replaces all attributes of the stored item
-     * @param options  operation options (currently unused by this provider)
+     * @param key      the document key identifying the item to update
+     * @param fields   validated literal top-level fields to set/replace
+     * @param options  operation options (update TTL is rejected by shared preflight)
      * @throws com.multiclouddb.api.MulticloudDbException category {@code NOT_FOUND} if the
      *         item does not exist
      */
     @Override
-    public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> fields, OperationOptions options) {
         checkOpen(OperationNames.UPDATE);
         try {
-            Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
-            item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
-            item.put(DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(
-                    key.sortKey() != null ? key.sortKey() : key.partitionKey()));
-            if (options != null && options.ttlSeconds() != null) {
-                long expiryEpoch = Instant.now().getEpochSecond() + options.ttlSeconds();
-                item.put(DynamoConstants.ATTR_TTL_EXPIRY, AttributeValue.fromN(String.valueOf(expiryEpoch)));
-            }
+            DynamoPartialUpdatePlanner.Plan plan = DynamoPartialUpdatePlanner.plan(fields);
 
-            PutItemRequest request = PutItemRequest.builder()
+            Map<String, AttributeValue> keyMap = new LinkedHashMap<>();
+            keyMap.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
+            keyMap.put(DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(
+                    key.sortKey() != null ? key.sortKey() : key.partitionKey()));
+
+            UpdateItemRequest request = UpdateItemRequest.builder()
                     .tableName(resolveTableName(address))
-                    .item(item)
-                    .conditionExpression("attribute_exists(" + DynamoConstants.ATTR_PARTITION_KEY + ")")
+                    .key(keyMap)
+                    .updateExpression(plan.updateExpression())
+                    .conditionExpression(plan.conditionExpression())
+                    .expressionAttributeNames(plan.names())
+                    .expressionAttributeValues(plan.values())
                     .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL)
                     .build();
 
-            PutItemResponse response = dynamoClient.putItem(request);
+            UpdateItemResponse response = dynamoClient.updateItem(request);
             logItemDiagnostics(OperationNames.UPDATE, address, response.responseMetadata().requestId(),
                     response.consumedCapacity());
         } catch (ConditionalCheckFailedException e) {

@@ -18,7 +18,7 @@ public final class OperationOptions {
     private static final OperationOptions DEFAULTS = new OperationOptions(null, null, false);
 
     private final Duration timeout;
-    /** TTL in seconds for create/upsert operations; {@code null} means no TTL (FR-054). */
+    /** TTL in seconds for create/upsert operations only; {@code null} means no TTL (FR-054). {@code update()} rejects a non-null value with INVALID_REQUEST. */
     private final Integer ttlSeconds;
     /** When {@code true}, providers that support {@link Capability#WRITE_TIMESTAMP} return {@link DocumentMetadata} (FR-058). */
     private final boolean includeMetadata;
@@ -52,8 +52,12 @@ public final class OperationOptions {
     }
 
     /**
-     * Document TTL in seconds for create/upsert operations, or {@code null} if no TTL.
-     * Providers that do not support {@link Capability#ROW_LEVEL_TTL} will ignore this field.
+     * Document TTL in seconds for {@code create()}/{@code upsert()} only, or {@code null} if
+     * no TTL. TTL is <strong>not</strong> part of partial update: {@code update()} rejects a
+     * non-null {@code ttlSeconds} with {@link MulticloudDbErrorCategory#INVALID_REQUEST}
+     * before provider I/O. To set or reset TTL, pass it to a complete {@code create()} or
+     * {@code upsert()} document. Providers that do not support {@link Capability#ROW_LEVEL_TTL}
+     * ignore this field.
      */
     public Integer ttlSeconds() {
         return ttlSeconds;
@@ -88,7 +92,8 @@ public final class OperationOptions {
         }
 
         /**
-         * Sets a document TTL for create/upsert operations.
+         * Sets a document TTL for {@code create()}/{@code upsert()} operations only.
+         * A non-null TTL is rejected by {@code update()} in shared preflight.
          *
          * @param ttlSeconds time-to-live in seconds (must be >= 1)
          * @return this builder

@@ -82,16 +82,22 @@ class CapabilityTest {
     }
 
     @Test
-    @DisplayName("All 13 well-known singletons appear in registeredValues()")
+    @DisplayName("Partial-update singletons appear in registeredValues()")
     void registeredValuesContainsWellKnownSingletons() {
         var registered = Capability.registeredValues();
         assertTrue(registered.contains(Capability.TRANSACTIONS_CAP));
         assertTrue(registered.contains(Capability.TRANSACTIONS_UNSUPPORTED));
         assertTrue(registered.contains(Capability.CROSS_PARTITION_QUERY_CAP));
         assertTrue(registered.contains(Capability.CROSS_PARTITION_QUERY_UNSUPPORTED));
-        // 13 well-known names × 2 (supported + unsupported) = at least 26
-        assertTrue(registered.size() >= 26,
-                "expected at least 26 entries (13 × 2), got " + registered.size());
+        assertTrue(registered.contains(Capability.PARTIAL_UPDATE_CAP));
+        assertTrue(registered.contains(Capability.PARTIAL_UPDATE_UNSUPPORTED));
+        assertTrue(registered.contains(Capability.PARTIAL_UPDATE_EXTENDED_PAYLOAD_CAP));
+        assertTrue(registered.contains(Capability.PARTIAL_UPDATE_EXTENDED_PAYLOAD_UNSUPPORTED));
+        assertTrue(registered.contains(Capability.PARTIAL_UPDATE_CASE_SENSITIVE_FIELDS_CAP));
+        assertTrue(registered.contains(Capability.PARTIAL_UPDATE_CASE_SENSITIVE_FIELDS_UNSUPPORTED));
+        // 17 pre-built names × supported/unsupported.
+        assertTrue(registered.size() >= 34,
+                "expected at least 34 entries (17 × 2), got " + registered.size());
     }
 
     @Test
@@ -103,4 +109,3 @@ class CapabilityTest {
         assertTrue(s.contains("detail"));
     }
 }
-

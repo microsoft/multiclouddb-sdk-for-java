@@ -29,12 +29,12 @@ import java.util.Map;
  * system fields injected by providers before writing ({@code partitionKey},
  * {@code sortKey}, {@code id}, {@code ttlExpiry}, etc.).  DynamoDB's 400 KB cap
  * is measured against its internal wire format, which can be slightly larger than
- * the raw JSON.  The effective validated limit is therefore 399 KB.
+ * the raw JSON.  The effective validated limit is therefore exactly 408,576 bytes (399 KiB).
  */
 public final class DocumentSizeValidator {
 
     /** Maximum document size in bytes — DynamoDB hard limit minus 1 KB safety margin. */
-    public static final int MAX_BYTES = 400 * 1024 - 1024; // 399 KB
+    public static final int MAX_BYTES = 400 * 1024 - 1024; // 408,576 bytes (399 KiB)
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -60,7 +60,7 @@ public final class DocumentSizeValidator {
                 throw new MulticloudDbException(new MulticloudDbError(
                         MulticloudDbErrorCategory.INVALID_REQUEST,
                         "Document size " + bytes.length + " bytes exceeds the maximum of "
-                                + MAX_BYTES + " bytes (399 KB). Reduce the document size to "
+                                + MAX_BYTES + " bytes (399 KiB). Reduce the document size to "
                                 + "maintain portability across all providers.",
                         null,
                         operation,

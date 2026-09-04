@@ -7,6 +7,14 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- `update()` now uses native partial update instead of `replaceItem`: one `patchItem` for up to 10 fields, or one same-item transactional batch containing at-most-10-field patch chunks for wider requests. Omitted fields are preserved and HTTP 404 remains portable `NOT_FOUND`.
+- Accepted updates issue one Cosmos SDK request. Wide requests are rejected before I/O above 100 batch operations or 2,097,152 serialized bytes; RU cost grows with patch operations/chunks.
+- Update HTTP 413 is normalized to non-retryable `UNSUPPORTED_CAPABILITY` with `reason=cosmos_result_item_size_limit` and `maximumResultBytes=2097152`; it follows one attempted patch/batch and leaves the document unchanged.
+- CRUD/update HTTP 408 and 410 are retryable `TRANSIENT_FAILURE` responses, with 410 substatus retained. Failed transactional batches skip dependent HTTP 424 results and select the first usable non-424 operation failure, then an aggregate failure, then a sanitized no-root `PROVIDER_ERROR`.
+- Declares `PARTIAL_UPDATE` and `PARTIAL_UPDATE_CASE_SENSITIVE_FIELDS` supported, and `PARTIAL_UPDATE_EXTENDED_PAYLOAD` unsupported because native request or resulting-item envelopes can bind before the common 408,576-byte limit.
+
 ## [0.1.0-beta.2] — 2026-06-17
 
 > **Requires `multiclouddb-api` 0.1.0-beta.2 or later** — this release consumes API surface (change-feed cursors, `CLIENT_CLOSED` envelope, `EXTENDED_CHANGE_FEED_HISTORY` capability) introduced in API beta.2. The dependency is pinned in the published POM.

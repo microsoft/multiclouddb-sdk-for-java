@@ -3,35 +3,54 @@
 
 package com.multiclouddb.provider.dynamo;
 
+import com.multiclouddb.api.Capability;
 import com.multiclouddb.api.MulticloudDbError;
 import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.MulticloudDbException;
+import com.multiclouddb.api.OperationNames;
 import com.multiclouddb.api.ProviderId;
 import software.amazon.awssdk.services.dynamodb.model.DynamoDbException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Maps DynamoDB exceptions to portable {@link MulticloudDbException} instances.
  */
 public final class DynamoErrorMapper {
 
+    private static final Pattern RESULT_ITEM_SIZE_LIMIT_MESSAGE = Pattern.compile(
+            "\\bitem size(?: to update)? has exceeded the maximum allowed size\\b",
+            Pattern.CASE_INSENSITIVE);
+
     private DynamoErrorMapper() {
     }
 
     public static MulticloudDbException map(DynamoDbException e, String operation) {
         int httpStatus = e.statusCode();
-        MulticloudDbErrorCategory category = mapCategory(e);
-        boolean retryable = isRetryable(e);
+        boolean resultItemSizeLimit = isResultItemSizeLimit(e, operation);
+        MulticloudDbErrorCategory category = resultItemSizeLimit
+                ? MulticloudDbErrorCategory.UNSUPPORTED_CAPABILITY
+                : mapCategory(e);
+        boolean retryable = !resultItemSizeLimit && isRetryable(e);
 
         Map<String, String> details = new LinkedHashMap<>();
         if (e.awsErrorDetails() != null) {
-            details.put("errorCode", e.awsErrorDetails().errorCode());
-            details.put("serviceName", e.awsErrorDetails().serviceName());
+            if (e.awsErrorDetails().errorCode() != null) {
+                details.put("errorCode", e.awsErrorDetails().errorCode());
+            }
+            if (e.awsErrorDetails().serviceName() != null) {
+                details.put("serviceName", e.awsErrorDetails().serviceName());
+            }
         }
         if (e.requestId() != null) {
             details.put("requestId", e.requestId());
+        }
+        if (resultItemSizeLimit) {
+            details.put("capability", Capability.PARTIAL_UPDATE_EXTENDED_PAYLOAD);
+            details.put("reason", "dynamodb_result_item_size_limit");
+            details.put("maximumResultBytes", "409600");
         }
 
         MulticloudDbError error = new MulticloudDbError(
@@ -43,6 +62,19 @@ public final class DynamoErrorMapper {
                 httpStatus,
                 details);
         return new MulticloudDbException(error, e);
+    }
+
+    private static boolean isResultItemSizeLimit(DynamoDbException e, String operation) {
+        if (!OperationNames.UPDATE.equals(operation) || e.awsErrorDetails() == null
+                || !"ValidationException".equals(e.awsErrorDetails().errorCode())) {
+            return false;
+        }
+        return matchesResultItemSizeMessage(e.getMessage())
+                || matchesResultItemSizeMessage(e.awsErrorDetails().errorMessage());
+    }
+
+    private static boolean matchesResultItemSizeMessage(String message) {
+        return message != null && RESULT_ITEM_SIZE_LIMIT_MESSAGE.matcher(message).find();
     }
 
     private static MulticloudDbErrorCategory mapCategory(DynamoDbException e) {

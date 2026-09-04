@@ -33,7 +33,7 @@ switch providers by changing a single properties file, with zero code changes.
 
 ## Table of Contents
 
-- [Why Multicloud DB?](#why-clouddb)
+- [Why Multicloud DB?](#why-multicloud-db)
 - [Quick Start](#quick-start)
 - [Portable Query DSL](#portable-query-dsl)
 - [Architecture](#architecture)
@@ -46,6 +46,7 @@ switch providers by changing a single properties file, with zero code changes.
 - [Supported Providers](#supported-providers)
 - [Configuration](#configuration)
 - [Capabilities & Portability](#capabilities--portability)
+- [Partial Updates](#partial-updates)
 - [Result Set Control](#result-set-control)
 - [Document TTL](#document-ttl)
 - [Document Metadata](#document-metadata)
@@ -291,7 +292,7 @@ All application code depends on `multiclouddb-api`. The core types are:
 
 | Type | Purpose |
 |------|---------|
-| `MulticloudDbClient` | Portable interface: `create`, `read`, `update`, `delete`, `upsert`, `query`, `provisionSchema`, `capabilities`, `nativeClient` |
+| `MulticloudDbClient` | Portable interface: `create`, `read`, shallow partial `update`, `delete`, full-replacement `upsert`, query, provisioning, and capabilities |
 | `MulticloudDbClientFactory` | Creates a `MulticloudDbClient` by discovering providers via `ServiceLoader` |
 | `MulticloudDbClientConfig` | Builder-pattern config: provider selection, connection, auth, feature flags |
 | `ResourceAddress` | `(database, collection)` pair targeting a container/table |
@@ -306,7 +307,7 @@ All application code depends on `multiclouddb-api`. The core types are:
 | `Capability` | Named capability with `supported` flag and notes |
 | `MulticloudDbException` | Structured error with `MulticloudDbError` (category, provider, native code) |
 | `PortabilityWarning` | Signals when an operation uses non-portable behavior |
-| `OperationOptions` | Timeout, TTL (`ttlSeconds`), metadata flag (`includeMetadata`) |
+| `OperationOptions` | Timeout, create/upsert-only TTL (`ttlSeconds`), metadata flag (`includeMetadata`) |
 | `OperationDiagnostics` | Latency, request units/charge, request ID, ETag, item count |
 | `Expression` | AST node interface for parsed query expressions |
 | `ExpressionParser` | Parses portable expression strings into an AST |
@@ -361,7 +362,7 @@ do this, for several reasons:
 
 4. **Compile-time safety.** A missing Key is a compiler error. A missing field in a JSON document is a runtime error deep in the provider layer.
 
-See the [developer guide](docs/guide.md#why-key-is-an-explicit-parameter) for the full rationale and per-provider field mapping details.
+See the [developer guide](docs/guide.md#why-multiclouddbkey-is-an-explicit-parameter) for the full rationale and per-provider field mapping details.
 
 ---
 
@@ -477,6 +478,39 @@ for (Capability cap : caps.all()) {
 | **ORDER BY** | ✓ | ✗ | ✓ |
 | **Row-level TTL** | ✓ | ✓ | ✗ |
 | **Write timestamp / metadata** | ✓ | ✗ | ✗ |
+| **Partial update** | ✓ | ✓ | ✗ (not in this release) |
+| **Partial update extended payload** | ✗ | ✗ | — |
+| **Case-sensitive partial-update fields** | ✓ | ✓ | — |
+
+---
+
+## Partial Updates
+
+`update()` sets or replaces only supplied top-level fields and preserves omitted
+fields. It returns `NOT_FOUND` without creating a missing item. Map/list values
+replace their complete top-level value, and Java `null` stores null.
+
+```java
+client.update(address, key, Map.of("status", "shipped"));
+```
+
+Cosmos uses one direct patch for up to 10 fields or one same-item transactional
+batch for wider updates. DynamoDB uses one conditional `UpdateItem`. The Spanner
+provider is unchanged and does not advertise `PARTIAL_UPDATE` in this release;
+a valid call fails at the shared capability gate with non-retryable
+`UNSUPPORTED_CAPABILITY` before provider delegation.
+
+Cosmos can reject one attempted patch or batch with HTTP 413 if the resulting
+document would exceed 2,097,152 bytes; the SDK surfaces that atomic failure as
+`UNSUPPORTED_CAPABILITY` with `reason=cosmos_result_item_size_limit`.
+DynamoDB's generated expression is capped at 4,096 UTF-8 bytes before I/O. A
+small update can also be rejected after the one attempted `UpdateItem` if the
+existing item plus fields would exceed 409,600 bytes, reported with
+`reason=dynamodb_result_item_size_limit`.
+
+For complete replacement, use `upsert()` with the complete document; it creates
+a missing item. `ttlSeconds` is invalid on `update()` and fails before provider
+I/O with `INVALID_REQUEST`.
 
 ---
 
@@ -516,12 +550,13 @@ OperationOptions opts = OperationOptions.builder()
 
 client.create(address, key, doc, opts);
 client.upsert(address, key, doc, opts);
-client.update(address, key, updatedDoc, opts);
 ```
 
 TTL requires collection-level configuration first (enable "Default TTL" on the
 Cosmos DB container; enable TTL on the DynamoDB table using `ttlExpiry` as the
-attribute name). Spanner ignores `ttlSeconds` (`ROW_LEVEL_TTL=false`).
+attribute name). Spanner ignores TTL on create/upsert
+(`ROW_LEVEL_TTL=false`). `update()` rejects non-null `ttlSeconds` on every
+provider.
 
 ---
 
