@@ -184,8 +184,9 @@ QueryRequest cosmosQuery = QueryRequest.builder()
         .build();
 
 // DynamoDB PartiQL (only works with DynamoDB provider)
+// Table name is database__collection - here ResourceAddress("mydb", "todos")
 QueryRequest dynamoQuery = QueryRequest.builder()
-        .nativeExpression("SELECT * FROM \"todos\" WHERE begins_with(title, 'Ship')")
+        .nativeExpression("SELECT * FROM \"mydb__todos\" WHERE begins_with(title, 'Ship')")
         .pageSize(25)
         .build();
 
@@ -291,7 +292,7 @@ All application code depends on `multiclouddb-api`. The core types are:
 
 | Type | Purpose |
 |------|---------|
-| `MulticloudDbClient` | Portable interface: `create`, `read`, `update`, `delete`, `upsert`, `query`, `provisionSchema`, `capabilities`, `nativeClient` |
+| `MulticloudDbClient` | Portable interface: `create`, `read`, `update`, `delete`, `upsert`, `query`, `provisionSchema`, `capabilities` |
 | `MulticloudDbClientFactory` | Creates a `MulticloudDbClient` by discovering providers via `ServiceLoader` |
 | `MulticloudDbClientConfig` | Builder-pattern config: provider selection, connection, auth, feature flags |
 | `ResourceAddress` | `(database, collection)` pair targeting a container/table |
