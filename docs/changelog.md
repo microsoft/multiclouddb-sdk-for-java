@@ -102,6 +102,17 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### [Unreleased]
 
+**Fixed:**
+
+- DynamoDB `N` and `NS` decoding now preserves native numeric precision, including
+  nested values in read, query, and change-feed results. Decimal/exponent strings
+  return `DecimalNode` / `BigDecimal`; integers outside the `long` range return
+  `BigIntegerNode` / `BigInteger`, while ordinary integer representations remain
+  unchanged. Re-encoding preserves numeric values; number sets retain the existing
+  array/list mapping rather than round-tripping the native `NS` type.
+  See [native numeric fidelity](compatibility.md#dynamodb-native-numeric-fidelity)
+  and [#110](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/110).
+
 **Added:**
 
 - Change-feed reader backed by DynamoDB Streams (`DescribeStream`, `GetShardIterator`, `GetRecords`). `listCursors` returns one cursor per open shard at the live tip with a pre-resolved `LATEST` iterator (`@@ITER:<iterator>` continuation), avoiding silent event loss between mint and first read. `readChanges` drains one shard''s page per call, rotates the partition list across shards, transitions to an `AFTER_SEQUENCE_NUMBER` continuation on the first observed record, and absorbs shard splits/closes. `TrimmedDataAccessException` → `CursorExpiredException(reason=PROVIDER_TRIMMED)`; `ExpiredIteratorException` → `reason=ITERATOR_EXPIRED`. Change-event payloads preserve the full DynamoDB type system via the shared `DynamoItemMapper`. The target table must have `StreamSpecification(NEW_AND_OLD_IMAGES)` enabled; otherwise `UNSUPPORTED_CAPABILITY(reason="stream_not_enabled")`.
