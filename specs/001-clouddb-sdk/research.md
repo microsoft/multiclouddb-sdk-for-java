@@ -293,7 +293,7 @@ This appendix is **non-normative**. It records Java SDK behaviors that impact th
   - **Cosmos DB**: Render `SELECT TOP N VALUE c ...` when limit is set; append `ORDER BY c.{field} ASC/DESC` to the generated SQL.
   - **DynamoDB**: Cap page size to `Math.min(pageSize, limit)` on scan and PartiQL paths. ORDER BY capability is absent (DynamoDB PartiQL has no ORDER BY).
   - **Spanner**: Append `ORDER BY {field} ASC/DESC` and cap limit via `Math.min(pageSize, limit)` in generated GoogleSQL.
-- **Rationale**: All three providers support LIMIT natively. ORDER BY is a documented capability-gated feature on Cosmos and Spanner only (absent on DynamoDB). Keeping limit and orderBy in `QueryRequest` is consistent with the existing builder pattern.
+- **Rationale**: The providers offer different limit mechanisms, not a shared total-cap guarantee: Cosmos uses `SELECT TOP N` on generated queries; DynamoDB accepts page-local limits but declares `RESULT_LIMIT=false`; Spanner declares `RESULT_LIMIT=true` for per-page `LIMIT` only. The across-page requirement remains in force, with the cumulative budget still unimplemented; see [FR-052 implementation status](spec.md#result-set-control-requirements) and [US5 follow-up](tasks.md#phase-15-user-story-5--result-set-control-top-n-and-ordering-priority-p1). ORDER BY is a documented capability-gated feature on Cosmos and Spanner only (absent on DynamoDB). Keeping limit and orderBy in `QueryRequest` is consistent with the existing builder pattern.
 - **Alternatives considered**:
   - Client-side limit: wasteful at scale, violates spec intent.
   - Separate `LimitedQueryRequest` subtype: unnecessary complexity, breaks the existing builder pattern.
@@ -313,7 +313,8 @@ This appendix is **non-normative**. It records Java SDK behaviors that impact th
 - **Decision**: Add `Integer ttlSeconds` field to `OperationOptions`.
   - **Cosmos DB**: Set `_ttl` field on the document JSON node before writing (Cosmos evaluates `_ttl` as seconds from document creation).
   - **DynamoDB**: Add a `ttlExpiry` attribute set to `Instant.now().plus(ttlSeconds).getEpochSecond()` (epoch seconds). Attribute name defined in `DynamoConstants`.
-  - **Spanner**: No native row-level TTL. Capability check at request time → `UNSUPPORTED_CAPABILITY` error.
+  - **Spanner (target design, not current behavior)**: No native row-level TTL. Capability check at request time → `UNSUPPORTED_CAPABILITY` error.
+- **Implementation status (2026-09)**: Spanner currently ignores the TTL hint instead of raising the required error. The [FR-057 requirement](spec.md#document-ttl-and-write-metadata-requirements) is unchanged; its unsupported-TTL gate remains deferred and unimplemented [US6 follow-up work](tasks.md#phase-16-user-story-6--document-ttl-and-write-metadata-priority-p2).
 - **Rationale**: `OperationOptions` is the established per-request options carrier. TTL is a per-request option for writes.
 - **Alternatives considered**: TTL as a separate method parameter — would break all write method signatures.
 

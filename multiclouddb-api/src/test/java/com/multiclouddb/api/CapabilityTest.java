@@ -21,8 +21,8 @@ class CapabilityTest {
     @Test
     @DisplayName("Well-known unsupported singletons are the same instance via of() and the constant")
     void wellKnownUnsupportedSingleton() {
-        assertSame(Capability.CROSS_PARTITION_QUERY_UNSUPPORTED,
-                Capability.of(Capability.CROSS_PARTITION_QUERY, false));
+        assertSame(Capability.BATCH_OPERATIONS_UNSUPPORTED,
+                Capability.of(Capability.BATCH_OPERATIONS, false));
     }
 
     @Test
@@ -82,16 +82,29 @@ class CapabilityTest {
     }
 
     @Test
-    @DisplayName("All 13 well-known singletons appear in registeredValues()")
+    @DisplayName("Baseline and optional-extension singletons appear in registeredValues()")
     void registeredValuesContainsWellKnownSingletons() {
         var registered = Capability.registeredValues();
         assertTrue(registered.contains(Capability.TRANSACTIONS_CAP));
         assertTrue(registered.contains(Capability.TRANSACTIONS_UNSUPPORTED));
+        assertTrue(registered.contains(Capability.ORDER_BY_CAP));
+        assertTrue(registered.contains(Capability.ORDER_BY_UNSUPPORTED));
+        assertTrue(registered.contains(Capability.CHANGE_FEED_CAP));
+        assertTrue(registered.contains(Capability.BATCH_OPERATIONS_CAP));
+        assertTrue(registered.contains(Capability.STRONG_CONSISTENCY_CAP));
+        assertTrue(registered.contains(Capability.CONTINUATION_TOKEN_PAGING_CAP));
+        assertTrue(registered.contains(Capability.PORTABLE_QUERY_EXPRESSION_CAP));
+        assertTrue(registered.contains(Capability.EXTENDED_CHANGE_FEED_HISTORY_CAP));
+        assertTrue(registered.contains(Capability.EXTENDED_CHANGE_FEED_HISTORY_UNSUPPORTED));
         assertTrue(registered.contains(Capability.CROSS_PARTITION_QUERY_CAP));
         assertTrue(registered.contains(Capability.CROSS_PARTITION_QUERY_UNSUPPORTED));
-        // 13 well-known names × 2 (supported + unsupported) = at least 26
-        assertTrue(registered.size() >= 26,
-                "expected at least 26 entries (13 × 2), got " + registered.size());
+        assertTrue(registered.contains(Capability.NATIVE_SQL_QUERY_CAP));
+        assertTrue(registered.contains(Capability.LIKE_OPERATOR_UNSUPPORTED));
+        assertTrue(registered.contains(Capability.ENDS_WITH_UNSUPPORTED));
+        assertTrue(registered.contains(Capability.REGEX_MATCH_UNSUPPORTED));
+        assertTrue(registered.contains(Capability.CASE_FUNCTIONS_UNSUPPORTED));
+        assertTrue(registered.size() >= 28,
+                "expected at least 28 entries (14 singleton pairs), got " + registered.size());
     }
 
     @Test
@@ -103,4 +116,3 @@ class CapabilityTest {
         assertTrue(s.contains("detail"));
     }
 }
-

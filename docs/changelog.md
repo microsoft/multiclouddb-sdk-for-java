@@ -11,6 +11,20 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### [Unreleased]
 
+**Changed:**
+
+- Clarified existing optional query scoping, native expressions, provider-specific
+  ordering and limits. There is no common cumulative cap or client-side page
+  truncation; public API behavior is unchanged.
+- Clarified the common supported capability baseline versus optional extensions.
+  DynamoDB rejects explicit `ORDER_BY`; extended change-feed history requires
+  opt-in and is supported on Cosmos/Spanner, not DynamoDB.
+- Clarified existing TTL setup, replacement-write behavior, and opt-in metadata
+  availability. Provider support differences and execution remain unchanged.
+- Strengthened local regression coverage for TTL/metadata options, validation,
+  `DocumentResult` constructors, and baseline/optional capability declarations.
+  These unit/static checks do not verify service-level TTL expiration.
+
 **Added:**
 
 - Portable change-feed API in `com.multiclouddb.api.changefeed`: `ChangeFeedCursor` (opaque, persistable via `toToken()` / `fromToken(...)` with a `now()` live-tip sentinel), `ChangeFeedPage` (events + `nextCursor` + `hasMore`/`terminal`), `ChangeEvent` (with stable `providerEventId` for dedup), `ChangeType`, and `CursorExpiredException`. Two new entry points on `MulticloudDbClient`: `listCursors(ResourceAddress)` and `readChanges(ResourceAddress, ChangeFeedCursor[, OperationOptions])`. Provider SPI methods default to `UNSUPPORTED_CAPABILITY` so existing adapters compile unchanged. The cursor wire format is opaque, version-tagged Base64URL JSON; the 24-hour portable baseline is enforced client-side on the token''s last-issued timestamp. `OperationOptions.timeout()` is not enforced on the change-feed path in this release.
@@ -69,6 +83,17 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- Clarified existing optional query scoping, native SQL, field ordering, `TOP N`,
+  and default `c.id ASC` caller-order/aggregate guards. Query execution, the
+  absence of client-side cumulative truncation, and extended-history opt-in
+  provisioning/error checks remain unchanged.
+- Clarified existing container TTL prerequisites/defaults, replacement writes,
+  and opt-in `_ts`/ETag metadata availability; provider execution is unchanged.
+- Strengthened local mock regressions for TTL writes and exact request
+  partition/id routing, metadata opt-in/default behavior, and system-field
+  stripping without response mutation. These are not service TTL-expiration
+  or HTTP 404-path tests.
+
 - Removed the hardcoded `ConsistencyLevel.SESSION` override from `CosmosClientBuilder`. Accounts with a default of `STRONG` or `BOUNDED_STALENESS` will now serve reads at their configured level. To restore the previous behaviour, set `multiclouddb.connection.consistencyLevel=SESSION`.
 - `BETWEEN` translation now wraps in parentheses (`(c.field BETWEEN @lo AND @hi)`) to avoid a Cosmos NoSQL parser ambiguity with trailing `AND`.
 
@@ -111,6 +136,19 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- Clarified existing optional partition scoping, Query/Scan routing, native
+  PartiQL, and per-page `limit`. Unsupported `CROSS_PARTITION_QUERY` and
+  `NATIVE_SQL_QUERY` declarations do not block those legacy execution paths;
+  explicit `ORDER_BY`, including sortKey ordering, remains unsupported.
+- Clarified that page-local sorting is not global scan order or a snapshot,
+  pages are not truncated into a cumulative cap, and extended-history opt-in
+  remains rejected. Provider execution is unchanged.
+- Clarified existing table TTL setup, replacement writes, expiry recalculation
+  at each write, and opt-in expiry metadata despite `WRITE_TIMESTAMP=false`.
+- Strengthened local mock regressions for TTL writes, exact create/update
+  conditions and unconditional upserts, and opt-in expiry reads. These checks
+  do not verify service-level expiration or add write-timestamp support.
+
 - `SORT_KEY_ASC` comparator handles numeric sort keys with type-aware comparison (Long/Integer use native compare; mixed numerics fall back to `BigDecimal`) so integers beyond `2^53` are no longer truncated.
 - `BETWEEN` translation wraps in parentheses (`(field BETWEEN ? AND ?)`) for cross-provider consistency.
 
@@ -146,6 +184,19 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - Typed `CLIENT_CLOSED` envelope replacing prior raw `IllegalStateException` from `checkOpen()`. `close()` is idempotent; post-close errors attribute the failing operation instead of `"checkOpen"`.
 
 **Changed:**
+
+- Clarified existing optional partition scoping, native GoogleSQL, field
+  ordering, and per-page `limit` on non-native paths. Native query-option
+  handling, PK/SK defaults and tiebreakers, and caller-order/literal/aggregate
+  guards remain unchanged; ordering is not a concurrent-write snapshot and
+  pages are not truncated into a cumulative cap.
+- Clarified existing extended-history opt-in provisioning/error checks,
+  unsupported TTL (the option is ignored), and opt-in empty metadata objects.
+  Provider execution and capability declarations remain unchanged.
+- Strengthened local mock regressions with independent create-mutation
+  table/operation/key/value expectations and separate metadata opt-in/default
+  checks. The zero-column read fixture verifies the empty metadata shell,
+  not payload round-tripping or service-level TTL behavior.
 
 - `upsert(address, key, document)` uses Spanner `INSERT_OR_UPDATE` (was `REPLACE`). `REPLACE` is internally delete-then-insert, which change streams surface as `mod_type=INSERT` — making a second upsert of the same key appear as `ChangeType.CREATE` instead of `ChangeType.UPDATE`. `INSERT_OR_UPDATE` matches Cosmos AVAD and DynamoDB Streams.
 - Spanner instance creation in `ensureDatabase` is gated to emulator mode. In production the instance is expected to pre-exist; only the database is created.

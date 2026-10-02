@@ -31,23 +31,22 @@ public abstract class CapabilitiesConformanceTest {
     void allKnownCapabilityNamesPresent() throws Exception {
         try (MulticloudDbClient client = ConformanceHarness.createClient(provider())) {
             CapabilitySet caps = client.capabilities();
-            // All 17 well-known capability names must be declared
             String[] knownNames = {
                     Capability.CONTINUATION_TOKEN_PAGING,
-                    Capability.CROSS_PARTITION_QUERY,
                     Capability.TRANSACTIONS,
                     Capability.BATCH_OPERATIONS,
                     Capability.STRONG_CONSISTENCY,
-                    Capability.NATIVE_SQL_QUERY,
                     Capability.CHANGE_FEED,
                     Capability.EXTENDED_CHANGE_FEED_HISTORY,
                     Capability.PORTABLE_QUERY_EXPRESSION,
-                    Capability.LIKE_OPERATOR,
                     Capability.ORDER_BY,
+                    Capability.CROSS_PARTITION_QUERY,
+                    Capability.NATIVE_SQL_QUERY,
+                    Capability.RESULT_LIMIT,
+                    Capability.LIKE_OPERATOR,
                     Capability.ENDS_WITH,
                     Capability.REGEX_MATCH,
                     Capability.CASE_FUNCTIONS,
-                    Capability.RESULT_LIMIT,
                     Capability.ROW_LEVEL_TTL,
                     Capability.WRITE_TIMESTAMP
             };
@@ -55,15 +54,27 @@ public abstract class CapabilitiesConformanceTest {
                 assertNotNull(caps.get(name),
                         "Provider " + provider().id() + " must declare capability: " + name);
             }
+            assertEquals(knownNames.length, caps.all().size(),
+                    "Providers must declare the baseline and optional extensions, including unsupported ones");
         }
     }
 
     @Test
-    void capabilityCountIs17() throws Exception {
+    void commonBaselineIsSupported() throws Exception {
         try (MulticloudDbClient client = ConformanceHarness.createClient(provider())) {
             CapabilitySet caps = client.capabilities();
-            assertEquals(17, caps.all().size(),
-                    "Provider " + provider().id() + " should declare exactly 17 capabilities");
+            String[] baseline = {
+                    Capability.CONTINUATION_TOKEN_PAGING,
+                    Capability.TRANSACTIONS,
+                    Capability.BATCH_OPERATIONS,
+                    Capability.STRONG_CONSISTENCY,
+                    Capability.CHANGE_FEED,
+                    Capability.PORTABLE_QUERY_EXPRESSION
+            };
+            for (String name : baseline) {
+                assertTrue(caps.isSupported(name),
+                        "Provider " + provider().id() + " must support baseline capability: " + name);
+            }
         }
     }
 

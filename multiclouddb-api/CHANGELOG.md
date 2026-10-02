@@ -7,6 +7,20 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- Clarified existing optional query scoping, native expressions, provider-specific
+  ordering and limits. There is no common cumulative cap or client-side page
+  truncation; public API behavior is unchanged.
+- Clarified the common supported capability baseline versus optional extensions.
+  DynamoDB rejects explicit `ORDER_BY`; extended change-feed history requires
+  opt-in and is supported on Cosmos/Spanner, not DynamoDB.
+- Clarified existing TTL setup, replacement-write behavior, and opt-in metadata
+  availability. Provider support differences and execution remain unchanged.
+- Strengthened local regression coverage for TTL/metadata options, validation,
+  `DocumentResult` constructors, and baseline/optional capability declarations.
+  These unit/static checks do not verify service-level TTL expiration.
+
 ## [0.1.0-beta.2] — 2026-06-17
 
 ### Added

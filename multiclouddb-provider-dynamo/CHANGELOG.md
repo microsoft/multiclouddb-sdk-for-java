@@ -7,6 +7,21 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- Clarified existing optional partition scoping, Query/Scan routing, native
+  PartiQL, and per-page `limit`. Unsupported `CROSS_PARTITION_QUERY` and
+  `NATIVE_SQL_QUERY` declarations do not block those legacy execution paths;
+  explicit `ORDER_BY`, including sortKey ordering, remains unsupported.
+- Clarified that page-local sorting is not global scan order or a snapshot,
+  pages are not truncated into a cumulative cap, and extended-history opt-in
+  remains rejected. Provider execution is unchanged.
+- Clarified existing table TTL setup, replacement writes, expiry recalculation
+  at each write, and opt-in expiry metadata despite `WRITE_TIMESTAMP=false`.
+- Strengthened local mock regressions for TTL writes, exact create/update
+  conditions and unconditional upserts, and opt-in expiry reads. These checks
+  do not verify service-level expiration or add write-timestamp support.
+
 ## [0.1.0-beta.2] — 2026-06-22
 
 > **Requires `multiclouddb-api` 0.1.0-beta.2 or later** — this release consumes API surface (change-feed cursors, `CLIENT_CLOSED` envelope, `ChangeFeedConfig.extendedRetention(...)` opt-in gating) introduced in API beta.2. The dependency is pinned in the published POM.

@@ -7,6 +7,19 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- Clarified existing optional query scoping, native SQL, field ordering, `TOP N`,
+  and default `c.id ASC` caller-order/aggregate guards. Query execution, the
+  absence of client-side cumulative truncation, and extended-history opt-in
+  provisioning/error checks remain unchanged.
+- Clarified existing container TTL prerequisites/defaults, replacement writes,
+  and opt-in `_ts`/ETag metadata availability; provider execution is unchanged.
+- Strengthened local mock regressions for TTL writes and exact request
+  partition/id routing, metadata opt-in/default behavior, and system-field
+  stripping without response mutation. These are not service TTL-expiration
+  or HTTP 404-path tests.
+
 ## [0.1.0-beta.2] — 2026-06-17
 
 > **Requires `multiclouddb-api` 0.1.0-beta.2 or later** — this release consumes API surface (change-feed cursors, `CLIENT_CLOSED` envelope, `EXTENDED_CHANGE_FEED_HISTORY` capability) introduced in API beta.2. The dependency is pinned in the published POM.

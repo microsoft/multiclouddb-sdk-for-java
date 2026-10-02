@@ -18,9 +18,9 @@ public final class OperationOptions {
     private static final OperationOptions DEFAULTS = new OperationOptions(null, null, false);
 
     private final Duration timeout;
-    /** TTL in seconds for create/upsert operations; {@code null} means no TTL (FR-054). */
+    /** TTL hint for create/update/upsert; see {@link #ttlSeconds()} for support and defaults. */
     private final Integer ttlSeconds;
-    /** When {@code true}, providers that support {@link Capability#WRITE_TIMESTAMP} return {@link DocumentMetadata} (FR-058). */
+    /** Opt-in read metadata hint; see {@link #includeMetadata()} for provider-specific availability. */
     private final boolean includeMetadata;
 
     private OperationOptions(Duration timeout, Integer ttlSeconds, boolean includeMetadata) {
@@ -29,7 +29,7 @@ public final class OperationOptions {
         this.includeMetadata = includeMetadata;
     }
 
-    /** Returns the shared defaults instance (no timeout, no TTL, no metadata). */
+    /** Returns the shared defaults instance (no timeout or TTL hint, metadata not requested). */
     public static OperationOptions defaults() {
         return DEFAULTS;
     }
@@ -52,17 +52,26 @@ public final class OperationOptions {
     }
 
     /**
-     * Document TTL in seconds for create/upsert operations, or {@code null} if no TTL.
-     * Providers that do not support {@link Capability#ROW_LEVEL_TTL} will ignore this field.
+     * Document TTL hint in seconds for create/update/upsert operations, or {@code null}
+     * when no TTL hint was supplied. A null hint does not guarantee removal of an existing TTL.
+     * The current built-in provider without {@link Capability#ROW_LEVEL_TTL} support,
+     * Spanner, ignores this field. This does not satisfy FR-057's required unsupported-TTL
+     * error; the fail-fast capability gate remains unimplemented follow-up work.
      */
     public Integer ttlSeconds() {
         return ttlSeconds;
     }
 
     /**
-     * When {@code true}, the provider will attempt to populate {@link DocumentResult#metadata()}
-     * on read responses. Providers that do not support {@link Capability#WRITE_TIMESTAMP} will
-     * return {@code null} metadata regardless.
+     * Whether to request best-effort {@link DocumentResult#metadata()} on point reads.
+     * Defaults to {@code false}; the built-in providers then return null metadata.
+     * When requested, only available fields are populated; individual fields may be null,
+     * and an empty metadata envelope is possible.
+     * <p>
+     * Lack of {@link Capability#WRITE_TIMESTAMP} support does not disable all metadata:
+     * DynamoDB can expose a stored TTL expiry, while Spanner currently returns an empty
+     * envelope. This hint does not require every provider to return an envelope.
+     * A read of a missing document still returns a null {@link DocumentResult}.
      */
     public boolean includeMetadata() {
         return includeMetadata;
@@ -88,7 +97,11 @@ public final class OperationOptions {
         }
 
         /**
-         * Sets a document TTL for create/upsert operations.
+         * Sets a document TTL hint for create/update/upsert operations.
+         * Spanner currently ignores this hint because it lacks {@link Capability#ROW_LEVEL_TTL}.
+         * The FR-057 unsupported-TTL error gate remains unimplemented; see
+         * {@link OperationOptions#ttlSeconds()} for the current implementation gap.
+         * Leaving this unset supplies no TTL hint; see {@link OperationOptions#ttlSeconds()}.
          *
          * @param ttlSeconds time-to-live in seconds (must be >= 1)
          * @return this builder
@@ -102,9 +115,11 @@ public final class OperationOptions {
         }
 
         /**
-         * Requests write-metadata (last modified timestamp, TTL expiry, version) on read.
-         * Providers that do not support {@link Capability#WRITE_TIMESTAMP} return {@code null}
-         * metadata regardless.
+         * Requests best-effort metadata (last modified timestamp, TTL expiry, version) on
+         * point reads. Defaults to {@code false}; the built-in providers then return null
+         * metadata. Available fields depend on the provider, and an empty envelope is possible.
+         * {@link Capability#WRITE_TIMESTAMP} does not gate all metadata fields.
+         * See {@link OperationOptions#includeMetadata()} for provider examples and missing reads.
          *
          * @param includeMetadata whether to request metadata
          * @return this builder
@@ -119,4 +134,3 @@ public final class OperationOptions {
         }
     }
 }
-
