@@ -773,14 +773,14 @@ Two modes should be supported:
 QueryRequest.builder()
     .expression("status = @status AND starts_with(name, @prefix)")
     .parameters(Map.of("status", "active", "prefix", "Jo"))
-    .pageSize(25)
+    .maxPageSize(25)
     .build();
 
 // Mode 2: Native expression (passed through to provider)
 QueryRequest.builder()
     .nativeExpression("SELECT c.id, c.name FROM c WHERE CONTAINS(c.name, @name, true)")
     .parameters(Map.of("name", "joh"))
-    .pageSize(25)
+    .maxPageSize(25)
     .build();
 ```
 

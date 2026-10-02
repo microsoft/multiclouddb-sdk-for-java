@@ -33,6 +33,7 @@ class CosmosQueryIntegrationTest {
             "C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==");
     private static final String DATABASE = "todoapp";
     private static final String CONTAINER = "todos";
+    private static final String TEST_ID_FIELD = "testId";
 
     private MulticloudDbClient client;
     private final ResourceAddress address = new ResourceAddress(DATABASE, CONTAINER);
@@ -70,7 +71,8 @@ class CosmosQueryIntegrationTest {
 
     private void insertDoc(String id, String title, String status, int priority, String category) {
         Map<String, Object> doc = Map.of(
-                "title", title, "status", status, "priority", priority, "category", category);
+                TEST_ID_FIELD, id, "title", title, "status", status,
+                "priority", priority, "category", category);
         client.upsert(address, MulticloudDbKey.of(id, id), doc);
     }
 
@@ -97,7 +99,7 @@ class CosmosQueryIntegrationTest {
         assertNotNull(page);
         List<Map<String, Object>> items = page.items();
         System.out.println("[Cosmos] equality filter returned " + items.size() + " items");
-        items.forEach(item -> System.out.println("  -> " + str(item, "id") + ": " + str(item, "title") + " [status=" + str(item, "status") + "]"));
+        items.forEach(item -> System.out.println("  -> " + str(item, TEST_ID_FIELD) + ": " + str(item, "title") + " [status=" + str(item, "status") + "]"));
         assertFalse(items.isEmpty(), "Should find active items");
         for (Map<String, Object> item : items)
             assertEquals("active", str(item, "status"), "All returned items should have status=active");
@@ -111,7 +113,7 @@ class CosmosQueryIntegrationTest {
                 .parameters(Map.of("status", "active", "cat", "shopping")).maxPageSize(50).build());
         List<Map<String, Object>> items = page.items();
         System.out.println("[Cosmos] AND filter returned " + items.size() + " items");
-        items.forEach(item -> System.out.println("  -> " + str(item, "id") + ": " + str(item, "title")));
+        items.forEach(item -> System.out.println("  -> " + str(item, TEST_ID_FIELD) + ": " + str(item, "title")));
         assertFalse(items.isEmpty(), "Should find active shopping items");
         for (Map<String, Object> item : items) {
             assertEquals("active", str(item, "status"));
@@ -126,7 +128,7 @@ class CosmosQueryIntegrationTest {
                 .expression("priority > @minPriority").parameters(Map.of("minPriority", 3)).maxPageSize(50).build());
         List<Map<String, Object>> items = page.items();
         System.out.println("[Cosmos] comparison filter (priority > 3) returned " + items.size() + " items");
-        items.forEach(item -> System.out.println("  -> " + str(item, "id") + ": priority=" + num(item, "priority")));
+        items.forEach(item -> System.out.println("  -> " + str(item, TEST_ID_FIELD) + ": priority=" + num(item, "priority")));
         assertFalse(items.isEmpty(), "Should find items with priority > 3");
         for (Map<String, Object> item : items)
             assertTrue(num(item, "priority") > 3, "All items should have priority > 3");
@@ -139,7 +141,7 @@ class CosmosQueryIntegrationTest {
                 .expression("starts_with(title, @prefix)").parameters(Map.of("prefix", "Buy")).maxPageSize(50).build());
         List<Map<String, Object>> items = page.items();
         System.out.println("[Cosmos] starts_with('Buy') returned " + items.size() + " items");
-        items.forEach(item -> System.out.println("  -> " + str(item, "id") + ": " + str(item, "title")));
+        items.forEach(item -> System.out.println("  -> " + str(item, TEST_ID_FIELD) + ": " + str(item, "title")));
         assertFalse(items.isEmpty(), "Should find items starting with 'Buy'");
         for (Map<String, Object> item : items)
             assertTrue(str(item, "title").startsWith("Buy"), "All items should have title starting with 'Buy'");
@@ -152,7 +154,7 @@ class CosmosQueryIntegrationTest {
                 .expression("contains(title, @substr)").parameters(Map.of("substr", "book")).maxPageSize(50).build());
         List<Map<String, Object>> items = page.items();
         System.out.println("[Cosmos] contains('book') returned " + items.size() + " items");
-        items.forEach(item -> System.out.println("  -> " + str(item, "id") + ": " + str(item, "title")));
+        items.forEach(item -> System.out.println("  -> " + str(item, TEST_ID_FIELD) + ": " + str(item, "title")));
         for (Map<String, Object> item : items)
             assertTrue(str(item, "title").contains("book"), "Returned items should contain 'book' in title");
     }
@@ -164,7 +166,7 @@ class CosmosQueryIntegrationTest {
                 .expression("NOT status = @status").parameters(Map.of("status", "active")).maxPageSize(50).build());
         List<Map<String, Object>> items = page.items();
         System.out.println("[Cosmos] NOT active returned " + items.size() + " items");
-        items.forEach(item -> System.out.println("  -> " + str(item, "id") + ": status=" + str(item, "status")));
+        items.forEach(item -> System.out.println("  -> " + str(item, TEST_ID_FIELD) + ": status=" + str(item, "status")));
         assertFalse(items.isEmpty(), "Should find non-active items");
         for (Map<String, Object> item : items)
             assertNotEquals("active", str(item, "status"), "All returned items should NOT be active");
@@ -178,7 +180,7 @@ class CosmosQueryIntegrationTest {
                 .parameters(Map.of("cat1", "travel", "cat2", "personal")).maxPageSize(50).build());
         List<Map<String, Object>> items = page.items();
         System.out.println("[Cosmos] OR (travel|personal) returned " + items.size() + " items");
-        items.forEach(item -> System.out.println("  -> " + str(item, "id") + ": category=" + str(item, "category")));
+        items.forEach(item -> System.out.println("  -> " + str(item, TEST_ID_FIELD) + ": category=" + str(item, "category")));
         assertFalse(items.isEmpty(), "Should find travel or personal items");
         for (Map<String, Object> item : items) {
             String cat = str(item, "category");
@@ -195,7 +197,7 @@ class CosmosQueryIntegrationTest {
                 .parameters(Map.of("s", "active", "c1", "shopping", "c2", "travel")).maxPageSize(50).build());
         List<Map<String, Object>> items = page.items();
         System.out.println("[Cosmos] complex compound returned " + items.size() + " items");
-        items.forEach(item -> System.out.println("  -> " + str(item, "id") + ": " + str(item, "title") + " [" + str(item, "status") + ", " + str(item, "category") + "]"));
+        items.forEach(item -> System.out.println("  -> " + str(item, TEST_ID_FIELD) + ": " + str(item, "title") + " [" + str(item, "status") + ", " + str(item, "category") + "]"));
         assertFalse(items.isEmpty(), "Should find active items in shopping or travel");
         for (Map<String, Object> item : items) {
             assertEquals("active", str(item, "status"));
@@ -212,7 +214,7 @@ class CosmosQueryIntegrationTest {
                 .nativeExpression("SELECT * FROM c WHERE c.title LIKE '%flight%'").maxPageSize(50).build());
         List<Map<String, Object>> items = page.items();
         System.out.println("[Cosmos] native LIKE returned " + items.size() + " items");
-        items.forEach(item -> System.out.println("  -> " + str(item, "id") + ": " + str(item, "title")));
+        items.forEach(item -> System.out.println("  -> " + str(item, TEST_ID_FIELD) + ": " + str(item, "title")));
         assertFalse(items.isEmpty(), "Should find items with 'flight' in title");
         for (Map<String, Object> item : items)
             assertTrue(str(item, "title").toLowerCase().contains("flight"));
@@ -226,12 +228,12 @@ class CosmosQueryIntegrationTest {
         List<Map<String, Object>> items = page.items();
         System.out.println("[Cosmos] Full scan returned " + items.size() + " items total");
         long testItems = items.stream()
-                .filter(item -> str(item, "id").startsWith("qtest-"))
+                .filter(item -> str(item, TEST_ID_FIELD).startsWith("qtest-"))
                 .count();
         System.out.println("[Cosmos] Found " + testItems + " test items (qtest-*) in emulator");
         items.stream()
-                .filter(item -> str(item, "id").startsWith("qtest-"))
-                .forEach(item -> System.out.println("  -> " + str(item, "id")
+                .filter(item -> str(item, TEST_ID_FIELD).startsWith("qtest-"))
+                .forEach(item -> System.out.println("  -> " + str(item, TEST_ID_FIELD)
                         + " | title=" + str(item, "title")
                         + " | status=" + str(item, "status")
                         + " | priority=" + num(item, "priority")

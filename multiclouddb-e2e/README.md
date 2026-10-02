@@ -1,8 +1,11 @@
 # Multicloud DB E2E Tests
 
-End-to-end portability tests for the Multicloud DB SDK. Runs the **same CRUD
-code** against Azure Cosmos DB, Amazon DynamoDB, or Google Cloud Spanner by
-switching a single properties file — no code changes required.
+End-to-end portability tests for the Multicloud DB SDK. The portable
+create/read/upsert/delete and query baseline runs against Azure Cosmos DB,
+Amazon DynamoDB, or Google Cloud Spanner by switching one properties file.
+Partial update is exercised within the portable
+10-field, 31-level replacement-depth, and 390 KiB serialized/structural input
+envelopes on Cosmos DB and DynamoDB; Spanner is capability-gated.
 
 ---
 
@@ -91,24 +94,36 @@ the app starts.
    mvn -pl multiclouddb-e2e process-resources exec:java -Dmulticlouddb.config=spanner.properties
    ```
 
+The E2E runner does not add application columns to Spanner. The configured
+`products` table must already contain the columns used by its existing base
+operation and query scenario: `name`, `category`, `price`, and `inStock`
+(in addition to the SDK key and `data` columns). Partial-update steps are capability-gated and
+skipped because the API defaults Spanner's omitted capability to unsupported.
+
 ---
 
 ## What the tests do
 
-Each run exercises the full CRUD surface on a `products` collection:
+Each run exercises the portable base operations and queries on a `products`
+collection. Partial-update steps run only when `PARTIAL_UPDATE` is advertised:
 
 | Step | Operation | SDK method |
 |------|-----------|------------|
 | 1 | Create 5 products | `client.upsert(...)` |
 | 2 | Read one by ID | `client.read(...)` |
-| 3 | Update a product | `client.upsert(...)` |
-| 4 | Verify update | `client.read(...)` |
+| 3 | Partially update price and stock (Cosmos/Dynamo only) | `client.update(...)` |
+| 4 | Verify changed fields and omitted name/category preservation (Cosmos/Dynamo only) | `client.read(...)` |
 | 5 | List all (paged) | `client.query(...)` |
 | 6 | Filter by category | `client.query(expression)` |
 | 7 | Filter in-stock + price | `client.query(expression)` |
 | 8 | Delete one item | `client.delete(...)` |
 | 9 | Confirm deletion | `client.query(...)` |
 | 10 | Cleanup all items | `client.delete(...)` |
+
+
+The partial-update case exercises Cosmos's single-patch path and DynamoDB's
+single `UpdateItem`. They are skipped for providers that do not advertise
+`PARTIAL_UPDATE`, including Spanner receiving the API unsupported default.
 
 ---
 

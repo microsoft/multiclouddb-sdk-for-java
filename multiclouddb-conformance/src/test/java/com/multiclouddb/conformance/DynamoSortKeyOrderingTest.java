@@ -102,12 +102,6 @@ class DynamoSortKeyOrderingTest extends SortKeyOrderingConformanceTest {
         return new ResourceAddress(DATABASE, COLLECTION);
     }
 
-    @Override
-    protected String sortKeyFieldName() {
-        // DynamoDB stores the sort key as the "sortKey" attribute
-        return "sortKey";
-    }
-
     /**
      * Returns a DynamoDB-native filter expression using {@code :param} notation.
      * This routes through {@code executeScanWithFilter} (DynamoDB Scan with

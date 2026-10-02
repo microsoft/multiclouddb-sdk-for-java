@@ -38,5 +38,12 @@ public final class CosmosCapabilities {
                     "Document-level TTL via _ttl field; requires the container to have TTL enabled "
                     + "(set container default TTL to -1 or a positive value in the portal)"),
             Capability.of(Capability.WRITE_TIMESTAMP, true,
-                    "ETag exposed as version field in DocumentMetadata on read")));
+                    "Cosmos DB _ts is exposed as DocumentMetadata.lastModified; "
+                    + "ETag is exposed separately as version"),
+            // Partial update (feature 002-partial-update): the core operation is supported
+            // and gated internally by DefaultMulticloudDbClient. Native envelope failures
+            // surface through structured provider-limit errors.
+            Capability.PARTIAL_UPDATE_CAP.withNotes(
+                    "Native patch: one direct patchItem for each accepted update; "
+                    + "portable limit: 10 fields; native limit: resulting-document size")));
 }

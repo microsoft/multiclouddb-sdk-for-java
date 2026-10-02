@@ -7,6 +7,16 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- `update()` now sends one conditional, aliased `UpdateItem SET` request instead of replacing the item with `PutItem`. Omitted fields are preserved, non-reserved case-distinct names such as `foo` and `Foo` remain separate even in one atomic request, and a failed `attribute_exists(partitionKey)` guard maps to `NOT_FOUND` without create.
+- Structured null/map/list values use native DynamoDB `NULL`/`M`/`L` shapes. The shared 10-field limit keeps every public update safely below DynamoDB's native expression ceiling; an accepted call consumes one item update's write capacity.
+- Read and every query route strip adapter-injected `partitionKey`, `sortKey`, and `ttlExpiry` attributes before returning portable documents; requested TTL expiry remains available through `DocumentMetadata`.
+- Before DynamoDB I/O, shared preflight rejects binary values and field names above 50,000 UTF-8 bytes, limits complete documents and replacement values to 31 nested map/list containers below the document root, and caps complete-document or incoming-update structural footprint at 390 KiB using DynamoDB-style name and container overhead. Complete create/upsert documents also reject top-level provider-owned names (`id`, `partitionKey`, `sortKey`, `ttl`, `ttlExpiry`, `data`) case-insensitively and names beginning with `_`. Compact JSON cannot bypass the native structural envelope; violations return reason-coded `INVALID_REQUEST`.
+- A size-specific update `ValidationException` is normalized to non-retryable `UNSUPPORTED_CAPABILITY` with `reason=dynamodb_result_item_size_limit` and a `maximumResultBytes` detail describing the native ceiling when the existing item plus fields would be too large. This path follows one attempted `UpdateItem`, preserves the native cause/metadata, and adds no read/merge preflight; other validation failures remain `INVALID_REQUEST`.
+- For `update()`, service `RequestTimeout`/`RequestTimeoutException` responses and SDK API-call and attempt timeouts map to retryable `TRANSIENT_FAILURE`.
+- Declares `PARTIAL_UPDATE` supported. Portable behavior is guaranteed only while both resulting logical-document size measures remain at or below 390 KiB; larger state-dependent results are outside the portable contract and remain subject to DynamoDB's 400 KiB native item limit and reason-coded native rejection. `UpdateItem` happens to leave `ttlExpiry` unchanged, but TTL timing is not portable and callers requiring fixed absolute expiry must not partially update TTL-bearing items. No read/merge or second write is added.
+
 ## [0.1.0-beta.2] — 2026-06-22
 
 > **Requires `multiclouddb-api` 0.1.0-beta.2 or later** — this release consumes API surface (change-feed cursors, `CLIENT_CLOSED` envelope, `ChangeFeedConfig.extendedRetention(...)` opt-in gating) introduced in API beta.2. The dependency is pinned in the published POM.
@@ -20,7 +30,6 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
-- `SORT_KEY_ASC` comparator handles numeric sort keys with type-aware comparison (`Long`/`Integer` use their native compare; mixed numerics fall back to `BigDecimal`) so integers beyond `2^53` are no longer truncated through `Double.compare`.
 - `BETWEEN` translation wraps in parentheses (`(field BETWEEN ? AND ?)`) for cross-provider consistency.
 
 ### Documentation

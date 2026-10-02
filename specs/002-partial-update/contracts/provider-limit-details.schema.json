@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://multiclouddb.example/specs/002-partial-update/provider-limit-details.schema.json",
+  "title": "Partial update provider limit details",
+  "description": "String-valued MulticloudDbError.providerDetails for Cosmos or Dynamo partial-update resulting-item rejection after one attempted native update. Stable reasons and limit values describe a native failure above this release's portable result envelope without duplicating capability state in providerDetails. Shared field-count validation and the default client capability gate are outside this schema.",
+  "type": "object",
+  "required": [
+    "reason"
+  ],
+  "properties": {
+    "reason": {
+      "type": "string",
+      "enum": [
+        "cosmos_result_item_size_limit",
+        "dynamodb_result_item_size_limit"
+      ]
+    },
+    "maximumResultBytes": {
+      "type": "string",
+      "enum": [
+        "2097152",
+        "409600"
+      ]
+    }
+  },
+  "not": {
+    "required": [
+      "capability"
+    ]
+  },
+  "oneOf": [
+    {
+      "title": "Cosmos resulting-item size limit",
+      "properties": {
+        "reason": {
+          "const": "cosmos_result_item_size_limit"
+        },
+        "maximumResultBytes": {
+          "const": "2097152"
+        }
+      },
+      "required": [
+        "maximumResultBytes"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "actualOperations"
+            ]
+          },
+          {
+            "required": [
+              "maximumOperations"
+            ]
+          },
+          {
+            "required": [
+              "actualBytes"
+            ]
+          },
+          {
+            "required": [
+              "maximumBytes"
+            ]
+          },
+          {
+            "required": [
+              "actualExpressionBytes"
+            ]
+          },
+          {
+            "required": [
+              "maximumExpressionBytes"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "DynamoDB resulting-item size limit",
+      "properties": {
+        "reason": {
+          "const": "dynamodb_result_item_size_limit"
+        },
+        "maximumResultBytes": {
+          "const": "409600"
+        }
+      },
+      "required": [
+        "maximumResultBytes"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "actualOperations"
+            ]
+          },
+          {
+            "required": [
+              "maximumOperations"
+            ]
+          },
+          {
+            "required": [
+              "actualBytes"
+            ]
+          },
+          {
+            "required": [
+              "maximumBytes"
+            ]
+          },
+          {
+            "required": [
+              "actualExpressionBytes"
+            ]
+          },
+          {
+            "required": [
+              "maximumExpressionBytes"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "additionalProperties": {
+    "type": "string"
+  },
+  "examples": [
+    {
+      "reason": "cosmos_result_item_size_limit",
+      "maximumResultBytes": "2097152",
+      "requestId": "example-activity-id",
+      "subStatusCode": "0"
+    },
+    {
+      "reason": "dynamodb_result_item_size_limit",
+      "maximumResultBytes": "409600",
+      "errorCode": "ValidationException",
+      "requestId": "example-request-id",
+      "serviceName": "DynamoDb"
+    }
+  ]
+}

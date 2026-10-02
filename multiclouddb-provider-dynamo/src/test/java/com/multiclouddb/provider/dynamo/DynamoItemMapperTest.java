@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -42,6 +43,31 @@ class DynamoItemMapperTest {
         assertEquals(42, back.get("count").asInt());
     }
 
+
+    @Test
+    void portableResultRemovalMutatesOnlyTopLevelDynamoOwnedFields() {
+        Map<String, Object> nested = new LinkedHashMap<>();
+        nested.put("partitionKey", "nested-value");
+        Map<String, Object> rawMap = new LinkedHashMap<>();
+        rawMap.put(DynamoConstants.ATTR_PARTITION_KEY, "partition");
+        rawMap.put(DynamoConstants.ATTR_SORT_KEY, "item");
+        rawMap.put(DynamoConstants.ATTR_TTL_EXPIRY, 1_700_000_000L);
+        rawMap.put("title", "portable");
+        rawMap.put("nested", nested);
+        ObjectNode rawNode = MAPPER.valueToTree(rawMap);
+        JsonNode nestedNode = rawNode.get("nested");
+
+        DynamoItemMapper.removeProviderFields(rawMap);
+        assertEquals(Map.of("title", "portable", "nested", nested), rawMap);
+        assertSame(nested, rawMap.get("nested"));
+
+        DynamoItemMapper.removeProviderFields(rawNode);
+        assertEquals("portable", rawNode.get("title").asText());
+        assertFalse(rawNode.has(DynamoConstants.ATTR_PARTITION_KEY));
+        assertFalse(rawNode.has(DynamoConstants.ATTR_SORT_KEY));
+        assertFalse(rawNode.has(DynamoConstants.ATTR_TTL_EXPIRY));
+        assertSame(nestedNode, rawNode.get("nested"));
+    }
     @Test
     void booleanRoundTrip() {
         ObjectNode node = MAPPER.createObjectNode();
@@ -100,5 +126,15 @@ class DynamoItemMapperTest {
         assertEquals("42", DynamoItemMapper.toAttributeValue(42).n());
         assertTrue(DynamoItemMapper.toAttributeValue(true).bool());
         assertTrue(DynamoItemMapper.toAttributeValue(null).nul());
+    }
+
+    @Test
+    void partialUpdateValuePreservesNullMapAndListShapes() {
+        assertEquals(AttributeValue.Type.NUL,
+                DynamoItemMapper.objectToAttributeValue(null).type());
+        assertEquals(AttributeValue.Type.M,
+                DynamoItemMapper.objectToAttributeValue(Map.of("nested", true)).type());
+        assertEquals(AttributeValue.Type.L,
+                DynamoItemMapper.objectToAttributeValue(List.of("a", "b")).type());
     }
 }

@@ -1,8 +1,11 @@
 # TODO App Sample
 
-A simple CRUD web application demonstrating the Multicloud DB SDK's portable API.
-The same Java code runs against **Azure Cosmos DB**, **Amazon DynamoDB**, or
-**Google Cloud Spanner** — switch providers by changing a single properties file.
+A web application demonstrating the Multicloud DB SDK's portable base API. The
+same create/read/upsert/delete/query code runs against **Azure Cosmos DB**,
+**Amazon DynamoDB**, or **Google Cloud Spanner** by changing a properties file.
+The completion update is optional and must check `Capability.PARTIAL_UPDATE`;
+Cosmos DB and DynamoDB support it, while the current Spanner provider rejects a
+valid update before provider I/O.
 
 The app starts an embedded HTTP server on `http://localhost:8080` with a
 browser-based UI for managing TODO items.
@@ -21,7 +24,7 @@ browser-based UI for managing TODO items.
 
 ```mermaid
 graph TD
-    UI["Browser UI<br/><i>localhost:8080</i><br/>Create · Read · Update · Delete"]
+    UI["Browser UI<br/><i>localhost:8080</i><br/>Create · Read · Delete<br/>Update when supported"]
     UI -->|REST API| Server["Embedded Java HttpServer<br/><i>TodoApp.java</i>"]
     Server -->|MulticloudDbClient| Cosmos["Cosmos DB<br/>Emulator"]
     Server -->|MulticloudDbClient| Dynamo["DynamoDB<br/>Local"]
@@ -81,9 +84,10 @@ The browser UI provides:
 
 - **Create** — add new TODO items with a title
 - **Read** — view all TODO items in a list
-- **Update** — toggle completion status
+- **Update** — toggle completion status when `PARTIAL_UPDATE` is advertised
 - **Delete** — remove items
 
-All operations use the portable `MulticloudDbClient` API under the hood. The
-same UI and REST endpoints work identically regardless of which provider is
-configured.
+All operations use `MulticloudDbClient`. Base paths are portable across the
+three providers. The update endpoint must be disabled or skipped for current
+Spanner because it does not advertise `PARTIAL_UPDATE`; Cosmos DB and DynamoDB
+run the shallow partial-update path.

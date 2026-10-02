@@ -18,7 +18,7 @@ import java.util.Objects;
  * DocumentMetadata meta = result.metadata(); // may be null if includeMetadata=false
  * }</pre>
  *
- * @see MulticloudDbClient#read(ResourceAddress, Key, OperationOptions)
+ * @see MulticloudDbClient#read(ResourceAddress, MulticloudDbKey, OperationOptions)
  */
 public final class DocumentResult {
 
@@ -36,9 +36,12 @@ public final class DocumentResult {
     }
 
     /**
-     * The document payload returned by the provider.
+     * The portable document payload exposed by {@link MulticloudDbClient}. The default
+     * client removes adapter-injected identity, TTL, and system-metadata fields after
+     * provider mapping; request metadata is exposed separately through {@link #metadata()}
+     * when available.
      *
-     * @return non-null document
+     * @return non-null portable document
      */
     public ObjectNode document() {
         return document;

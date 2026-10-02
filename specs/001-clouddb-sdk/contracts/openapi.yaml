@@ -15,6 +15,14 @@ paths:
     post:
       operationId: create
       summary: Insert a new item/row by key. Fails if the item already exists.
+      description: |
+        Shared preflight rejects a null document; top-level `id`,
+        `partitionKey`, `sortKey`, `ttl`, `ttlExpiry`, and `data`
+        case-insensitively; every underscore-prefixed top-level name;
+        binary values and portable-limit violations before provider I/O. The
+        top-level map is snapshotted and nested values undergo bounded
+        SDK-owned Jackson serialization during shared preflight.
+
       requestBody:
         required: true
         content:
@@ -62,7 +70,14 @@ paths:
   /update:
     post:
       operationId: update
-      summary: Update an existing item/row by key. Fails if the item does not exist.
+      x-required-capability: partial_update
+      summary: Shallow-update selected top-level fields on an existing item/row; fails if absent.
+      description: |
+        Performs one atomic native shallow set/replace on providers advertising
+        PARTIAL_UPDATE. It never creates a missing item and does not accept TTL.
+
+      x-portable-result-envelope:
+        $ref: '#/components/schemas/PartialUpdateResultEnvelope'
       requestBody:
         required: true
         content:
@@ -81,12 +96,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CloudDbError'
+                oneOf:
+                  - $ref: '#/components/schemas/NonUnsupportedCapabilityError'
+                  - $ref: '#/components/schemas/UnsupportedCapabilityError'
 
   /upsert:
     post:
       operationId: upsert
       summary: Create or replace an item/row by key.
+      description: |
+        Create-or-full-replace. This is not an atomic replace-if-present
+        operation, and the release has no exact portable atomic equivalent.
+        Shared write preflight validation is identical to create.
+
       requestBody:
         required: true
         content:
@@ -185,7 +207,10 @@ components:
 
     Document:
       type: object
-      description: JSON-like portable document payload.
+      description: |
+        Provider-neutral JSON object. Write callers may supply Jackson JsonNode,
+        serializable POJO, Java array, map, list, and scalar values that can be
+        serialized with the SDK-owned Jackson configuration.
       additionalProperties: true
 
     OperationOptions:
@@ -200,19 +225,18 @@ components:
         retry_policy:
           type: object
           description: Portable retry policy configuration.
-
-    PortabilityWarning:
-      type: object
-      required: [code, message]
-      properties:
-        code:
-          type: string
-        message:
-          type: string
-        scope:
-          type: string
-        provider:
-          $ref: '#/components/schemas/ProviderId'
+        ttlSeconds:
+          type: [integer, 'null']
+          minimum: 1
+          description: |
+            TTL in seconds for create/upsert only. Providers without
+            ROW_LEVEL_TTL ignore this value and store the document without
+            expiry; callers requiring expiry must inspect the capability first.
+            update() rejects a non-null value before provider I/O.
+        includeMetadata:
+          type: boolean
+          default: false
+          description: When true, read operations request DocumentMetadata.
 
     CreateRequest:
       type: object
@@ -225,17 +249,24 @@ components:
         key:
           $ref: '#/components/schemas/Key'
         document:
-          $ref: '#/components/schemas/Document'
+          allOf:
+            - $ref: '#/components/schemas/Document'
+          description: |
+            Non-null complete document. Top-level `id`, `partitionKey`,
+            `sortKey`, `ttl`, `ttlExpiry`, and `data` are reserved
+            case-insensitively; every underscore-prefixed top-level name is also
+            reserved. Remaining top-level names must be unique ignoring case and
+            contain at most 128 Unicode characters; nested names are limited to
+            50,000 UTF-8 bytes. Binary values, including values exposed while
+            serializing a POJO, are rejected before provider I/O. Serialized
+            input and structural footprint are independently limited to 390 KiB,
+            with at most 31 map/list containers below the document root.
+
         options:
           $ref: '#/components/schemas/OperationOptions'
 
     CreateResponse:
       type: object
-      properties:
-        warnings:
-          type: array
-          items:
-            $ref: '#/components/schemas/PortabilityWarning'
 
     ReadRequest:
       type: object
@@ -257,14 +288,20 @@ components:
           $ref: '#/components/schemas/Document'
         found:
           type: boolean
-        warnings:
-          type: array
-          items:
-            $ref: '#/components/schemas/PortabilityWarning'
+        metadata:
+          anyOf:
+            - $ref: '#/components/schemas/DocumentMetadata'
+            - type: 'null'
+          description: |
+            Null when metadata was not requested. With includeMetadata=true,
+            the envelope is present and lastModified, ttlExpiry, and version
+            are independently nullable.
+
 
     UpdateRequest:
       type: object
-      required: [provider, resource, key, document]
+      description: Portable shallow partial update; not a complete-document replacement.
+      required: [provider, resource, key, fields]
       properties:
         provider:
           $ref: '#/components/schemas/ProviderId'
@@ -272,18 +309,46 @@ components:
           $ref: '#/components/schemas/ResourceAddress'
         key:
           $ref: '#/components/schemas/Key'
-        document:
-          $ref: '#/components/schemas/Document'
+        fields:
+          type: object
+          description: |
+            Literal top-level fields to set or replace. Names are field names, not
+            paths. Omitted fields remain unchanged. A map or list replaces the
+            complete named top-level value rather than being recursively merged. A
+            null value stores provider-native null. Values must be serializable with
+            the SDK-owned Jackson configuration used by bounded shared preflight.
+            Names, including nested map keys, are limited to 50,000 UTF-8 bytes.
+            The names id, partitionKey, sortKey, ttl, ttlExpiry, and data are
+            reserved case-insensitively, and underscore-prefixed names are invalid.
+            Non-reserved case-distinct names such as foo and Foo are valid separate
+            literal fields in the same request. Binary values, including values
+            hidden in POJOs, are not portable. Replacement values may contain at
+            most 31 nested map/list containers. Serialized UTF-8 input and
+            structural footprint are separate 390 KiB limits.
+          minProperties: 1
+          maxProperties: 10
+          additionalProperties: true
+
         options:
-          $ref: '#/components/schemas/OperationOptions'
+          allOf:
+            - $ref: '#/components/schemas/OperationOptions'
+            - type: object
+              properties:
+                ttlSeconds:
+                  type: 'null'
+          description: update() requires ttlSeconds to be null.
 
     UpdateResponse:
       type: object
-      properties:
-        warnings:
-          type: array
-          items:
-            $ref: '#/components/schemas/PortabilityWarning'
+      description: |
+        Operation acknowledgement. The resulting logical document is within the
+        portable base only when its serialized JSON and structural footprint are
+        each at most 390 KiB. A state-dependent result above either bound is
+        outside this release's portable contract and may succeed or fail under
+        native provider limits. TTL timing is outside the portable contract;
+        callers requiring fixed absolute expiry must not update TTL-bearing items.
+      x-portable-result-envelope:
+        $ref: '#/components/schemas/PartialUpdateResultEnvelope'
 
     UpsertRequest:
       type: object
@@ -296,17 +361,24 @@ components:
         key:
           $ref: '#/components/schemas/Key'
         document:
-          $ref: '#/components/schemas/Document'
+          allOf:
+            - $ref: '#/components/schemas/Document'
+          description: |
+            Non-null complete replacement document. Top-level `id`,
+            `partitionKey`, `sortKey`, `ttl`, `ttlExpiry`, and `data` are reserved
+            case-insensitively; every underscore-prefixed top-level name is also
+            reserved. Remaining top-level names must be unique ignoring case and
+            contain at most 128 Unicode characters; nested names are limited to
+            50,000 UTF-8 bytes. Binary values, including values exposed while
+            serializing a POJO, are rejected before provider I/O. Serialized
+            input and structural footprint are independently limited to 390 KiB,
+            with at most 31 map/list containers below the document root.
+
         options:
           $ref: '#/components/schemas/OperationOptions'
 
     UpsertResponse:
       type: object
-      properties:
-        warnings:
-          type: array
-          items:
-            $ref: '#/components/schemas/PortabilityWarning'
 
     DeleteRequest:
       type: object
@@ -326,10 +398,6 @@ components:
       properties:
         deleted:
           type: boolean
-        warnings:
-          type: array
-          items:
-            $ref: '#/components/schemas/PortabilityWarning'
 
     QueryRequest:
       type: object
@@ -373,6 +441,25 @@ components:
               minimum: 1
             continuation_token:
               type: string
+            partitionKey:
+              type: [string, 'null']
+              description: |
+                Optional partition-key value for provider-native query scoping.
+                Null means the query is not restricted to one partition.
+            limit:
+              type: [integer, 'null']
+              minimum: 1
+              description: |
+                Maximum number of matching items to return (Top N), applied
+                after filtering and partition scoping. Null means no limit.
+            orderBy:
+              type: array
+              items:
+                $ref: '#/components/schemas/SortOrder'
+              description: |
+                Zero or more sort specifications. Empty means no ordering.
+                ORDER BY is capability-gated and unsupported requests fail
+                before query execution.
         options:
           $ref: '#/components/schemas/OperationOptions'
 
@@ -386,10 +473,7 @@ components:
             $ref: '#/components/schemas/Document'
         continuation_token:
           type: string
-        warnings:
-          type: array
-          items:
-            $ref: '#/components/schemas/PortabilityWarning'
+
 
     CloudDbError:
       type: object
@@ -407,10 +491,14 @@ components:
             - TransientFailure
             - PermanentFailure
             - ProviderError
+            - UnsupportedCapability
         message:
           type: string
         provider:
-          $ref: '#/components/schemas/ProviderId'
+          anyOf:
+            - $ref: '#/components/schemas/ProviderId'
+            - type: 'null'
+          description: Null for shared preflight failures that occur before provider I/O.
         operation:
           type: string
         retryable:
@@ -418,6 +506,47 @@ components:
         provider_details:
           type: object
           additionalProperties: true
+
+    NonUnsupportedCapabilityError:
+      description: |
+        Generic update error branch. UnsupportedCapability is excluded so the
+        specialized branch can enforce its provider_details requirements.
+      allOf:
+        - $ref: '#/components/schemas/CloudDbError'
+        - type: object
+          properties:
+            category:
+              not:
+                const: UnsupportedCapability
+
+    UnsupportedCapabilityError:
+      description: |
+        Non-retryable CloudDbError specialization for a failed capability gate
+        or a state-dependent native result-envelope rejection.
+      allOf:
+        - $ref: '#/components/schemas/CloudDbError'
+        - type: object
+          required: [provider_details]
+          properties:
+            category:
+              const: UnsupportedCapability
+            retryable:
+              const: false
+            provider_details:
+              type: object
+              properties:
+                capability:
+                  type: string
+                  description: Required capability name for a shared pre-I/O gate.
+                  examples:
+                    - partial_update
+                reason:
+                  type: string
+                  description: Stable provider-limit reason after one attempted native update.
+              anyOf:
+                - required: [capability]
+                - required: [reason]
+              additionalProperties: true
 
     ExpressionValidationError:
       type: object
@@ -480,6 +609,14 @@ components:
         notes:
           type: string
 
+    Feature002CapabilityName:
+      type: string
+      description: Canonical capability name introduced by the portable partial-update contract.
+      enum:
+        - partial_update
+      examples:
+        - partial_update
+
 # =============================================================================
 # Issue 25 API Delta: Result Set Control, TTL/Write Metadata, Document Size
 # =============================================================================
@@ -500,88 +637,44 @@ components:
         direction:
           $ref: '#/components/schemas/SortDirection'
 
-    QueryRequestExtended:
-      description: |
-        QueryRequest extended with result set control (issue 25).
-        New fields added to the existing QueryRequest: `limit` and `orderBy`.
-      properties:
-        limit:
-          type: integer
-          minimum: 1
-          nullable: true
-          description: |
-            Maximum number of items to return (Top N). Applied after filter and partition scope.
-            Null means no limit. Validated >= 1 at construction time (FR-049).
-        orderBy:
-          type: array
-          items:
-            $ref: '#/components/schemas/SortOrder'
-          description: |
-            Zero or more sort specifications. Empty means no ordering.
-            ORDER BY is capability-gated (Capability.ORDER_BY) — throws UNSUPPORTED_CAPABILITY on DynamoDB (FR-053).
-
     DocumentMetadata:
       type: object
       description: |
-        Optional system-managed properties returned alongside a document when
-        OperationOptions.includeMetadata is true (FR-058).
+        System-managed properties returned alongside a document when
+        OperationOptions.includeMetadata is true (FR-058). The envelope is
+        present when requested, and each field is independently nullable.
       properties:
         lastModified:
-          type: string
+          type: [string, 'null']
           format: date-time
-          nullable: true
-          description: Last write timestamp (Cosmos via _ts; Spanner via lastModified column; DynamoDB not available).
+          description: Last write timestamp (Cosmos via _ts; unavailable on current DynamoDB and Spanner providers).
         ttlExpiry:
-          type: string
+          type: [string, 'null']
           format: date-time
-          nullable: true
-          description: TTL expiry timestamp (Cosmos via _ttl+_ts; DynamoDB via ttlExpiry attribute; Spanner not available).
+          description: TTL expiry timestamp (DynamoDB via ttlExpiry attribute; unavailable on current Cosmos and Spanner providers).
         version:
-          type: string
-          nullable: true
+          type: [string, 'null']
           description: Provider-native version/ETag string (Cosmos ETag; others null).
 
-    DocumentResult:
+    PartialUpdateResultEnvelope:
       type: object
-      required: [document]
       description: |
-        Return type for read() operations as of issue 25 (FR-057).
-        Wraps document payload and optional metadata. Existing callers use .document() to get the payload.
+        Contract metadata for the resulting logical document. Serialized UTF-8
+        JSON size and provider-neutral structural footprint are independent.
+        Portable behavior is guaranteed only when both measures are at or below
+        their maxima. State-dependent results above either maximum are outside
+        this release's portable contract. TTL timing is not represented here.
+      required:
+        - maxSerializedResultBytes
+        - maxStructuralResultBytes
       properties:
-        document:
-          type: object
-          additionalProperties: true
-          description: The document payload (JSON object).
-        metadata:
-          $ref: '#/components/schemas/DocumentMetadata'
-          nullable: true
-          description: Present only when OperationOptions.includeMetadata is true.
-
-    OperationOptionsExtended:
-      description: |
-        OperationOptions extended with TTL and metadata retrieval (issue 25).
-        New fields added to the existing OperationOptions.
-      properties:
-        ttlSeconds:
+        maxSerializedResultBytes:
           type: integer
-          minimum: 1
-          nullable: true
-          description: |
-            TTL in seconds for write operations (create, upsert). Capability-gated (ROW_LEVEL_TTL).
-            Throws UNSUPPORTED_CAPABILITY on Spanner (FR-054).
-        includeMetadata:
-          type: boolean
-          default: false
-          description: When true, read operations return DocumentMetadata alongside the document payload (FR-058).
-
-    DocumentSizeLimit:
-      type: object
-      description: Uniform document size limit enforced across all providers (FR-061).
-      properties:
-        maxDocumentSizeBytes:
+          const: 399360
+        maxStructuralResultBytes:
           type: integer
-          const: 409600
-          description: 400 KB = 400 × 1024 bytes. DynamoDB hard limit — lowest common denominator.
+          const: 399360
+      additionalProperties: false
 
   x-capability-additions-issue25:
     ROW_LEVEL_TTL:
@@ -591,10 +684,33 @@ components:
       unsupported_by: [spanner]
     WRITE_TIMESTAMP:
       name: write_timestamp
-      description: Provider exposes the last-write timestamp in document metadata.
-      supported_by: [cosmos, spanner]
-      unsupported_by: [dynamo]
+      description: |
+        Provider may populate DocumentMetadata.lastModified. This capability
+        does not gate the metadata envelope or other metadata fields.
+      supported_by: [cosmos]
+      unsupported_by: [dynamo, spanner]
     RESULT_LIMIT:
       name: result_limit
       description: Provider supports Top N result capping in queries.
       supported_by: [cosmos, dynamo, spanner]
+
+  x-capability-additions-feature002:
+    PARTIAL_UPDATE:
+      name: partial_update
+      description: |
+        Capability-gated portable shallow literal top-level set/replace with at
+        most 10 fields, no TTL, NOT_FOUND for a missing item, and one native
+        atomic write. Portable behavior is guaranteed only when the resulting
+        logical document's serialized JSON and structural footprint are each at
+        most 390 KiB. TTL timing is outside the portable contract.
+      supported_by: [cosmos, dynamo]
+      unsupported_by: [spanner]
+      omitted_declaration_default: unsupported
+      unsupported_error:
+        $ref: '#/components/schemas/UnsupportedCapabilityError'
+
+  x-capabilityset-feature002-normalization:
+    unsupported_defaults:
+      - partial_update
+    built_in_effective_rows: 18
+    synthesize_unrelated_omissions: false

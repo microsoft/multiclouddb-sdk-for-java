@@ -11,6 +11,7 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ### [Unreleased]
 
+
 **Added:**
 
 - Portable change-feed API in `com.multiclouddb.api.changefeed`: `ChangeFeedCursor` (opaque, persistable via `toToken()` / `fromToken(...)` with a `now()` live-tip sentinel), `ChangeFeedPage` (events + `nextCursor` + `hasMore`/`terminal`), `ChangeEvent` (with stable `providerEventId` for dedup), `ChangeType`, and `CursorExpiredException`. Two new entry points on `MulticloudDbClient`: `listCursors(ResourceAddress)` and `readChanges(ResourceAddress, ChangeFeedCursor[, OperationOptions])`. Provider SPI methods default to `UNSUPPORTED_CAPABILITY` so existing adapters compile unchanged. The cursor wire format is opaque, version-tagged Base64URL JSON; the 24-hour portable baseline is enforced client-side on the token''s last-issued timestamp. `OperationOptions.timeout()` is not enforced on the change-feed path in this release.
@@ -18,6 +19,27 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - New error category `MulticloudDbErrorCategory.CLIENT_CLOSED` surfaced by a `DefaultMulticloudDbClient` post-close guard on every public entry point (replaces provider-specific `IllegalStateException` leaks). `MulticloudDbClient.close()` is now idempotent.
 - Extended change-feed retention opt-in: `ChangeFeedConfig.extendedRetention(Duration)` (validates `> 24h`), wired into `MulticloudDbClientConfig.changeFeed(...)`, plus the new `Capability.EXTENDED_CHANGE_FEED_HISTORY`. The factory''s build-time gate refuses to instantiate a client whose provider does not declare the capability, surfacing `UNSUPPORTED_CAPABILITY(reason="extended_retention_unavailable")` before any I/O. The cursor token wire format carries an optional `"e"` field stamping the opted-in retention so a persisted cursor under a 7-day opt-in can be resumed beyond 24h up to the configured window without `TOKEN_AGED_OUT`; older tokens (no `"e"`) keep the 24h floor.
 - `OperationNames.LIST_CURSORS`, `READ_CHANGES`, `PROVISION_SCHEMA` propagated through `MulticloudDbError.operation()` and `OperationDiagnostics`.
+- Added the well-known `PARTIAL_UPDATE` capability. Cosmos DB and DynamoDB support the shallow update contract; Spanner receives the backward-compatible unsupported API default. Portable behavior is guaranteed only when both the resulting logical document's serialized JSON and portable structural footprint are within 390 KiB.
+
+**Changed:**
+
+- Partial-update field-count rejections now include `reason=partial_update_field_count_limit`, `maximumFields=10`, and `observedFields=11`. Inspection stops at the first excess field; the observed count is a lower bound, not the total input size.
+- The proposed public compile-time write-limit constants were removed during review. Shared preflight still enforces the same limits and reports runtime details; a discoverable, customer-configurable limits API is deferred to [#116](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/116).
+- **BREAKING (pre-1.0 beta): `update()` changed from complete replacement to
+  shallow partial update.** Callers, including code already compiled against an
+  earlier beta, must migrate their payloads and expectations before running
+  with this release. Use `upsert()` for unguarded complete replacement; it
+  creates missing items, and there is no exact portable atomic full-document
+  replace-if-present equivalent.
+- `CapabilitySet` normalization is capability-specific: only an omitted `PARTIAL_UPDATE` declaration receives an unsupported default; unrelated omitted well-known names remain absent. Each built-in provider exposes 18 effective rows; Cosmos DB and DynamoDB explicitly declare all 18, while Spanner declares 17 and receives the one core default. The proposed provider-specific result-size and TTL-preservation capabilities were removed during review because a single-provider behavior does not establish a portable contract. Follow-up normalization is tracked in [#113](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/113) for absolute TTL expiry and [#114](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/114) for state-dependent resulting size.
+- `update()` now has one portable contract: shallow top-level set/replace, omitted-field preservation, mapping-aware null/map/list replacement, logical-field replay idempotence, and `NOT_FOUND` without create. Non-reserved case-distinct names such as `foo` and `Foo` remain separate even in one atomic update. Portable behavior is guaranteed only when both resulting logical-document size measures are at or below 390 KiB; state-dependent larger results may succeed or fail under native limits. TTL timing is outside the contract: DynamoDB happens to leave `ttlExpiry` unchanged, while Cosmos patch advances `_ts` and restarts relative TTL. Callers requiring a fixed absolute expiry must not call `update()` on TTL-bearing items until behavior is normalized. Update TTL is rejected before provider I/O with non-retryable `INVALID_REQUEST`; at most 10 fields are accepted per call, and the synchronous one-write/no-read-merge contract is unchanged.
+- `DefaultMulticloudDbClient` centrally removes adapter-injected identity, TTL, and system-metadata fields case-insensitively from read/query documents after provider mapping, so an otherwise valid result can be reused for replacement `upsert()`; requested read metadata remains separate in `DocumentMetadata`.
+- Shared create/upsert/update preflight snapshots top-level maps and performs one bounded SDK-owned Jackson serialization. The detached normalized result is the exact provider input, so POJOs, custom serializers, or later caller mutation cannot change validated content. Binary values are rejected even when hidden in a POJO.
+- Bounded graph/serialization inspection maps POJO cycles, excessive POJO depth, serializer re-entry, non-collection iterables, and over-limit output to stable non-retryable `INVALID_REQUEST` failures; `char[]` retains Jackson string semantics.
+- Null create/upsert documents, top-level names matching `id`, `partitionKey`, `sortKey`, `ttl`, `ttlExpiry`, or `data` case-insensitively, and top-level names beginning with `_` now fail before provider I/O with non-retryable `INVALID_REQUEST`. Complete-write top-level names must also be unique ignoring case and at most 128 Unicode characters so the contract is representable by Spanner's case-insensitive column namespace.
+- Nested field names and partial-update names remain limited to 50,000 UTF-8 bytes. Complete create/upsert documents and partial-update replacements are limited to 31 nested map/list containers below the document root and a separate 390 KiB structural footprint for UTF-8 names and native map/list overhead. Shared violations return reason-coded, non-retryable `INVALID_REQUEST` before provider I/O.
+- The shared serialized-input ceiling is reduced from 399 KiB to 390 KiB. Complete documents for `create()` and `upsert()` and the incoming field map for `update()` must each fit both the serialized and structural 390 KiB bounds; oversized inputs fail before provider I/O with non-retryable `INVALID_REQUEST`. Inputs that cannot be serialized use the same non-retryable `INVALID_REQUEST` envelope and preserve the serialization cause.
+- Callers that need full-document replacement must use `upsert()` with the complete desired document. `upsert()` creates a missing item, so it is not an update-only replacement; this release has no exact portable atomic full-document replace-if-present equivalent.
 
 **Documentation:**
 
@@ -47,7 +69,7 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - `MulticloudDbException` - structured error model with portable categories
 - `OperationDiagnostics` - latency, request charge, request ID
 - `DocumentMetadata` - last modified, TTL expiry, version/ETag
-- Document size enforcement (399 KB limit)
+- Document size enforcement (399 KiB limit)
 
 **Validation:**
 
@@ -69,8 +91,18 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- **BREAKING (pre-1.0 beta): `update()` changed from complete replacement to
+  shallow partial update.** Callers, including code already compiled against an
+  earlier beta, must migrate their payloads and expectations before running
+  with this release. Use `upsert()` for unguarded complete replacement; it
+  creates missing items, and there is no exact portable atomic full-document
+  replace-if-present equivalent.
 - Removed the hardcoded `ConsistencyLevel.SESSION` override from `CosmosClientBuilder`. Accounts with a default of `STRONG` or `BOUNDED_STALENESS` will now serve reads at their configured level. To restore the previous behaviour, set `multiclouddb.connection.consistencyLevel=SESSION`.
 - `BETWEEN` translation now wraps in parentheses (`(c.field BETWEEN @lo AND @hi)`) to avoid a Cosmos NoSQL parser ambiguity with trailing `AND`.
+- `update()` now uses one native `patchItem` for accepted updates of up to 10 fields. Omitted fields are preserved, non-reserved case-distinct names remain separate even when both appear in one request, missing items return `NOT_FOUND`, and larger maps are rejected by shared preflight before Cosmos I/O.
+- Update HTTP 413 is normalized to non-retryable `UNSUPPORTED_CAPABILITY` with `reason=cosmos_result_item_size_limit` and a `maximumResultBytes` detail describing the native ceiling; it follows one attempted patch and leaves the document unchanged.
+- Cosmos partial updates normalize HTTP 408/410 to retryable `TRANSIENT_FAILURE`; HTTP 410 retains its substatus.
+- Declares `PARTIAL_UPDATE` supported. Portable behavior is guaranteed only while both resulting logical-document size measures remain at or below 390 KiB; larger results are outside the portable contract and remain subject to the Cosmos DB 2 MiB native item limit. `patchItem` advances `_ts` and restarts relative TTL, so callers requiring fixed absolute expiry must not partially update TTL-bearing items. No read/merge or second write is added.
 
 **Removed:**
 
@@ -111,8 +143,18 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
-- `SORT_KEY_ASC` comparator handles numeric sort keys with type-aware comparison (Long/Integer use native compare; mixed numerics fall back to `BigDecimal`) so integers beyond `2^53` are no longer truncated.
+- **BREAKING (pre-1.0 beta): `update()` changed from complete replacement to
+  shallow partial update.** Callers, including code already compiled against an
+  earlier beta, must migrate their payloads and expectations before running
+  with this release. Use `upsert()` for unguarded complete replacement; it
+  creates missing items, and there is no exact portable atomic full-document
+  replace-if-present equivalent.
 - `BETWEEN` translation wraps in parentheses (`(field BETWEEN ? AND ?)`) for cross-provider consistency.
+- `update()` now emits one conditional, aliased `UpdateItem SET` request instead of replacing the item with `PutItem`. Omitted fields are preserved, non-reserved case-distinct names remain separate even when both appear in one request, and a failed existence guard maps to `NOT_FOUND`.
+- DynamoDB partial updates normalize service `RequestTimeout`/`RequestTimeoutException` and SDK API-call/API-call-attempt timeouts to retryable `TRANSIENT_FAILURE`.
+- Declares `PARTIAL_UPDATE` supported. Portable behavior is guaranteed only while both resulting logical-document size measures remain at or below 390 KiB; larger results are outside the portable contract and remain subject to DynamoDB's 400 KiB native item limit and reason-coded native rejection. `UpdateItem` happens to leave `ttlExpiry` unchanged, but TTL timing is not portable and callers requiring fixed absolute expiry must not partially update TTL-bearing items. No read/merge or second write is added.
+- DynamoDB read/query results strip injected `partitionKey`, `sortKey`, and `ttlExpiry`; Cosmos read/query results strip injected `id`, `partitionKey`, `ttl`, and system metadata.
+- If DynamoDB rejects an otherwise-valid update because the resulting item is too large, the size-specific `ValidationException` is normalized to non-retryable `UNSUPPORTED_CAPABILITY` with `reason=dynamodb_result_item_size_limit` and a `maximumResultBytes` detail describing the native ceiling. The error follows one attempted `UpdateItem`; no read/merge preflight is added, and other validation failures remain `INVALID_REQUEST`.
 
 **Documentation:**
 
@@ -147,14 +189,20 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- **BREAKING (pre-1.0 beta): portable `update()` is unavailable with the
+  current Spanner provider.** The API now defines capability-gated shallow
+  partial update, but this provider does not declare
+  `PARTIAL_UPDATE`; valid calls return non-retryable
+  `UNSUPPORTED_CAPABILITY` before Spanner I/O. Replacement callers must use
+  `upsert()`, which creates missing items and is not an atomic
+  replace-if-present operation.
 - `upsert(address, key, document)` uses Spanner `INSERT_OR_UPDATE` (was `REPLACE`). `REPLACE` is internally delete-then-insert, which change streams surface as `mod_type=INSERT` — making a second upsert of the same key appear as `ChangeType.CREATE` instead of `ChangeType.UPDATE`. `INSERT_OR_UPDATE` matches Cosmos AVAD and DynamoDB Streams.
 - Spanner instance creation in `ensureDatabase` is gated to emulator mode. In production the instance is expected to pre-exist; only the database is created.
-- Complex container values (`Map`, `Collection`) round-trip through STRING columns using an unambiguous prefix marker (`U+0001` + `mcdb:json:`).
+- Complex values (`Map`, `Collection`, Java arrays, `JsonNode`, and POJOs) round-trip through STRING columns using an unambiguous prefix marker (`U+0001` + `mcdb:json:`).
+- `FIELD_DATA` metadata matching tolerates physical-column casing differences and preserves the caller's field spelling; portable identity-field removal is owned by the shared default client.
 - `BETWEEN` translation wraps in parentheses (`(field BETWEEN @lo AND @hi)`) for cross-provider consistency.
 
-**Breaking changes:**
 
-- `update()` is a partial update preserving previously written fields (read-modify-write transaction). **Known cross-provider asymmetry:** Cosmos and DynamoDB `update()` are still full-document replaces.
 - Document field named `data` is rejected with `MulticloudDbException(INVALID_REQUEST)` (case-insensitive — Spanner resolves column names case-insensitively). The `data` column is reserved for the internal `FIELD_DATA` metadata.
 - `upsert()` is a full document replace; columns absent from the upserted document become NULL on read (matches the Cosmos / DynamoDB upsert contract).
 - Customer-managed tables require a `data STRING(MAX)` column. Tables created by `ensureContainer()` already include it; tables provisioned outside the SDK must run `ALTER TABLE <table> ADD COLUMN data STRING(MAX);`.
@@ -167,7 +215,7 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - Default `ORDER BY` no longer fires for aggregate / `GROUP BY` queries (GoogleSQL rejects with `column not aggregated`). It also no longer duplicates primary-key columns when the caller already sorts by them, and `ORDER BY` detection ignores string literals (so `WHERE comment = ''please ORDER BY date''` is no longer a false positive).
 - Legacy / pre-`FIELD_DATA` rows preserve every column on read and `update()`. When `FIELD_DATA` is absent or malformed, the reader applies the historical "no metadata => no filtering" rule; `update()` deliberately leaves `FIELD_DATA` alone so the reader''s fallback continues to project all legacy columns. A subsequent `upsert()` or `create()` promotes the row into the metadata regime.
 - `ensureDatabase()` / `ensureContainer()` no longer leak raw `RuntimeException` on non-Spanner failures. `InterruptedException` → `TRANSIENT_FAILURE`; non-Spanner causes inside the admin `ExecutionException` → `PROVIDER_ERROR`.
-- `setMutationValue` no longer fails on common Java types (e.g. `java.time.Instant`) — JSON serialisation is restricted to `Map`/`Collection`; every other type falls back to `value.toString()`.
+- `setMutationValue` no longer stringifies shared-preflight-approved arrays, `JsonNode` values, or POJOs. Non-native scalar values use the marker-prefixed JSON encoding; unexpected serialization failures surface as non-retryable `INVALID_REQUEST` instead of silently changing the stored shape.
 
 **Known limitations:**
 

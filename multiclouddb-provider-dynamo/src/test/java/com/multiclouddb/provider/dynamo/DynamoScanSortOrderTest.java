@@ -95,11 +95,13 @@ class DynamoScanSortOrderTest {
                 QueryRequest.builder().build(), // no expression, no partitionKey → executeScan
                 null);
 
-        List<String> sortKeys = page.items().stream()
-                .map(item -> (String) item.get(DynamoConstants.ATTR_SORT_KEY))
+        List<String> sortMarkers = page.items().stream()
+                .map(item -> (String) item.get("sortMarker"))
                 .toList();
-        assertEquals(List.of("alpha", "bravo", "charlie"), sortKeys,
-                "executeScan items must be sorted by sortKey ASC; got: " + sortKeys);
+        assertEquals(List.of("alpha", "bravo", "charlie"), sortMarkers,
+                "executeScan items must be sorted by sortKey ASC; got: " + sortMarkers);
+        page.items().forEach(item ->
+                assertFalse(item.containsKey(DynamoConstants.ATTR_SORT_KEY)));
     }
 
     @Test
@@ -118,13 +120,12 @@ class DynamoScanSortOrderTest {
                 QueryRequest.builder().build(),
                 null);
 
-        List<String> sortKeys = page.items().stream()
-                .map(item -> (String) item.get(DynamoConstants.ATTR_SORT_KEY))
+        List<String> sortMarkers = page.items().stream()
+                .map(item -> (String) item.get("sortMarker"))
                 .toList();
-        // null sorts first, then alphabetically
-        assertNull(sortKeys.get(0), "Item with null sortKey should sort first");
-        assertEquals("alpha", sortKeys.get(1));
-        assertEquals("bravo", sortKeys.get(2));
+        assertEquals(List.of("no-sort", "alpha", "bravo"), sortMarkers);
+        page.items().forEach(item ->
+                assertFalse(item.containsKey(DynamoConstants.ATTR_SORT_KEY)));
     }
 
     // ── executeScanWithFilter ────────────────────────────────────────────────
@@ -149,11 +150,13 @@ class DynamoScanSortOrderTest {
                         .build(),
                 null);
 
-        List<String> sortKeys = page.items().stream()
-                .map(item -> (String) item.get(DynamoConstants.ATTR_SORT_KEY))
+        List<String> sortMarkers = page.items().stream()
+                .map(item -> (String) item.get("sortMarker"))
                 .toList();
-        assertEquals(List.of("apple", "mango", "zebra"), sortKeys,
-                "executeScanWithFilter items must be sorted by sortKey ASC; got: " + sortKeys);
+        assertEquals(List.of("apple", "mango", "zebra"), sortMarkers,
+                "executeScanWithFilter items must be sorted by sortKey ASC; got: " + sortMarkers);
+        page.items().forEach(item ->
+                assertFalse(item.containsKey(DynamoConstants.ATTR_SORT_KEY)));
     }
 
     // ── queryWithTranslation ─────────────────────────────────────────────────
@@ -179,11 +182,13 @@ class DynamoScanSortOrderTest {
                 QueryRequest.builder().build(),
                 null);
 
-        List<String> sortKeys = page.items().stream()
-                .map(item -> (String) item.get(DynamoConstants.ATTR_SORT_KEY))
+        List<String> sortMarkers = page.items().stream()
+                .map(item -> (String) item.get("sortMarker"))
                 .toList();
-        assertEquals(List.of("apple", "mango", "zebra"), sortKeys,
-                "queryWithTranslation items must be sorted by sortKey ASC; got: " + sortKeys);
+        assertEquals(List.of("apple", "mango", "zebra"), sortMarkers,
+                "queryWithTranslation items must be sorted by sortKey ASC; got: " + sortMarkers);
+        page.items().forEach(item ->
+                assertFalse(item.containsKey(DynamoConstants.ATTR_SORT_KEY)));
     }
 
     @Test
@@ -202,13 +207,15 @@ class DynamoScanSortOrderTest {
                 QueryRequest.builder().build(),
                 null);
 
-        List<Object> sortKeys = page.items().stream()
-                .map(item -> item.get(DynamoConstants.ATTR_SORT_KEY))
+        List<Object> sortMarkers = page.items().stream()
+                .map(item -> item.get("sortMarker"))
                 .toList();
         // Numeric sort: 2, 10, 100 — not lexicographic "10", "100", "2"
         assertEquals(List.of(2.0, 10.0, 100.0),
-                sortKeys.stream().map(k -> ((Number) k).doubleValue()).toList(),
-                "Numeric sort keys must sort by value; got: " + sortKeys);
+                sortMarkers.stream().map(k -> ((Number) k).doubleValue()).toList(),
+                "Numeric sort keys must sort by value; got: " + sortMarkers);
+        page.items().forEach(item ->
+                assertFalse(item.containsKey(DynamoConstants.ATTR_SORT_KEY)));
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -216,13 +223,15 @@ class DynamoScanSortOrderTest {
     private static Map<String, AttributeValue> itemWith(String partitionKey, String sortKey) {
         return Map.of(
                 DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(partitionKey),
-                DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(sortKey)
+                DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(sortKey),
+                "sortMarker", AttributeValue.fromS(sortKey)
         );
     }
 
     private static Map<String, AttributeValue> itemWithoutSortKey(String partitionKey) {
         return Map.of(
-                DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(partitionKey)
+                DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(partitionKey),
+                "sortMarker", AttributeValue.fromS("no-sort")
         );
     }
 
@@ -259,7 +268,8 @@ class DynamoScanSortOrderTest {
             String partitionKey, double sortKey) {
         return Map.of(
                 DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(partitionKey),
-                DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromN(String.valueOf(sortKey))
+                DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromN(String.valueOf(sortKey)),
+                "sortMarker", AttributeValue.fromN(String.valueOf(sortKey))
         );
     }
 }

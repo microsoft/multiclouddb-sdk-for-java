@@ -10,9 +10,10 @@ hide:
 
 # Multicloud DB SDK for Java
 
-A **portable database SDK** that lets you write CRUD and query logic once and run it
-against **Azure Cosmos DB**, **Amazon DynamoDB**, or **Google Cloud Spanner** -
-switch providers by changing a single properties file, with zero code changes.
+A **portable database SDK** that lets you write create, read, upsert, delete, and
+query logic once and run it against **Azure Cosmos DB**, **Amazon DynamoDB**, or
+**Google Cloud Spanner**. Optional operations such as partial `update()` are
+capability-gated.
 
 <div class="hero-buttons" markdown>
 
@@ -36,11 +37,11 @@ switch providers by changing a single properties file, with zero code changes.
 
 | Challenge | How the SDK helps |
 |-----------|-------------------|
-| **Vendor lock-in** | Single `MulticloudDbClient` interface - portable CRUD + query |
+| **Vendor lock-in** | Single `MulticloudDbClient` interface - portable point operations (create/read/upsert/delete) + query with explicit capability gates |
 | **Divergent query languages** | Portable DSL auto-translated to Cosmos SQL, PartiQL, or GoogleSQL |
-| **Migration pain** | Switch providers by changing one property - zero code changes |
-| **Feature uncertainty** | Runtime `CapabilitySet` introspection with portability warnings |
-| **Cross-provider testing** | Conformance suite runs identical tests against every provider |
+| **Migration pain** | Switch providers by changing one property for the common operation set; check capabilities before optional operations |
+| **Feature uncertainty** | Runtime `CapabilitySet` introspection and structured `UNSUPPORTED_CAPABILITY` errors |
+| **Cross-provider testing** | Shared conformance verifies the common contract and capability-gated behavior |
 
 ---
 
@@ -52,8 +53,8 @@ switch providers by changing a single properties file, with zero code changes.
 
 ### :material-swap-horizontal: Write Once, Run Anywhere
 
-Single `MulticloudDbClient` interface for CRUD and query operations.
-Switch providers by changing one config property - zero code changes.
+Single `MulticloudDbClient` interface for portable point operations and query.
+Capability discovery makes optional operations explicit when providers differ.
 
 [Learn more →](architecture.md)
 
@@ -96,8 +97,8 @@ Partition-scoped queries for efficient within-partition reads.
 
 ### :material-test-tube: Conformance Testing
 
-281+ tests across API and provider modules. Identical CRUD + query tests
-run against every provider emulator.
+Shared point-operation and query conformance runs against each provider
+emulator; optional behavior is exercised only when its capability is advertised.
 
 [Learn more →](contributing.md)
 
@@ -123,7 +124,7 @@ correlation IDs. SLF4J structured logging for production monitoring.
 ```mermaid
 graph TD
     APP["<b>Your Application</b><br/>code against Multicloud DB API"]
-    API["<b>MulticloudDbClient</b><br/>multiclouddb-api<br/><i>CRUD · Query · Capabilities</i>"]
+    API["<b>MulticloudDbClient</b><br/>multiclouddb-api<br/><i>Base Ops · Query · Capabilities</i>"]
     SL(("ServiceLoader"))
     COSMOS["<b>Cosmos DB</b><br/>Provider"]
     DYNAMO["<b>DynamoDB</b><br/>Provider"]
@@ -164,9 +165,13 @@ Sample applications are maintained in a separate repository:
 
 | Sample | Description | Details |
 |--------|-------------|---------|
-| **Portable CRUD + Query** | Minimal end-to-end CRUD and query sample | [View guide →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples#portable-crud--query-sample) |
-| **TODO App** | Simple CRUD web app with browser UI | [View guide →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-todo-app.md) |
+| **Portable Point Operations + Query** | Minimal create/read/upsert/delete/query sample; update is capability-gated | [View guide →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples#portable-crud--query-sample) |
+| **TODO App** | Key-based document web app; completion update requires `PARTIAL_UPDATE` | [View guide →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-todo-app.md) |
 | **Risk Analysis Platform** | Multi-tenant portfolio risk analytics with executive dashboard | [View guide →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-risk-platform.md) |
+
+Sample callers check `Capability.PARTIAL_UPDATE` before `update()`. Cosmos DB
+and DynamoDB support it; the current Spanner provider rejects a valid update
+before provider I/O.
 
 ---
 
@@ -187,11 +192,10 @@ MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
 
 try (MulticloudDbClient client = MulticloudDbClientFactory.create(config)) {
 
-// CRUD - same code for every provider
+// Portable point operations - same code for every provider
 ResourceAddress todos = new ResourceAddress("mydb", "todos");
 MulticloudDbKey key = MulticloudDbKey.of("todo-1", "todo-1");
 Map<String, Object> doc = Map.of(
-    "id", "todo-1",
     "status", "active",
     "category", "shopping"
 );

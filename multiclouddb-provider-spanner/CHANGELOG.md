@@ -33,6 +33,8 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- `FIELD_DATA` metadata matching now tolerates physical-column casing differences while preserving the caller's field spelling in mapped results.
+
 - **Default `ORDER BY` no longer fires for aggregate / `GROUP BY` queries.** The provider previously appended `ORDER BY partitionKey, sortKey` to every SELECT, which GoogleSQL rejects on aggregates with `column not aggregated`. The default is now suppressed when the SQL contains an aggregate function or `GROUP BY`; caller-supplied `ORDER BY` is honoured verbatim. The default also no longer duplicates primary-key columns when the caller already sorts by them — only the missing key is appended as a tiebreaker — and `ORDER BY` detection ignores string literals so `WHERE comment = ''please ORDER BY date''` is no longer a false positive.
 - **Legacy / pre-`FIELD_DATA` rows preserve every column on read and `update()`.** When `FIELD_DATA` is absent or malformed, `SpannerRowMapper` applies the historical "no metadata => no filtering" rule including nulls; `update()` deliberately leaves `FIELD_DATA` alone so the reader''s fallback continues to project all legacy columns. A subsequent `upsert()` or `create()` promotes the row into the metadata regime by writing a complete `FIELD_DATA` stamp.
 - `ensureDatabase()` / `ensureContainer()` no longer leak raw `RuntimeException` on non-Spanner failures. `InterruptedException` surfaces as `MulticloudDbException(TRANSIENT_FAILURE, retryable=true)` (with the interrupt flag restored); non-Spanner causes inside the admin `ExecutionException` surface as `MulticloudDbException(PROVIDER_ERROR)` preserving the original cause.

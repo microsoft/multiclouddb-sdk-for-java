@@ -13,6 +13,8 @@ import com.azure.cosmos.CosmosDatabase;
 import com.azure.cosmos.CosmosContainer;
 import com.azure.cosmos.models.CosmosItemRequestOptions;
 import com.azure.cosmos.models.CosmosItemResponse;
+import com.azure.cosmos.models.CosmosPatchItemRequestOptions;
+import com.azure.cosmos.models.CosmosPatchOperations;
 import com.azure.cosmos.models.CosmosQueryRequestOptions;
 import com.azure.cosmos.models.PartitionKey;
 import com.azure.cosmos.models.SqlQuerySpec;
@@ -110,6 +112,22 @@ class CosmosConsistencyTest {
             List<CosmosClientBuilder> builders = mocked.constructed();
             assertEquals(1, builders.size());
             verify(builders.get(0), never()).consistencyLevel(any());
+        }
+    }
+
+    @Test
+    @DisplayName("Portable void writes disable Cosmos response bodies")
+    void writeResponseBodiesAreDisabled() {
+        MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
+                .provider(ProviderId.COSMOS)
+                .connection(CosmosConstants.CONFIG_ENDPOINT, DUMMY_ENDPOINT)
+                .connection(CosmosConstants.CONFIG_KEY, DUMMY_KEY)
+                .build();
+
+        try (MockedConstruction<CosmosClientBuilder> mocked =
+                     mockConstruction(CosmosClientBuilder.class, builderDefaultAnswer())) {
+            new CosmosProviderClient(config);
+            verify(mocked.constructed().get(0)).contentResponseOnWriteEnabled(false);
         }
     }
 
@@ -613,7 +631,7 @@ class CosmosConsistencyTest {
     }
 
     @Test
-    @DisplayName("update() with EVENTUAL override: replaceItem per-request options carry no consistency level")
+    @DisplayName("update() with EVENTUAL override: patchItem options carry no consistency level")
     @SuppressWarnings("unchecked")
     void updateDoesNotCarryConsistencyLevel() {
         MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
@@ -631,8 +649,9 @@ class CosmosConsistencyTest {
 
         CosmosItemResponse<ObjectNode> mockResponse = mock(CosmosItemResponse.class);
         when(mockResponse.getStatusCode()).thenReturn(200);
-        when(mockContainer.replaceItem(any(ObjectNode.class), anyString(), any(PartitionKey.class),
-                any(CosmosItemRequestOptions.class)))
+        when(mockContainer.patchItem(anyString(), any(PartitionKey.class),
+                any(CosmosPatchOperations.class), any(CosmosPatchItemRequestOptions.class),
+                eq(ObjectNode.class)))
                 .thenReturn(mockResponse);
 
         try (MockedConstruction<CosmosClientBuilder> ignored =
@@ -643,10 +662,10 @@ class CosmosConsistencyTest {
             MulticloudDbKey key = MulticloudDbKey.of("partition1");
             providerClient.update(address, key, Map.of("name", "bob"), null);
 
-            ArgumentCaptor<CosmosItemRequestOptions> captor =
-                    ArgumentCaptor.forClass(CosmosItemRequestOptions.class);
-            verify(mockContainer).replaceItem(any(ObjectNode.class), anyString(), any(PartitionKey.class),
-                    captor.capture());
+            ArgumentCaptor<CosmosPatchItemRequestOptions> captor =
+                    ArgumentCaptor.forClass(CosmosPatchItemRequestOptions.class);
+            verify(mockContainer).patchItem(anyString(), any(PartitionKey.class),
+                    any(CosmosPatchOperations.class), captor.capture(), eq(ObjectNode.class));
             assertNull(captor.getValue().getConsistencyLevel(),
                     "update() must not carry a per-request consistency level when a client-level override is configured");
         }

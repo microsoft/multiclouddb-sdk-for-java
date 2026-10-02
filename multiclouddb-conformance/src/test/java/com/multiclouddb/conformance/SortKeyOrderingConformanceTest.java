@@ -36,17 +36,11 @@ import static org.junit.jupiter.api.Assertions.*;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public abstract class SortKeyOrderingConformanceTest {
 
+    private static final String PORTABLE_SORT_KEY_FIELD = "portableSortKey";
+
     protected abstract MulticloudDbClient createClient();
 
     protected abstract ResourceAddress getAddress();
-
-    /**
-     * Returns the field name that holds the sort key value in query results.
-     * <p>
-     * Cosmos stores the sort key as {@code "id"}; DynamoDB stores it as
-     * {@code "sortKey"}; Spanner stores it as {@code "sortKey"}.
-     */
-    protected abstract String sortKeyFieldName();
 
     /**
      * Returns the legacy DynamoDB filter expression syntax used to route through
@@ -92,15 +86,20 @@ public abstract class SortKeyOrderingConformanceTest {
     void partitionQueryReturnsSortedBySortKey() {
         // Insert items deliberately OUT of lexicographic sort-key order
         client.upsert(getAddress(), MulticloudDbKey.of("sort-part", "sort-charlie"),
-                Map.of("label", "charlie", "group", "sort-test"));
+                Map.of("label", "charlie", "group", "sort-test",
+                        PORTABLE_SORT_KEY_FIELD, "sort-charlie"));
         client.upsert(getAddress(), MulticloudDbKey.of("sort-part", "sort-alpha"),
-                Map.of("label", "alpha", "group", "sort-test"));
+                Map.of("label", "alpha", "group", "sort-test",
+                        PORTABLE_SORT_KEY_FIELD, "sort-alpha"));
         client.upsert(getAddress(), MulticloudDbKey.of("sort-part", "sort-bravo"),
-                Map.of("label", "bravo", "group", "sort-test"));
+                Map.of("label", "bravo", "group", "sort-test",
+                        PORTABLE_SORT_KEY_FIELD, "sort-bravo"));
         client.upsert(getAddress(), MulticloudDbKey.of("sort-part", "sort-echo"),
-                Map.of("label", "echo", "group", "sort-test"));
+                Map.of("label", "echo", "group", "sort-test",
+                        PORTABLE_SORT_KEY_FIELD, "sort-echo"));
         client.upsert(getAddress(), MulticloudDbKey.of("sort-part", "sort-delta"),
-                Map.of("label", "delta", "group", "sort-test"));
+                Map.of("label", "delta", "group", "sort-test",
+                        PORTABLE_SORT_KEY_FIELD, "sort-delta"));
 
         try {
             QueryPage page = client.query(getAddress(),
@@ -114,7 +113,7 @@ public abstract class SortKeyOrderingConformanceTest {
             List<String> expected = List.of(
                     "sort-alpha", "sort-bravo", "sort-charlie", "sort-delta", "sort-echo");
             List<String> actual = items.stream()
-                    .map(item -> str(item, sortKeyFieldName()))
+                    .map(item -> str(item, PORTABLE_SORT_KEY_FIELD))
                     .toList();
             assertEquals(expected, actual,
                     "Items must be returned in ascending sort-key order; got: " + actual);
@@ -136,11 +135,14 @@ public abstract class SortKeyOrderingConformanceTest {
         // expression translator into a PartiQL ExecuteStatement (queryWithTranslation
         // path on DynamoDB), NOT into executeScanWithFilter.
         client.upsert(getAddress(), MulticloudDbKey.of("xp-c", "xp-scan-charlie"),
-                Map.of("label", "charlie", "batch", "xp-sort-test"));
+                Map.of("label", "charlie", "batch", "xp-sort-test",
+                        PORTABLE_SORT_KEY_FIELD, "xp-scan-charlie"));
         client.upsert(getAddress(), MulticloudDbKey.of("xp-a", "xp-scan-alpha"),
-                Map.of("label", "alpha", "batch", "xp-sort-test"));
+                Map.of("label", "alpha", "batch", "xp-sort-test",
+                        PORTABLE_SORT_KEY_FIELD, "xp-scan-alpha"));
         client.upsert(getAddress(), MulticloudDbKey.of("xp-b", "xp-scan-bravo"),
-                Map.of("label", "bravo", "batch", "xp-sort-test"));
+                Map.of("label", "bravo", "batch", "xp-sort-test",
+                        PORTABLE_SORT_KEY_FIELD, "xp-scan-bravo"));
 
         try {
             // Cross-partition portable query — no partitionKey set
@@ -158,7 +160,7 @@ public abstract class SortKeyOrderingConformanceTest {
 
             List<String> expected = List.of("xp-scan-alpha", "xp-scan-bravo", "xp-scan-charlie");
             List<String> actual = items.stream()
-                    .map(item -> str(item, sortKeyFieldName()))
+                    .map(item -> str(item, PORTABLE_SORT_KEY_FIELD))
                     .toList();
             assertEquals(expected, actual,
                     "Cross-partition scan must return items in ascending sort-key order; got: " + actual);
@@ -180,11 +182,14 @@ public abstract class SortKeyOrderingConformanceTest {
         // result set (other tests may have left data in the container).
         // This no-expression path routes to executeScan on DynamoDB.
         client.upsert(getAddress(), MulticloudDbKey.of("uscan-c", "uscan-charlie"),
-                Map.of("label", "charlie", "scangroup", "unfiltered-sort-test"));
+                Map.of("label", "charlie", "scangroup", "unfiltered-sort-test",
+                        PORTABLE_SORT_KEY_FIELD, "uscan-charlie"));
         client.upsert(getAddress(), MulticloudDbKey.of("uscan-a", "uscan-alpha"),
-                Map.of("label", "alpha", "scangroup", "unfiltered-sort-test"));
+                Map.of("label", "alpha", "scangroup", "unfiltered-sort-test",
+                        PORTABLE_SORT_KEY_FIELD, "uscan-alpha"));
         client.upsert(getAddress(), MulticloudDbKey.of("uscan-b", "uscan-bravo"),
-                Map.of("label", "bravo", "scangroup", "unfiltered-sort-test"));
+                Map.of("label", "bravo", "scangroup", "unfiltered-sort-test",
+                        PORTABLE_SORT_KEY_FIELD, "uscan-bravo"));
 
         try {
             // Completely unfiltered query — no expression, no partitionKey.
@@ -196,7 +201,7 @@ public abstract class SortKeyOrderingConformanceTest {
 
             // Filter to only our test items (container may have other data)
             List<String> ourSortKeys = items.stream()
-                    .map(item -> str(item, sortKeyFieldName()))
+                    .map(item -> str(item, PORTABLE_SORT_KEY_FIELD))
                     .filter(sk -> sk.startsWith("uscan-"))
                     .toList();
 
@@ -231,11 +236,14 @@ public abstract class SortKeyOrderingConformanceTest {
         // The legacy DynamoDB expression (:param notation) routes to executeScanWithFilter
         // when no partitionKey is set — a DynamoDB-native Scan with FilterExpression.
         client.upsert(getAddress(), MulticloudDbKey.of("lf-c", "lf-charlie"),
-                Map.of("label", "charlie", "legacy_batch", "lf-sort-test"));
+                Map.of("label", "charlie", "legacy_batch", "lf-sort-test",
+                        PORTABLE_SORT_KEY_FIELD, "lf-charlie"));
         client.upsert(getAddress(), MulticloudDbKey.of("lf-a", "lf-alpha"),
-                Map.of("label", "alpha", "legacy_batch", "lf-sort-test"));
+                Map.of("label", "alpha", "legacy_batch", "lf-sort-test",
+                        PORTABLE_SORT_KEY_FIELD, "lf-alpha"));
         client.upsert(getAddress(), MulticloudDbKey.of("lf-b", "lf-bravo"),
-                Map.of("label", "bravo", "legacy_batch", "lf-sort-test"));
+                Map.of("label", "bravo", "legacy_batch", "lf-sort-test",
+                        PORTABLE_SORT_KEY_FIELD, "lf-bravo"));
 
         try {
             QueryPage page = client.query(getAddress(),
@@ -252,7 +260,7 @@ public abstract class SortKeyOrderingConformanceTest {
 
             List<String> expected = List.of("lf-alpha", "lf-bravo", "lf-charlie");
             List<String> actual = items.stream()
-                    .map(item -> str(item, sortKeyFieldName()))
+                    .map(item -> str(item, PORTABLE_SORT_KEY_FIELD))
                     .toList();
             assertEquals(expected, actual,
                     "Legacy-filter scan must return items in ascending sort-key order; got: " + actual);

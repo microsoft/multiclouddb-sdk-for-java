@@ -3,7 +3,9 @@
 This quickstart describes intended usage of the SDK’s portable contract in Java.
 
 ## Goal
-Run the same application code against Cosmos DB, DynamoDB, or Spanner by changing configuration only.
+Run the same base create/read/upsert/delete/query code against Cosmos DB, DynamoDB,
+or Spanner by changing configuration only. Capability-gated operations such as
+partial update must be checked separately.
 
 ## Install (planned)
 
@@ -29,7 +31,8 @@ dependencies {
 
 1. Load configuration (provider selection + connection/auth details).
 2. Construct `MulticloudDbClient` from configuration.
-3. Use portable operations: `create`, `read`, `update`, `upsert`, `delete`, `query`.
+3. Use portable point operations (`create`, `read`, `upsert`, `delete`) and query.
+4. Use `update` only when `Capability.PARTIAL_UPDATE` is supported.
 
 ### Example (illustrative)
 
@@ -37,20 +40,26 @@ dependencies {
 MulticloudDbClient client = MulticloudDbClientFactory.create(config);
 
 ResourceAddress resource = new ResourceAddress("db", "collection");
-Key key = Key.of("partitionKey-123", "sortKey-456");
-JsonNode doc = objectMapper.createObjectNode().put("id", "123").put("name", "Ada");
+MulticloudDbKey key = MulticloudDbKey.of("partitionKey-123", "sortKey-456");
+Map<String, Object> doc = Map.of("customerId", "123", "name", "Ada");
 
 client.upsert(resource, key, doc);
-JsonNode got = client.read(resource, key);  // returns null if not found
-client.delete(resource, key);
-
+DocumentResult got = client.read(resource, key);  // returns null if not found
+if (got != null) {
+    ObjectNode payload = got.document();
+}
+if (client.capabilities().isSupported(Capability.PARTIAL_UPDATE)) {
+    client.update(resource, key, Map.of("status", "active"));
+}
 // Portable query expression — works on all providers without changes
 QueryPage page1 = client.query(resource, QueryRequest.builder()
 	.expression("status = @status AND STARTS_WITH(name, @prefix)")
 	.parameter("status", "active")
 	.parameter("prefix", "A")
-	.pageSize(50)
+	.maxPageSize(50)
 	.build());
+client.delete(resource, key);  // Cleanup after all reads and queries
+
 ```
 
 ## Portable Query Expressions (planned)
@@ -117,11 +126,11 @@ QueryRequest betweenQuery = QueryRequest.builder()
 ```java
 // Null/empty expression returns all items
 QueryRequest fullScan = QueryRequest.builder()
-	.pageSize(100)
+	.maxPageSize(100)
 	.build();
 ```
 
-### Native expression mode (escape hatch)
+### Native expression mode (explicit non-portable query syntax)
 
 When you need provider-specific features, use `nativeExpression` instead of `expression`:
 
@@ -143,7 +152,7 @@ QueryRequest dynamoNative = QueryRequest.builder()
 
 ```java
 // Check if a capability-gated feature is available before using it
-if (client.capabilities().isSupported(Capability.LIKE)) {
+if (client.capabilities().isSupported(Capability.LIKE_OPERATOR)) {
 	// Safe to use LIKE in a portable expression (Cosmos, Spanner)
 }
 
@@ -225,7 +234,7 @@ MulticloudDbClientConfig spannerConfig = MulticloudDbClientConfig.builder()
 ## Provider-specific opt-ins
 Provider-specific features/behaviors may be enabled via explicit configuration toggles when possible.
 
-- Enabling an opt-in MUST produce a portability warning signal.
+- Callers MUST inspect `CapabilitySet` before using an optional capability; unsupported operations fail with structured `UNSUPPORTED_CAPABILITY` errors.
 - Portable contract behavior remains the default if opt-ins are not enabled.
 
 ## Testing portability
@@ -282,10 +291,14 @@ OperationOptions optionsWithTtl = OperationOptions.builder()
     .build();
 
 client.create(address, key, document, optionsWithTtl);
-// On Spanner: throws MulticloudDbException(UNSUPPORTED_CAPABILITY) — Spanner does not support row-level TTL
+// Providers without ROW_LEVEL_TTL (including Spanner) ignore ttlSeconds.
+// Check the capability first when expiry is required.
 ```
 
 ### Reading document metadata
+
+This snippet assumes a class-level SLF4J logger such as
+`private static final Logger LOG = LoggerFactory.getLogger(YourApplication.class)`.
 
 ```java
 OperationOptions optionsWithMeta = OperationOptions.builder()
@@ -294,10 +307,11 @@ OperationOptions optionsWithMeta = OperationOptions.builder()
 
 DocumentResult result = client.read(address, key, optionsWithMeta);
 ObjectNode doc = result.document();
-DocumentMetadata meta = result.metadata();
+DocumentMetadata meta = result.metadata(); // requested: current providers return an envelope
 if (meta != null) {
-    if (meta.lastModified() != null) System.out.println("Last written: " + meta.lastModified());
-    if (meta.version() != null) System.out.println("ETag: " + meta.version());
+    if (meta.lastModified() != null) LOG.info("Last written: {}", meta.lastModified());
+    if (meta.ttlExpiry() != null) LOG.info("Expires at: {}", meta.ttlExpiry());
+    if (meta.version() != null) LOG.info("ETag: {}", meta.version());
 }
 ```
 
@@ -307,22 +321,37 @@ if (meta != null) {
 // Existing callers: pass OperationOptions.defaults() — no metadata overhead
 DocumentResult result = client.read(address, key, OperationOptions.defaults());
 ObjectNode doc = result.document();  // same as before
+assert result.metadata() == null;     // metadata was not requested
 ```
 
 ---
 
-## Uniform Document Size Limit
+## Uniform Write-Input Envelope
 
-The SDK enforces a **400 KB** maximum document size across all providers (driven by DynamoDB's limit). Documents exceeding the limit are rejected at the SDK layer before any I/O.
+The SDK enforces separate **390 KiB serialized and structural bounds** across all
+providers. Complete create/upsert documents and incoming update maps must fit both;
+binary values, field names above 50,000 UTF-8 bytes, and nesting above 31
+map/list containers below the document root are rejected before provider I/O.
+Shared preflight snapshots the top-level map and uses bounded SDK-owned Jackson
+serialization while inspecting nested values. Binary values hidden in POJOs are
+also rejected. A null create/upsert document is
+invalid. Complete writes also reject top-level `id`, `partitionKey`, `sortKey`,
+`ttl`, `ttlExpiry`, and `data` case-insensitively, plus every
+underscore-prefixed top-level name.
+
+The enforcement values are internal rather than compile-time Java constants.
+Handle typed `INVALID_REQUEST` limit details instead of duplicating numeric
+literals. Runtime limit discovery and configuration are deferred to
+[#116](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/116).
 
 ```java
-// Oversized documents are rejected before any I/O
-ObjectNode largeDoc = buildLargeDocument();  // >400 KB
+// Inputs exceeding either portable bound are rejected before any I/O
+Map<String, Object> largeDoc = buildStructurallyLargeDocument();
 try {
     client.create(address, key, largeDoc, OperationOptions.defaults());
 } catch (MulticloudDbException e) {
     if (e.error().category() == MulticloudDbErrorCategory.INVALID_REQUEST) {
-        System.out.println("Document too large: " + e.error().message());
+        LOG.warn("Write input outside portable envelope: {}", e.error().message());
     }
 }
 ```
@@ -350,4 +379,18 @@ if (caps.isSupported(Capability.ROW_LEVEL_TTL)) {
 if (caps.isSupported(Capability.RESULT_LIMIT)) {
     // Safe to set limit() on QueryRequest
 }
+
+// Check partial-update support before calling update().
+if (caps.isSupported(Capability.PARTIAL_UPDATE)) {
+    // Do not call update() on a TTL-bearing item when fixed absolute expiry is required.
+}
 ```
+
+`CapabilitySet` supplies an unsupported default only when a provider omits
+`PARTIAL_UPDATE`. Each built-in provider exposes 18 effective capability rows:
+Cosmos DB and DynamoDB explicitly declare 18, while Spanner declares 17 and
+receives that one default. Unrelated omitted capability names are not
+backfilled. Portable partial-update behavior applies only while both resulting
+logical-document size measures remain at or below 390 KiB. TTL timing is outside
+the contract; DynamoDB happens to leave `ttlExpiry` unchanged, while Cosmos DB
+patch advances `_ts` and restarts relative TTL.

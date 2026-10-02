@@ -22,12 +22,12 @@ description: "Tasks for implementing Multicloud DB SDK (Java)"
 
 - [x] T001 Create parent Maven aggregator `pom.xml` (modules + shared properties for Java 17)
 - [x] T002 Create `multiclouddb-api/pom.xml` (API module; depends on Jackson + SLF4J)
-- [x] T003 Create `multiclouddb-spi/pom.xml` (SPI module; depends on `multiclouddb-api`)
-- [x] T004 [P] Create `multiclouddb-provider-cosmos/pom.xml` (provider module; depends on `multiclouddb-spi` + `com.azure:azure-cosmos`)
-- [x] T005 [P] Create `multiclouddb-provider-dynamo/pom.xml` (provider module; depends on `multiclouddb-spi` + `software.amazon.awssdk:dynamodb`)
-- [x] T006 [P] Create `multiclouddb-provider-spanner/pom.xml` (provider module; depends on `multiclouddb-spi` + `com.google.cloud:google-cloud-spanner`)
+- [x] T003 Create provider SPI interfaces under `multiclouddb-api/src/main/java/com/multiclouddb/spi/` (the shipped project does not use a separate SPI module)
+- [x] T004 [P] Create `multiclouddb-provider-cosmos/pom.xml` (provider module; depends on `multiclouddb-api` + `com.azure:azure-cosmos`)
+- [x] T005 [P] Create `multiclouddb-provider-dynamo/pom.xml` (provider module; depends on `multiclouddb-api` + `software.amazon.awssdk:dynamodb`)
+- [x] T006 [P] Create `multiclouddb-provider-spanner/pom.xml` (provider module; depends on `multiclouddb-api` + `com.google.cloud:google-cloud-spanner`)
 - [x] T007 Create `multiclouddb-conformance/pom.xml` (JUnit 5 conformance tests module; depends on `multiclouddb-api` + all provider modules as test/runtime)
-- [x] T008 Create `multiclouddb-samples/pom.xml` (sample app; depends on `multiclouddb-api` + chosen provider modules)
+- [x] T008 Create `multiclouddb-e2e/pom.xml` (cross-provider executable harness; depends on `multiclouddb-api` + provider modules)
 - [x] T009 Configure parent build plugins in `pom.xml` (maven-compiler-plugin Java 17, maven-enforcer-plugin, maven-surefire-plugin JUnit 5)
 - [x] T010 [P] Add ServiceLoader resource directories to provider modules (`multiclouddb-provider-*/src/main/resources/META-INF/services/`)
 
@@ -43,35 +43,35 @@ description: "Tasks for implementing Multicloud DB SDK (Java)"
 
 - [x] T011 Create provider identifier enum in `multiclouddb-api/src/main/java/com/multiclouddb/api/ProviderId.java`
 - [x] T012 [P] Create resource addressing type in `multiclouddb-api/src/main/java/com/multiclouddb/api/ResourceAddress.java`
-- [x] T013 [P] Create portable key model in `multiclouddb-api/src/main/java/com/multiclouddb/api/Key.java`
-- [x] T014 [P] Create portability warning type in `multiclouddb-api/src/main/java/com/multiclouddb/api/PortabilityWarning.java`
+- [x] T013 [P] Create portable key model in `multiclouddb-api/src/main/java/com/multiclouddb/api/MulticloudDbKey.java`
+- [~] T014 **SUPERSEDED by Decision 7:** do not add a portability-warning type; use runtime `CapabilitySet` introspection and structured `UNSUPPORTED_CAPABILITY` errors
 - [x] T015 [P] Create operation options type in `multiclouddb-api/src/main/java/com/multiclouddb/api/OperationOptions.java` (timeout + cancellation token placeholder)
 - [x] T016 [P] Create query request and response types in `multiclouddb-api/src/main/java/com/multiclouddb/api/QueryRequest.java` and `multiclouddb-api/src/main/java/com/multiclouddb/api/QueryPage.java`
 - [x] T017 Create error categories in `multiclouddb-api/src/main/java/com/multiclouddb/api/MulticloudDbErrorCategory.java`
 - [x] T018 Create error model in `multiclouddb-api/src/main/java/com/multiclouddb/api/MulticloudDbError.java` (includes provider details in sanitized form)
 - [x] T019 Create exception wrapper in `multiclouddb-api/src/main/java/com/multiclouddb/api/MulticloudDbException.java` (carries `MulticloudDbError`)
 - [x] T020 Create client configuration model in `multiclouddb-api/src/main/java/com/multiclouddb/api/MulticloudDbClientConfig.java` (provider + connection/auth maps + portable options + explicit feature flags)
-- [x] T021 Create portable client interface in `multiclouddb-api/src/main/java/com/multiclouddb/api/MulticloudDbClient.java` (create/read/update/upsert/delete/query + escape hatch placeholder)
+- [x] T021 Create portable client interface in `multiclouddb-api/src/main/java/com/multiclouddb/api/MulticloudDbClient.java` (create/read/update/upsert/delete/query)
 - [x] T022 Create default client implementation shell in `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DefaultMulticloudDbClient.java` (delegates to SPI adapter; throws structured errors until adapters exist)
 - [x] T023 Create factory that selects adapter via ServiceLoader in `multiclouddb-api/src/main/java/com/multiclouddb/api/MulticloudDbClientFactory.java`
-- [x] T024 Define SPI adapter contract in `multiclouddb-spi/src/main/java/com/multiclouddb/spi/MulticloudDbProviderAdapter.java` (provider id + createClient)
-- [x] T025 Define SPI client contract in `multiclouddb-spi/src/main/java/com/multiclouddb/spi/MulticloudDbProviderClient.java` (create/read/update/upsert/delete/query + native client access)
+- [x] T024 Define the SPI adapter contract in `multiclouddb-api/src/main/java/com/multiclouddb/spi/MulticloudDbProviderAdapter.java` (provider id + createClient)
+- [x] T025 Define the SPI client contract in `multiclouddb-api/src/main/java/com/multiclouddb/spi/MulticloudDbProviderClient.java` (create/read/update/upsert/delete/query)
 - [x] T026 Create conformance test config loader in `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/ConformanceConfig.java` (reads env vars / system props; validates required fields)
 - [x] T027 Create conformance harness utilities in `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/ConformanceHarness.java` (build client from config; create unique test resource names)
 
-**Checkpoint**: `multiclouddb-api`, `multiclouddb-spi`, and `multiclouddb-conformance` compile; conformance tests can instantiate a client (even if operations are not yet implemented).
+**Checkpoint**: `multiclouddb-api` (including its SPI package) and `multiclouddb-conformance` compile; conformance tests can instantiate a client.
 
 ---
 
-## Phase 3: User Story 1 - Write Once, Run Anywhere CRUD + Query (Priority: P1) 🎯 MVP
+## Phase 3: User Story 1 - Write Once, Run Anywhere Point Operations + Query (Priority: P1) 🎯 MVP
 
-**Goal**: A single Java API can do portable create/read/update/upsert/delete/query against Cosmos/Dynamo/Spanner, selected by config only.
+**Goal**: A single Java API provides portable create/read/upsert/delete/query across Cosmos/Dynamo/Spanner. Partial update uses the same API but runs only when the selected provider advertises `PARTIAL_UPDATE`.
 
-**Independent Test**: A single sample class runs CRUD + query against any provider by changing configuration only; conformance suite verifies the portable contract.
+**Independent Test**: A single sample class runs create/read/upsert/delete + query against any provider by changing configuration only; capability-gated update runs only on providers advertising `PARTIAL_UPDATE`.
 
 ### Tests for User Story 1 (Requested by spec: FR-017 conformance suite)
 
-- [x] T028 [P] [US1] Add CRUD conformance tests in `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us1/CrudConformanceTest.java`
+- [x] T028 [P] [US1] Add provider-inherited CRUD conformance tests in `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/CrudConformanceTests.java`
 - [x] T029 [P] [US1] Add query paging conformance tests in `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us1/QueryPagingConformanceTest.java`
 - [x] T030 [P] [US1] Add key validation conformance tests in `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us1/KeyValidationConformanceTest.java`
 
@@ -90,14 +90,14 @@ description: "Tasks for implementing Multicloud DB SDK (Java)"
 
 - [x] T039 [US1] Implement Spanner adapter entrypoint in `multiclouddb-provider-spanner/src/main/java/com/multiclouddb/provider/spanner/SpannerProviderAdapter.java` (creates `MulticloudDbProviderClient`)
 - [x] T040 [P] [US1] Implement Spanner JSON row mapping in `multiclouddb-provider-spanner/src/main/java/com/multiclouddb/provider/spanner/SpannerRowMapper.java`
-- [x] T041 [US1] Implement Spanner client operations in `multiclouddb-provider-spanner/src/main/java/com/multiclouddb/provider/spanner/SpannerProviderClient.java` (create/read/update/upsert/delete + query with best-effort paging)
+- [x] T041 [US1] Implement Spanner provider-direct operations in `multiclouddb-provider-spanner/src/main/java/com/multiclouddb/provider/spanner/SpannerProviderClient.java` (create/read/provider-direct update/upsert/delete + query with best-effort paging; portable update remains capability-gated)
 
-- [x] T042 [US1] Wire adapter selection + delegation in `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DefaultMulticloudDbClient.java` (invoke provider client; propagate warnings)
+- [x] T042 [US1] Wire adapter selection and delegation in `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DefaultMulticloudDbClient.java` (invoke provider client; normalize failures)
 
-- [x] T043 [P] [US1] Create sample config loader in `multiclouddb-samples/src/main/java/com/multiclouddb/samples/ConfigLoader.java` (env var + system property support)
-- [x] T044 [US1] Implement portable CRUD + query sample in `multiclouddb-samples/src/main/java/com/multiclouddb/samples/PortableCrudQuerySample.java` (switch provider by config only)
+- [x] T043 [P] [US1] Create the E2E config loader in `multiclouddb-e2e/src/main/java/com/microsoft/multiclouddb/e2e/ConfigLoader.java` (properties-file and system-property support)
+- [x] T044 [US1] Implement portable point operations and query examples in `multiclouddb-e2e/src/main/java/com/microsoft/multiclouddb/e2e/Main.java` (switch provider by config only)
 
-**Checkpoint**: Running `PortableCrudQuerySample` succeeds against each provider (using local emulator or live config), and conformance tests pass for the supported subset.
+**Checkpoint**: Running the `multiclouddb-e2e` harness succeeds against each configured provider; partial update runs only when advertised, and conformance tests pass for the supported subset.
 
 ---
 
@@ -128,7 +128,7 @@ description: "Tasks for implementing Multicloud DB SDK (Java)"
 
 ### Implementation — Translator SPI (multiclouddb-api)
 
-- [x] T053 [US1b] Create ExpressionTranslator SPI interface in `multiclouddb-api/src/main/java/com/multiclouddb/api/spi/ExpressionTranslator.java` (method: `translate(Expression, Map<String,Object> parameters, ResourceAddress)` → `TranslatedQuery`; method: `supportedCapabilities()` → `Set<Capability>`)
+- [x] T053 [US1b] Create `ExpressionTranslator` in `multiclouddb-api/src/main/java/com/multiclouddb/api/query/ExpressionTranslator.java` (translate an expression and parameter map for a provider collection into `TranslatedQuery`)
 - [x] T054 [US1b] Create TranslatedQuery result type in `multiclouddb-api/src/main/java/com/multiclouddb/api/query/TranslatedQuery.java` (fields: nativeExpression string, boundParameters map/list, optional fullStatement string)
 
 ### Implementation — API Modifications (multiclouddb-api)
@@ -164,12 +164,12 @@ description: "Tasks for implementing Multicloud DB SDK (Java)"
 
 ### Tests for User Story 1c
 
-- [x] T067 [P] [US1c] Add native expression passthrough conformance tests in `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us1c/NativeExpressionConformanceTest.java` (native Cosmos SQL with LIKE succeeds on Cosmos; native DynamoDB PartiQL succeeds on DynamoDB; native Spanner GoogleSQL succeeds on Spanner)
-- [x] T068 [P] [US1c] Add cross-provider native expression mismatch tests in `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us1c/NativeExpressionMismatchTest.java` (native Cosmos expression on DynamoDB → clear error; native DynamoDB expression on Cosmos → clear error; validates targetProvider mismatch detection per FR-030)
+- [x] T067 [P] [US1c] Add native-expression passthrough coverage in `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us1b/NativeExpressionTest.java`
+- [x] T068 [P] [US1c] Add provider-target mismatch coverage in `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us1b/NativeExpressionTest.java` (mismatches fail before provider execution per FR-030)
 
 ### Implementation for User Story 1c
 
-- [x] T069 [US1c] Implement native expression validation and passthrough in `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DefaultMulticloudDbClient.java` (when `nativeExpression` is set: validate targetProvider matches current provider → fail fast with structured error if mismatch; pass expression text directly to provider client without translation; emit portability warning per FR-027/FR-030)
+- [x] T069 [US1c] Implement native-expression validation and passthrough in `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DefaultMulticloudDbClient.java` (target mismatches fail fast with a structured error; matching expressions pass through without translation)
 - [x] T070 [P] [US1c] Implement Cosmos native expression passthrough in `multiclouddb-provider-cosmos/src/main/java/com/multiclouddb/provider/cosmos/CosmosProviderClient.java` (accept raw native expression string; execute as Cosmos SQL directly; bind parameters if provided)
 - [x] T071 [P] [US1c] Implement DynamoDB native expression passthrough (PartiQL) in `multiclouddb-provider-dynamo/src/main/java/com/multiclouddb/provider/dynamo/DynamoProviderClient.java` (accept raw native expression string; execute as PartiQL directly via executeStatement; bind positional parameters)
 - [x] T072 [P] [US1c] Implement Spanner native expression passthrough in `multiclouddb-provider-spanner/src/main/java/com/multiclouddb/provider/spanner/SpannerProviderClient.java` (accept raw native expression string; execute as Spanner GoogleSQL directly; bind named parameters)
@@ -202,27 +202,27 @@ description: "Tasks for implementing Multicloud DB SDK (Java)"
 
 ---
 
-## Phase 7: User Story 4 - Opt-in Provider Extensions with Visible Portability Impact (Priority: P2)
+## Phase 7: User Story 4 - Configuration-Only Provider Opt-ins (Priority: P2)
 
-**Goal**: Provider-specific behavior is available only via explicit opt-in, and it emits portability warnings.
+**Goal**: Provider-specific behavior is not silently exposed through the portable contract. Callers use explicit configuration, capability introspection, and structured errors; no native-client or provider-extension API is exposed.
 
-**Independent Test**: Enabling a provider feature flag produces a portability warning signal; portable contract remains unchanged when flags are absent.
+**Independent Test**: Unsupported or provider-mismatched operations expose the boundary through `CapabilitySet` and structured errors while the portable contract remains unchanged.
 
 ### Tests for User Story 4
 
-- [x] T081 [P] [US4] Add portability warning emission tests in `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us4/PortabilityWarningConformanceTest.java`
-- [x] T082 [P] [US4] Add escape hatch access tests in `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us4/NativeClientAccessConformanceTest.java`
+- [~] T081 [P] [US4] **SUPERSEDED by Decision 7:** capability and fail-fast behavior is covered by `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us2/CapabilitiesConformanceTest.java` and `UnsupportedCapabilityConformanceTest.java`
+- [~] T082 [P] [US4] **SUPERSEDED by FR-015/FR-020:** native-client access tests are not applicable because no native-client API is exposed.
 
 ### Implementation for User Story 4
 
-- [x] T083 [US4] Add escape hatch API to `multiclouddb-api/src/main/java/com/multiclouddb/api/MulticloudDbClient.java` (e.g., `nativeClient(Class<T>)`)
-- [x] T084 [US4] Implement escape hatch wiring in `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DefaultMulticloudDbClient.java` (delegates to provider)
-- [x] T085 [P] [US4] Implement Cosmos escape hatch + opt-ins in `multiclouddb-provider-cosmos/src/main/java/com/multiclouddb/provider/cosmos/CosmosExtensions.java` (feature flags → warning codes)
-- [x] T086 [P] [US4] Implement Dynamo escape hatch + opt-ins in `multiclouddb-provider-dynamo/src/main/java/com/multiclouddb/provider/dynamo/DynamoExtensions.java` (feature flags → warning codes)
-- [x] T087 [P] [US4] Implement Spanner escape hatch + opt-ins in `multiclouddb-provider-spanner/src/main/java/com/multiclouddb/provider/spanner/SpannerExtensions.java` (feature flags → warning codes)
-- [x] T088 [US4] Ensure warning propagation to results in `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DefaultMulticloudDbClient.java` (portable calls surface warnings when opt-ins are enabled)
+- [~] T083 [US4] **SUPERSEDED by FR-015/FR-020:** do not add `nativeClient(Class<T>)` or any other native-client escape hatch.
+- [~] T084 [US4] **SUPERSEDED by FR-015/FR-020:** no default-client wiring for native-client access is permitted.
+- [~] T085 [P] [US4] **SUPERSEDED by FR-015/FR-020:** no Cosmos provider-extension API is part of the public SDK.
+- [~] T086 [P] [US4] **SUPERSEDED by FR-015/FR-020:** no DynamoDB provider-extension API is part of the public SDK.
+- [~] T087 [P] [US4] **SUPERSEDED by FR-015/FR-020:** no Spanner provider-extension API is part of the public SDK.
+- [~] T088 [US4] **SUPERSEDED by FR-015/FR-020:** there is no portability-warning result surface or escape-hatch result wiring.
 
-**Checkpoint**: Opt-ins are configuration-driven, visible, and warnings are structured and provider-neutral.
+**Checkpoint**: Opt-ins are configuration-driven and visible through capabilities and structured errors. No portability-warning, native-client, or provider-extension API exists.
 
 ---
 
@@ -237,7 +237,7 @@ description: "Tasks for implementing Multicloud DB SDK (Java)"
 - [x] T089 [P] [US3] Add error mapping unit tests for Cosmos in `multiclouddb-provider-cosmos/src/test/java/com/multiclouddb/provider/cosmos/CosmosErrorMappingTest.java`
 - [x] T090 [P] [US3] Add error mapping unit tests for Dynamo in `multiclouddb-provider-dynamo/src/test/java/com/multiclouddb/provider/dynamo/DynamoErrorMappingTest.java`
 - [x] T091 [P] [US3] Add error mapping unit tests for Spanner in `multiclouddb-provider-spanner/src/test/java/com/multiclouddb/provider/spanner/SpannerErrorMappingTest.java`
-- [x] T092 [P] [US3] Add diagnostics presence tests in `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us3/DiagnosticsConformanceTest.java`
+- [x] T092 [P] [US3] Add diagnostics-presence tests in `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us2/DiagnosticsConformanceTest.java`
 
 ### Implementation for User Story 3
 
@@ -260,7 +260,7 @@ description: "Tasks for implementing Multicloud DB SDK (Java)"
 - [x] T100 Update quickstart to match actual module/artifact usage in `specs/001-clouddb-sdk/quickstart.md` (verify portable expression examples work end-to-end)
 - [x] T101 Add provider configuration examples for conformance + samples in `specs/001-clouddb-sdk/quickstart.md` (env vars/system props)
 - [x] T102 Run and update conceptual contract notes (if needed) in `specs/001-clouddb-sdk/contracts/openapi.yaml`
-- [x] T103 [P] Update sample app to demonstrate portable query expressions in `multiclouddb-samples/src/main/java/com/multiclouddb/samples/PortableCrudQuerySample.java` (add portable expression examples + native expression fallback example from quickstart.md)
+- [x] T103 [P] Update `multiclouddb-e2e/src/main/java/com/microsoft/multiclouddb/e2e/Main.java` to demonstrate portable query expressions; native-expression boundaries remain documented in the quickstart
 
 ---
 
@@ -268,13 +268,13 @@ description: "Tasks for implementing Multicloud DB SDK (Java)"
 
 **Goal**: Applications can create database and collection/container/table resources using the SDK's portable API (`ensureDatabase` + `ensureContainer`) without any provider-specific provisioning code.
 
-**Independent Test**: The Risk Platform sample app provisions all its databases and collections via `client.ensureDatabase()` and `client.ensureContainer()` calls only, with zero provider-specific code in the provisioner. The same provisioning code works against Cosmos DB emulator and DynamoDB Local.
+**Independent Test**: The E2E harness provisions its configured database and collection through `client.ensureDatabase()` and `client.ensureContainer()` only; provider tests verify each native mapping.
 
-**Key Design Decisions**: Provisioning as default no-op SPI methods (backward-compatible), idempotent creation (catch "already exists"), standard schema per provider (partition key `/partitionKey` for Cosmos, hash+sort key for DynamoDB, `partitionKey`+`sortKey`+`data` columns for Spanner).
+**Key Design Decisions**: Provisioning is exposed through backward-compatible SPI defaults and idempotent provider overrides, with the standard portable key/data schema mapped natively by each provider.
 
 ### Implementation — SPI & Public API
 
-- [x] T104 [US1d] Add `ensureDatabase(String database)` and `ensureContainer(ResourceAddress address)` as default no-op methods to `multiclouddb-api/src/main/java/com/multiclouddb/api/spi/MulticloudDbProviderClient.java` (default implementations log debug and return; providers override as needed)
+- [x] T104 [US1d] Add `ensureDatabase(String database)` and `ensureContainer(ResourceAddress address)` as default methods to `multiclouddb-api/src/main/java/com/multiclouddb/spi/MulticloudDbProviderClient.java` (providers override as needed)
 - [x] T105 [US1d] Add `ensureDatabase(String database)` and `ensureContainer(ResourceAddress address)` to `multiclouddb-api/src/main/java/com/multiclouddb/api/MulticloudDbClient.java` (public API surface)
 - [x] T106 [US1d] Add provisioning delegation with diagnostics/timing to `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DefaultMulticloudDbClient.java` (Instant timing, MulticloudDbException enrichment, wrapUnexpected pattern consistent with existing operations)
 
@@ -282,23 +282,23 @@ description: "Tasks for implementing Multicloud DB SDK (Java)"
 
 - [x] T107 [P] [US1d] Implement Cosmos provisioning in `multiclouddb-provider-cosmos/src/main/java/com/multiclouddb/provider/cosmos/CosmosProviderClient.java` (`ensureDatabase` → `cosmosClient.createDatabaseIfNotExists(database)`; `ensureContainer` → `database.createContainerIfNotExists(new CosmosContainerProperties(collection, "/partitionKey"))`)
 - [x] T108 [P] [US1d] Implement DynamoDB provisioning in `multiclouddb-provider-dynamo/src/main/java/com/multiclouddb/provider/dynamo/DynamoProviderClient.java` (`ensureDatabase` → no-op with debug log; `ensureContainer` → resolves table name via `resolveTableName()`, checks `listTables()`, creates table with `ATTR_ID` hash key + `ATTR_SORT_KEY` sort key, `BillingMode.PAY_PER_REQUEST`, catches `ResourceInUseException` for race conditions)
-- [x] T109 [P] [US1d] Implement Spanner provisioning in `multiclouddb-provider-spanner/src/main/java/com/multiclouddb/provider/spanner/SpannerProviderClient.java` (`ensureDatabase` → no-op; `ensureContainer` → probes with `SELECT 1 FROM tableName LIMIT 1`, catches NOT_FOUND/INVALID_ARGUMENT, then creates via `DatabaseAdminClient.updateDatabaseDdl()` with DDL: `CREATE TABLE tableName (partitionKey STRING(MAX) NOT NULL, sortKey STRING(MAX) NOT NULL, data STRING(MAX)) PRIMARY KEY (partitionKey, sortKey)`, catches "Duplicate name in schema" for race conditions)
+- [x] T109 [P] [US1d] Implement Spanner provisioning in `multiclouddb-provider-spanner/src/main/java/com/multiclouddb/provider/spanner/SpannerProviderClient.java` (`ensureDatabase` validates the configured database name, creates the emulator instance only in emulator mode, and creates the database in both modes; production requires the instance to pre-exist. `ensureContainer` probes with `SELECT 1 FROM tableName LIMIT 1`, catches NOT_FOUND/INVALID_ARGUMENT, then creates via `DatabaseAdminClient.updateDatabaseDdl()` with DDL: `CREATE TABLE tableName (partitionKey STRING(MAX) NOT NULL, sortKey STRING(MAX) NOT NULL, data STRING(MAX)) PRIMARY KEY (partitionKey, sortKey)`, catching "Duplicate name in schema" for race conditions.)
 
-### Integration — Sample App
+### Integration — E2E Harness
 
-- [x] T110 [US1d] Overhaul `ResourceProvisioner` in `multiclouddb-samples/src/main/java/com/multiclouddb/samples/risk/ResourceProvisioner.java` to use only `client.ensureDatabase()` + `client.ensureContainer()` — remove ALL provider-specific imports and SDK calls; provisioning is now fully provider-agnostic (156→82 lines)
+- [x] T110 [US1d] Exercise portable provisioning through `client.ensureDatabase()` and `client.ensureContainer()` in `multiclouddb-e2e/src/main/java/com/microsoft/multiclouddb/e2e/Main.java`
 
-**Checkpoint**: The Risk Platform sample provisions databases and collections on both Cosmos DB emulator and DynamoDB Local using only the portable provisioning API. No provider SDKs are imported in the provisioner. All 322+ tests pass.
+**Checkpoint**: The E2E harness uses only portable provisioning APIs, and provider tests cover Cosmos DB, DynamoDB, and Spanner mappings.
 
 ---
 
 ## Phase 11: User Story 1e - Partition-Key-Scoped Queries (Priority: P1)
 
-**Goal**: Queries can be scoped to a specific partition key value, enabling each provider to use its native efficient partition-scoping mechanism instead of cross-partition scans. The sample application demonstrates correct data modeling with partition key co-location.
+**Goal**: Queries can be scoped to a specific partition key value, enabling each provider to use its native efficient partition-scoping mechanism instead of cross-partition scans. Conformance tests demonstrate partition-key co-location.
 
-**Independent Test**: A query with `partitionKey("portfolio-alpha")` returns only items within that partition on both Cosmos DB and DynamoDB, and each provider uses its native efficient mechanism.
+**Independent Test**: A query with `partitionKey("portfolio-alpha")` returns only items within that partition on Cosmos DB, DynamoDB, and Spanner, using each provider-native scoping mechanism.
 
-**Key Design Decisions**: `QueryRequest.partitionKey` is optional (null = cross-partition, backward compatible). Cosmos DB uses `CosmosQueryRequestOptions.setPartitionKey()`. DynamoDB adds `partitionKey` WHERE condition in PartiQL. Sample app keys positions as `Key.of(portfolioId, positionId)` for co-location (partition key first).
+**Key Design Decisions**: `QueryRequest.partitionKey` is optional (null preserves cross-partition behavior). Cosmos DB uses `CosmosQueryRequestOptions.setPartitionKey()`, DynamoDB adds a `partitionKey` PartiQL predicate, and Spanner adds a bound `partitionKey` GoogleSQL predicate.
 
 ### Implementation — API Modification
 
@@ -310,18 +310,18 @@ description: "Tasks for implementing Multicloud DB SDK (Java)"
 - [x] T113 [P] [US1e] Update DynamoDB query methods in `multiclouddb-provider-dynamo/src/main/java/com/multiclouddb/provider/dynamo/DynamoProviderClient.java` to add `AND "partitionKey" = '?'` WHERE condition in PartiQL when `QueryRequest.partitionKey()` is non-null (applies to both `query()` and `queryWithTranslation()` methods)
 - [x] T114 [P] [US1e] Update Spanner query methods in `multiclouddb-provider-spanner/src/main/java/com/multiclouddb/provider/spanner/SpannerProviderClient.java` to add `AND partitionKey = @_pkval` WHERE condition when `QueryRequest.partitionKey()` is non-null
 
-### Implementation — Sample App Data Model Fix
+### External Sample Work (Not Shipped by This Reactor)
 
-- [x] T115 [US1e] Update `DemoDataSeeder` in `multiclouddb-samples/src/main/java/com/multiclouddb/samples/riskplatform/data/DemoDataSeeder.java` to use `Key.of(portfolioId, positionId)` for positions, `Key.of(portfolioId, metricsId)` for risk_metrics, and `Key.of(portfolioId, alertId)` for alerts (co-locate related documents by portfolio, partition key first)
-- [x] T116 [US1e] Update `RiskPlatformApp` in `multiclouddb-samples/src/main/java/com/multiclouddb/samples/riskplatform/RiskPlatformApp.java` to use partition-key-scoped queries (replace `expression("portfolioId = @pid")` with `partitionKey(portfolioId)` or combine both; update `Key.of(posId, posId)` to `Key.of(portfolioId, posId)` for inline position creation, partition key first)
-- [x] T117 [US1e] Update `TenantManager` in `multiclouddb-samples/src/main/java/com/multiclouddb/samples/riskplatform/tenant/TenantManager.java` to add a `queryByPartition(tenantId, collection, partitionKey, query)` helper method for partition-scoped queries
+- [~] T115 [US1e] **SUPERSEDED:** Risk Platform seeding belongs to the external samples repository; partition isolation is covered in `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/CrudConformanceTests.java`
+- [~] T116 [US1e] **SUPERSEDED:** `RiskPlatformApp` is not a shipped SDK artifact; portable partition-scoped query behavior is covered by conformance tests
+- [~] T117 [US1e] **SUPERSEDED:** `TenantManager` is not a shipped SDK artifact; provider switching is exercised by the E2E and conformance profiles
 
 ### Tests — Partition-Key-Scoped Queries
 
 - [x] T118 [P] [US1e] Add partition-key-scoped query conformance tests in `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/CrudConformanceTests.java` — added 3 tests: `queryByPartitionKey` (Order 11), `queryWithoutPartitionKey` (Order 12), `queryNonexistentPartition` (Order 13) — verifies partition isolation, cross-partition backward compatibility, and empty-result handling
-- [x] T119 [US1e] Build and validate all tests pass with partition-key-scoped query support — 281 tests pass (0 failures, 0 errors) across Cosmos DB and DynamoDB; Spanner deferred (emulator unavailable)
+- [x] T119 [US1e] Build and validate partition-key-scoped query support across the then-applicable Cosmos DB and DynamoDB suites; exact historical test totals are intentionally not retained
 
-**Checkpoint**: Partition-key-scoped queries work on all providers. The Risk Platform sample demonstrates correct data modeling with position co-location by portfolioId. Cross-partition scans are eliminated for portfolio-scoped queries. SC-013, SC-014 pass.
+**Checkpoint**: Partition-key-scoped queries work on all providers, and conformance coverage verifies isolation, cross-partition compatibility, and empty results. SC-013 and SC-014 pass.
 
 ---
 
@@ -331,15 +331,15 @@ description: "Tasks for implementing Multicloud DB SDK (Java)"
 
 - **Setup (Phase 1)**: No dependencies; start immediately
 - **Foundational (Phase 2)**: Depends on Setup; blocks all user stories
-- **US1 — CRUD + Query (Phase 3)**: Depends on Foundational; MVP target
+- **US1 — Point Operations + Query (Phase 3)**: Depends on Foundational; MVP target
 - **US1b — Portable Query Expressions (Phase 4)**: Depends on US1 (needs working adapters and query infrastructure)
 - **US1c — Native Expression Fallback (Phase 5)**: Depends on US1b (needs nativeExpression field on QueryRequest from T055 and translator integration from T061)
 - **US2 — Capabilities (Phase 6)**: Depends on US1b (needs query capability constants from T056 and per-provider capabilities from T064–T066)
-- **US4 — Opt-in Extensions (Phase 7)**: Depends on US1 (needs working adapters); can proceed in parallel with US1b/US1c/US2
+- **US4 — Configuration-Only Opt-ins (Phase 7)**: Depends on US1; superseded native-extension and warning-surface work remains documented as such
 - **US3 — Errors & Diagnostics (Phase 8)**: Depends on US2 and US4
 - **Polish (Phase 9)**: Depends on completing the desired user stories
 - **US1d — Resource Provisioning (Phase 10)**: Depends on Foundational (Phase 2); needs MulticloudDbClient, MulticloudDbProviderClient, DefaultMulticloudDbClient, and working provider adapters. Can proceed independently of US1b/US1c.
-- **US1e — Partition-Key-Scoped Queries (Phase 11)**: Depends on US1b (needs QueryRequest + working query infrastructure). Sample app fixes depend on US1d (provisioning).
+- **US1e — Partition-Key-Scoped Queries (Phase 11)**: Depends on US1b (needs QueryRequest + working query infrastructure).
 - **Bulk Provisioning + Cloud Auth (Phase 13)**: Depends on US1d (extends provisioning with provisionSchema API); Cosmos cloud auth depends on Cosmos provider adapter (Phase 3).
 
 ### Dependency Graph
@@ -347,11 +347,11 @@ description: "Tasks for implementing Multicloud DB SDK (Java)"
 ```mermaid
 graph TD
     S1[Phase 1: Setup] --> F2[Phase 2: Foundational]
-    F2 --> US1[Phase 3: US1 P1 CRUD + Query]
+    F2 --> US1[Phase 3: US1 P1 Point Operations + Query]
     US1 --> US1b[Phase 4: US1b P1 Portable Query Expressions]
     US1b --> US1c[Phase 5: US1c P2 Native Expression Fallback]
     US1b --> US2[Phase 6: US2 P2 Capabilities]
-    US1 --> US4[Phase 7: US4 P2 Opt-in Extensions]
+    US1 --> US4[Phase 7: US4 P2 Capability Boundaries]
     US2 --> US3[Phase 8: US3 P3 Errors + Diagnostics]
     US4 --> US3
     US3 --> P9[Phase 9: Polish]
@@ -368,7 +368,7 @@ graph TD
 - **US1b (P1)**: Depends on US1 (working provider adapters + query infrastructure)
 - **US1c (P2)**: Depends on US1b (nativeExpression field + translator integration)
 - **US1d (P2)**: Depends on US1 (working provider adapters + MulticloudDbClient/SPI interfaces); independent of US1b/US1c
-- **US1e (P1)**: Depends on US1b (QueryRequest + query infrastructure) and US1d (provisioning for sample app)
+- **US1e (P1)**: Depends on US1b (QueryRequest + query infrastructure)
 - **US2 (P2)**: Depends on US1b (query capability constants and per-provider capability sets)
 - **US4 (P2)**: Depends on US1 client/adapters; independent of US1b/US1c
 - **US3 (P3)**: Depends on US2 and US4
@@ -468,38 +468,42 @@ Run these in parallel (different files, low conflict):
 
 1. Complete Phase 1 (Setup)
 2. Complete Phase 2 (Foundational)
-3. Complete Phase 3 (US1) including conformance tests + sample
-4. Validate portability by running sample + conformance against at least one provider, then expand
+3. Complete Phase 3 (US1) including conformance tests + E2E harness
+4. Validate portability by running the E2E harness + conformance against at least one provider, then expand
 
 ### Incremental Delivery
 
 - Add US1b (portable query expressions — parser, AST, translators, PartiQL migration)
-- Add US1c (native expression fallback — escape hatch for provider-specific queries)
+- Add US1c (explicit native-expression fallback for provider-specific query syntax)
 - Add US1d (portable resource provisioning — ensureDatabase + ensureContainer across all providers)
 - Add US2 (capabilities + fail-fast, including query DSL capabilities)
-- Add US4 (opt-in extensions + escape hatch + warnings)
+- Add US4 (configuration-only provider opt-ins through capabilities and structured errors; no extension or warning API)
 - Add US3 (errors/diagnostics consistency)
-- Add US1e (partition-key-scoped queries — QueryRequest.partitionKey, provider scoping, sample app data model fix)
+- Add US1e (partition-key-scoped queries — QueryRequest.partitionKey and native provider scoping)
 
 ---
 
-## Phase 12 — Key Semantic Rename (T120–T127)
+## Phase 12 — MulticloudDbKey Semantic Rename (T120–T127)
 
-Renames key accessors from `Key.partition()`/`Key.id()` to `Key.partitionKey()`/`Key.sortKey()`
+Renames key accessors from `MulticloudDbKey.partition()`/`MulticloudDbKey.id()`
+to `MulticloudDbKey.partitionKey()`/`MulticloudDbKey.sortKey()`
 and renames CRUD operations from `put/get/delete` to `create/read/update/upsert/delete`.
-All three providers share consistent key semantics: `Key.partitionKey()` → distribution/hash key,
-`Key.sortKey()` → item identifier/sort key.
+All three providers share consistent key semantics:
+`MulticloudDbKey.partitionKey()` → distribution/hash key,
+`MulticloudDbKey.sortKey()` → item identifier/sort key.
 
 ### Sequential Tasks
 
 - [x] Task T120: Rename `DynamoProviderClient.java` — update key mapping to use
-  `Key.partitionKey()` → HASH (`partitionKey` attribute) and `Key.sortKey()` → RANGE (`sortKey` attribute);
+  `MulticloudDbKey.partitionKey()` → HASH (`partitionKey` attribute) and
+  `MulticloudDbKey.sortKey()` → RANGE (`sortKey` attribute);
   rename `ATTR_SORT_KEY` → `ATTR_PARTITION_KEY`; update `create/read/update/upsert/delete/query/ensureContainer`;
   rename `appendSortKeyCondition` → `appendPartitionKeyCondition`.
   `multiclouddb-provider-dynamo/src/main/java/com/multiclouddb/provider/dynamo/DynamoProviderClient.java`
 
 - [x] Task T121: Rename `SpannerProviderClient.java` — update PK columns to use
-  `partitionKey` (stores `Key.partitionKey()`) and `sortKey` (stores `Key.sortKey()`);
+  `partitionKey` (stores `MulticloudDbKey.partitionKey()`) and `sortKey`
+  (stores `MulticloudDbKey.sortKey()`);
   update DDL to `PRIMARY KEY (partitionKey, sortKey)`; update `create/read/update/upsert/delete/query`;
   rename `appendSortKeyConditionSQL` → `appendPartitionKeyConditionSQL`.
   `multiclouddb-provider-spanner/src/main/java/com/multiclouddb/provider/spanner/SpannerProviderClient.java`
@@ -520,21 +524,19 @@ All three providers share consistent key semantics: `Key.partitionKey()` → dis
   `PRIMARY KEY (partitionKey, sortKey)` with `partitionKey` column.
   `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us1b/SpannerQueryIntegrationTest.java`
 
-- [x] Task T126: Update sample app Javadoc comments in `ResourceProvisioner.java`
-  and `TenantManager.java` to reference `partitionKey` instead of `sortKey`.
-  `multiclouddb-samples/src/main/java/com/multiclouddb/samples/riskplatform/infra/ResourceProvisioner.java`
-  `multiclouddb-samples/src/main/java/com/multiclouddb/samples/riskplatform/tenant/TenantManager.java`
+- [~] Task T126: **SUPERSEDED:** the referenced external sample classes are not shipped in this repository; SDK and E2E documentation use `partitionKey` terminology.
 
 - [x] Task T127: Build & validate — `mvn clean install -DskipTests` then targeted
   unit test run to confirm compilation and test pass.
 
 ---
 
-## Phase 13 — Bulk Schema Provisioning, Cloud Authentication & Management SDK (T128–T135)
+## Phase 13 — Bulk Schema Provisioning and Cloud Authentication (T128–T135)
 
 Adds `provisionSchema(Map<String, List<String>>)` bulk provisioning API, `DefaultAzureCredential`
-support in the Cosmos provider, and `azure-resourcemanager-cosmos` management SDK integration for
-RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use single `provisionSchema` call.
+support in the Cosmos provider, and data-plane-only provisioning. The proposed
+ARM management SDK integration was superseded and never introduced. The earlier
+in-repository `ResourceProvisioner` sample task is retained as superseded history.
 
 ### Implementation — provisionSchema API
 
@@ -576,11 +578,9 @@ RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use sing
   document permission requirements and failure semantics.
   `multiclouddb-provider-cosmos/src/main/java/com/multiclouddb/provider/cosmos/CosmosProviderClient.java`
 
-### Integration — Sample App Simplification
+### External Sample Follow-up
 
-- [x] Task T135: Simplify `ResourceProvisioner` to use single `client.provisionSchema(SCHEMA)` call
-  instead of manually iterating databases/containers. Cloud and emulator properties files created.
-  `multiclouddb-samples/src/main/java/com/multiclouddb/samples/riskplatform/infra/ResourceProvisioner.java`
+- [~] Task T135: **SUPERSEDED:** `ResourceProvisioner` belongs to the external samples repository and is not a shipped reactor artifact. The portable `provisionSchema` API itself is implemented and covered in this repository.
 
 ---
 
@@ -639,7 +639,7 @@ RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use sing
 
 ## Phase 16: User Story 6 — Document TTL and Write Metadata (Priority: P2)
 
-**Goal**: Applications can set a TTL on individual documents at write time (where supported) and retrieve document metadata (remaining TTL + write timestamp) on reads via an opt-in `OperationOptions` flag. `read()` returns `DocumentResult` wrapping the document and optional metadata.
+**Goal**: Applications can set TTL at write time where supported and request an opt-in `DocumentMetadata` envelope whose independently nullable fields follow provider mappings: Cosmos DB exposes `lastModified` and `version`, DynamoDB exposes `ttlExpiry` when present, and Spanner exposes an empty envelope. `read()` returns `DocumentResult` wrapping the document and optional metadata.
 
 ### New Types for User Story 6
 
@@ -665,43 +665,43 @@ RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use sing
 
 ### Provider Implementations for User Story 6
 
-- [x] T153 [P] [US6] Update `CosmosProviderClient.read()` return type to `DocumentResult`. When `options.includeMetadata()` is true, extract ETag as version field in `DocumentMetadata`. Change response type from `JsonNode` to `ObjectNode`.
+- [x] T153 [P] [US6] Update `CosmosProviderClient.read()` return type to `DocumentResult`. When `options.includeMetadata()` is true, return metadata with `_ts` as `lastModified`, ETag as `version`, and null `ttlExpiry`. Change response type from `JsonNode` to `ObjectNode`.
   File: `multiclouddb-provider-cosmos/src/main/java/com/multiclouddb/provider/cosmos/CosmosProviderClient.java`
 
-- [x] T154 [P] [US6] Update `DynamoProviderClient.read()` return type to `DocumentResult`. When `options.includeMetadata()` is true, return empty metadata shell (DynamoDB does not expose per-item write timestamps via GetItem).
+- [x] T154 [P] [US6] Update `DynamoProviderClient.read()` return type to `DocumentResult`. When `options.includeMetadata()` is true, map the stored `ttlExpiry` attribute when present; `lastModified` and `version` remain null.
   File: `multiclouddb-provider-dynamo/src/main/java/com/multiclouddb/provider/dynamo/DynamoProviderClient.java`
 
 - [x] T155 [P] [US6] Update `SpannerProviderClient.read()` return type to `DocumentResult`. When `options.includeMetadata()` is true, return empty metadata shell.
   File: `multiclouddb-provider-spanner/src/main/java/com/multiclouddb/provider/spanner/SpannerProviderClient.java`
 
-- [x] T156 [P] [US6] Update all three provider capability files to declare `ROW_LEVEL_TTL` and `WRITE_TIMESTAMP` entries (values per provider capability matrix in research.md D22/D24).
+- [x] T156 [P] [US6] Update all three provider capability files to declare `ROW_LEVEL_TTL` and `WRITE_TIMESTAMP` entries: `ROW_LEVEL_TTL` is true for Cosmos DB/DynamoDB and false for Spanner; `WRITE_TIMESTAMP` is true only for Cosmos DB.
   Files: `CosmosCapabilities.java`, `DynamoCapabilities.java`, `SpannerCapabilities.java`
 
 ### Tests for User Story 6
 
-- [x] T157 [US6] Create `ResultSetControlConformanceTest.java` (us5 package) verifying FR-049–053. Provider-level TTL/metadata integration tests deferred to live-provider test runs.
-  File: `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us5/ResultSetControlConformanceTest.java`
+- [x] T157 [US6] Create `TtlAndMetadataConformanceTest.java` (us6 package) covering the existing FR-056–FR-059 create/upsert TTL and metadata opt-in checks. Provider-level TTL expiration-window validation remains deferred to live-provider runs; update-TTL rejection is covered by shared `CrudConformanceTests`.
+  File: `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us6/TtlAndMetadataConformanceTest.java`
 
 ---
 
 ## Phase 17: User Story 7 — Uniform Document Size and Quota Limits (Priority: P2)
 
-**Goal**: The SDK enforces a 400 KB maximum document size across all providers before sending any I/O. Oversized documents are rejected with `INVALID_REQUEST`.
+**Goal**: The SDK enforces 390 KiB serialized and structural write-input bounds, portable value shape, field-name, and nesting limits across all providers before I/O. Violations are rejected with `INVALID_REQUEST`.
 
-- [x] T158 [P] [US7] Create `DocumentSizeValidator` utility class with `MAX_BYTES = 400 * 1024` and `validate(JsonNode document, String operation)` method that serializes to UTF-8 bytes via `ObjectMapper.writeValueAsBytes()` and throws `MulticloudDbException(INVALID_REQUEST)` when byte length exceeds the limit.
+- [x] T158 [P] [US7] [FR-060/FR-061] Create `DocumentSizeValidator` with `MAX_BYTES = 390 * 1024`, serialized and structural measurement, binary/name/depth validation, and typed non-retryable `INVALID_REQUEST` mapping for invalid or unserializable inputs.
   File: `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DocumentSizeValidator.java`
 
-- [x] T159 [US7] Update `DefaultMulticloudDbClient` to call `DocumentSizeValidator.validate(document, operation)` at the start of `create()` and `upsert()` before the provider delegation block.
+- [x] T159 [US7] [FR-061] Update `DefaultMulticloudDbClient` to call `DocumentSizeValidator.validate(document, operation)` at the start of `create()` and `upsert()`, and validate incoming update fields, before provider delegation.
   File: `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DefaultMulticloudDbClient.java`
 
-- [x] T160 [US7] Create `DocumentSizeConformanceTest.java` with tests: document within limit is accepted; document exceeding 400 KB is rejected on upsert with INVALID_REQUEST; document exceeding 400 KB is rejected on create with INVALID_REQUEST.
-  File: `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us7/DocumentSizeConformanceTest.java`
+- [x] T160 [US7] [FR-060/FR-061] Cover the serialized and structural 390 KiB pass/fail boundaries in shared `CrudConformanceTests`: exact-limit create/upsert succeeds with read-back on every provider, while oversized inputs fail with `INVALID_REQUEST`.
+  File: `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/CrudConformanceTests.java`
 
 ---
 
 ## Phase 18: Build and Validate
 
-- [x] T161 Build and validate all modules compile and all existing + new tests pass: `mvn clean install -DskipTests` confirms zero compilation errors, then `mvn test -pl multiclouddb-api` confirms 28 tests pass. Full clean build successful across all modules.
+- [x] T161 Build and validate all modules compile and the targeted API suite passes. The historical validation completed successfully; exact test totals are intentionally not retained as mutable task metadata.
 
 
 ---
@@ -715,7 +715,7 @@ RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use sing
 - [x] T163 [US14] Internal token model + codec: `CursorToken` (immutable record-shaped class), `CursorAnchor` enum, `PartitionPosition`, `CursorTokenCodec` (Base64URL JSON wire format, 24h client-side age cap, `expired(reason, message)` factory).
   Files: `multiclouddb-api/src/main/java/com/multiclouddb/api/changefeed/internal/*.java`
 - [x] T164 [US14] `MulticloudDbClient.listCursors` + `readChanges` (with and without `OperationOptions`) + `MulticloudDbProviderClient` SPI mirror; `DefaultMulticloudDbClient` delegates with provider/resource validation.
-  Files: `multiclouddb-api/src/main/java/com/multiclouddb/api/MulticloudDbClient.java`, `multiclouddb-api/src/main/java/com/multiclouddb/api/spi/MulticloudDbProviderClient.java`, `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DefaultMulticloudDbClient.java`
+  Files: `multiclouddb-api/src/main/java/com/multiclouddb/api/MulticloudDbClient.java`, `multiclouddb-api/src/main/java/com/multiclouddb/spi/MulticloudDbProviderClient.java`, `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DefaultMulticloudDbClient.java`
 - [x] T165 [P] [US14] Cosmos provider: `CosmosChangeFeedReader` backed by `CosmosContainer.queryChangeFeed(...)` + `getFeedRanges()`. Always reads in All-Versions-and-Deletes (AVAD) mode and unwraps the AVAD envelope so `ChangeEvent.type()` faithfully distinguishes `CREATE`/`UPDATE`/`DELETE` and `ChangeEvent.data()` carries the document body (not the transport envelope). 410 GONE → `CursorExpiredException(PROVIDER_TRIMMED)`. Caller must provision the target container with an AVAD change-feed policy.
   File: `multiclouddb-provider-cosmos/src/main/java/com/multiclouddb/provider/cosmos/CosmosChangeFeedReader.java`
 - [x] T166 [P] [US14] Dynamo provider: `DynamoChangeFeedReader` backed by `DynamoDbStreams.getRecords(...)` with `ShardIteratorType=AT_SEQUENCE_NUMBER`/`LATEST`. Requires stream-enabled table; `TrimmedDataAccessException` → `CursorExpiredException(PROVIDER_TRIMMED)`.
@@ -774,10 +774,14 @@ RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use sing
   `formatRetentionPeriod(Duration)` helper that picks the coarsest stable
   GoogleSQL suffix.
   File: `multiclouddb-provider-spanner/src/main/java/com/multiclouddb/provider/spanner/SpannerProviderClient.java`
-- [x] T179 [US14] Capability registry size assertion bump:
-  `CapabilitiesConformanceTest.capabilityCountIs17` now asserts the registry
-  declares 17 capabilities (was 16), and `EXTENDED_CHANGE_FEED_HISTORY` is
-  added to the `knownNames[]` array.
+- [x] T179 [US14] Historical capability registry size assertion bump: at this
+  change-feed milestone, `CapabilitiesConformanceTest.capabilityCountIs17`
+  asserted 17 capabilities (was 16), and `EXTENDED_CHANGE_FEED_HISTORY` was
+  added to the `knownNames[]` array. Feature 002 later superseded that count:
+  current built-in effective sets contain 18 rows after `CapabilitySet` applies
+  only the omitted core partial-update default. Proposed provider-specific size
+  and TTL capability work was removed during review because it did not define a
+  portable contract.
   File: `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us2/CapabilitiesConformanceTest.java`
 - [x] T180 [US14] Unit-test coverage for the opt-in surface and DDL helper:
   `ChangeFeedConfigTest` exercises builder validation (zero / negative /

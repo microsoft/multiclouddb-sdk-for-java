@@ -44,6 +44,7 @@ class SpannerQueryIntegrationTest {
     private static final String INSTANCE_ID  = "test-instance";
     private static final String DATABASE_ID  = "querytestdb";
     private static final String TABLE        = "querytests";
+    private static final String TEST_ID_FIELD = "testId";
 
     private MulticloudDbClient client;
     private final ResourceAddress address = new ResourceAddress(DATABASE_ID, TABLE);
@@ -73,6 +74,7 @@ class SpannerQueryIntegrationTest {
                                 + "  partitionKey STRING(MAX) NOT NULL,"
                                 + "  sortKey STRING(MAX) NOT NULL,"
                                 + "  data STRING(MAX),"
+                                + "  testId STRING(MAX),"
                                 + "  title STRING(MAX),"
                                 + "  status STRING(MAX),"
                                 + "  priority INT64,"
@@ -115,7 +117,8 @@ class SpannerQueryIntegrationTest {
 
     private void insertDoc(String id, String title, String status, int priority, String category) {
         client.upsert(address, com.multiclouddb.api.MulticloudDbKey.of(id, id),
-                Map.of("title", title, "status", status, "priority", priority, "category", category));
+                Map.of(TEST_ID_FIELD, id, "title", title, "status", status,
+                        "priority", priority, "category", category));
     }
 
     private static String str(Map<String, Object> item, String field) {
@@ -138,7 +141,7 @@ class SpannerQueryIntegrationTest {
         assertNotNull(page);
         List<Map<String, Object>> items = page.items();
         System.out.println("[Spanner] equality filter returned " + items.size() + " items");
-        items.forEach(i -> System.out.println("  -> " + str(i,"sortKey") + ": " + str(i,"title") + " [status=" + str(i,"status") + "]"));
+        items.forEach(i -> System.out.println("  -> " + str(i, TEST_ID_FIELD) + ": " + str(i,"title") + " [status=" + str(i,"status") + "]"));
         assertFalse(items.isEmpty(), "Should find active items");
         for (Map<String, Object> item : items)
             assertEquals("active", str(item, "status"), "All returned items should have status=active");
@@ -152,7 +155,7 @@ class SpannerQueryIntegrationTest {
                 .parameters(Map.of("status", "active", "cat", "shopping")).maxPageSize(50).build());
         List<Map<String, Object>> items = page.items();
         System.out.println("[Spanner] AND filter returned " + items.size() + " items");
-        items.forEach(i -> System.out.println("  -> " + str(i,"sortKey") + ": " + str(i,"title")));
+        items.forEach(i -> System.out.println("  -> " + str(i, TEST_ID_FIELD) + ": " + str(i,"title")));
         assertFalse(items.isEmpty(), "Should find active shopping items");
         for (Map<String, Object> item : items) {
             assertEquals("active", str(item, "status"));
@@ -167,7 +170,7 @@ class SpannerQueryIntegrationTest {
                 .expression("priority > @minPriority").parameters(Map.of("minPriority", 3)).maxPageSize(50).build());
         List<Map<String, Object>> items = page.items();
         System.out.println("[Spanner] comparison filter (priority > 3) returned " + items.size() + " items");
-        items.forEach(i -> System.out.println("  -> " + str(i,"sortKey") + ": priority=" + num(i,"priority")));
+        items.forEach(i -> System.out.println("  -> " + str(i, TEST_ID_FIELD) + ": priority=" + num(i,"priority")));
         assertFalse(items.isEmpty(), "Should find items with priority > 3");
         for (Map<String, Object> item : items)
             assertTrue(num(item, "priority") > 3, "All items should have priority > 3");
@@ -180,7 +183,7 @@ class SpannerQueryIntegrationTest {
                 .expression("starts_with(title, @prefix)").parameters(Map.of("prefix", "Buy")).maxPageSize(50).build());
         List<Map<String, Object>> items = page.items();
         System.out.println("[Spanner] starts_with('Buy') returned " + items.size() + " items");
-        items.forEach(i -> System.out.println("  -> " + str(i,"sortKey") + ": " + str(i,"title")));
+        items.forEach(i -> System.out.println("  -> " + str(i, TEST_ID_FIELD) + ": " + str(i,"title")));
         assertFalse(items.isEmpty(), "Should find items starting with 'Buy'");
         for (Map<String, Object> item : items)
             assertTrue(str(item, "title").startsWith("Buy"), "All items should have title starting with 'Buy'");
@@ -193,7 +196,7 @@ class SpannerQueryIntegrationTest {
                 .expression("contains(title, @substr)").parameters(Map.of("substr", "book")).maxPageSize(50).build());
         List<Map<String, Object>> items = page.items();
         System.out.println("[Spanner] contains('book') returned " + items.size() + " items");
-        items.forEach(i -> System.out.println("  -> " + str(i,"sortKey") + ": " + str(i,"title")));
+        items.forEach(i -> System.out.println("  -> " + str(i, TEST_ID_FIELD) + ": " + str(i,"title")));
         for (Map<String, Object> item : items)
             assertTrue(str(item, "title").contains("book"), "Returned items should contain 'book' in title");
     }
@@ -205,7 +208,7 @@ class SpannerQueryIntegrationTest {
                 .expression("NOT status = @status").parameters(Map.of("status", "active")).maxPageSize(50).build());
         List<Map<String, Object>> items = page.items();
         System.out.println("[Spanner] NOT active returned " + items.size() + " items");
-        items.forEach(i -> System.out.println("  -> " + str(i,"sortKey") + ": status=" + str(i,"status")));
+        items.forEach(i -> System.out.println("  -> " + str(i, TEST_ID_FIELD) + ": status=" + str(i,"status")));
         assertFalse(items.isEmpty(), "Should find non-active items");
         for (Map<String, Object> item : items)
             assertNotEquals("active", str(item, "status"), "All returned items should NOT be active");
@@ -219,7 +222,7 @@ class SpannerQueryIntegrationTest {
                 .parameters(Map.of("cat1", "travel", "cat2", "personal")).maxPageSize(50).build());
         List<Map<String, Object>> items = page.items();
         System.out.println("[Spanner] OR (travel|personal) returned " + items.size() + " items");
-        items.forEach(i -> System.out.println("  -> " + str(i,"sortKey") + ": category=" + str(i,"category")));
+        items.forEach(i -> System.out.println("  -> " + str(i, TEST_ID_FIELD) + ": category=" + str(i,"category")));
         assertFalse(items.isEmpty(), "Should find travel or personal items");
         for (Map<String, Object> item : items) {
             String cat = str(item, "category");
@@ -236,7 +239,7 @@ class SpannerQueryIntegrationTest {
                 .parameters(Map.of("s", "active", "c1", "shopping", "c2", "travel")).maxPageSize(50).build());
         List<Map<String, Object>> items = page.items();
         System.out.println("[Spanner] complex compound returned " + items.size() + " items");
-        items.forEach(i -> System.out.println("  -> " + str(i,"sortKey") + ": " + str(i,"title") + " [" + str(i,"status") + ", " + str(i,"category") + "]"));
+        items.forEach(i -> System.out.println("  -> " + str(i, TEST_ID_FIELD) + ": " + str(i,"title") + " [" + str(i,"status") + ", " + str(i,"category") + "]"));
         assertFalse(items.isEmpty(), "Should find active items in shopping or travel");
         for (Map<String, Object> item : items) {
             assertEquals("active", str(item, "status"));
@@ -254,7 +257,7 @@ class SpannerQueryIntegrationTest {
                 .maxPageSize(50).build());
         List<Map<String, Object>> items = page.items();
         System.out.println("[Spanner] native GoogleSQL returned " + items.size() + " items");
-        items.forEach(i -> System.out.println("  -> " + str(i,"sortKey") + ": " + str(i,"title")));
+        items.forEach(i -> System.out.println("  -> " + str(i, TEST_ID_FIELD) + ": " + str(i,"title")));
         assertFalse(items.isEmpty(), "Should find items starting with 'Ship'");
         for (Map<String, Object> item : items)
             assertTrue(str(item, "title").startsWith("Ship"));
@@ -267,11 +270,11 @@ class SpannerQueryIntegrationTest {
                 .expression("SELECT * FROM c").maxPageSize(100).build());
         List<Map<String, Object>> items = page.items();
         System.out.println("[Spanner] Full scan returned " + items.size() + " items total");
-        long testItems = items.stream().filter(i -> str(i, "sortKey").startsWith("qtest-")).count();
+        long testItems = items.stream().filter(i -> str(i, TEST_ID_FIELD).startsWith("qtest-")).count();
         System.out.println("[Spanner] Found " + testItems + " test items (qtest-*) in emulator");
         items.stream()
-                .filter(i -> str(i, "sortKey").startsWith("qtest-"))
-                .forEach(i -> System.out.println("  -> " + str(i,"sortKey")
+                .filter(i -> str(i, TEST_ID_FIELD).startsWith("qtest-"))
+                .forEach(i -> System.out.println("  -> " + str(i, TEST_ID_FIELD)
                         + " | title=" + str(i,"title")
                         + " | status=" + str(i,"status")
                         + " | priority=" + num(i,"priority")

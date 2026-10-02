@@ -6,9 +6,10 @@
 > This repository is currently available as a **public preview** and is **not yet fully ready for production use**.
 > Expect breaking changes, incomplete features, and limited support during this phase.
 
-A **portable database SDK** that lets you write CRUD and query logic once and run it
-against **Azure Cosmos DB**, **Amazon DynamoDB**, or **Google Cloud Spanner** -
-switch providers by changing a single properties file, with zero code changes.
+A **portable database SDK** that lets you write create, read, upsert, delete, and
+query logic once and run it against **Azure Cosmos DB**, **Amazon DynamoDB**, or
+**Google Cloud Spanner** - switch providers by changing a single properties file.
+Optional operations such as partial `update()` are capability-gated.
 
 ```
 ┌───────────────────────────────────────────────────┐
@@ -18,7 +19,7 @@ switch providers by changing a single properties file, with zero code changes.
                          │
             ┌────────────▼─────────────┐
             │    MulticloudDbClient    │   Portable contract
-            │     (multiclouddb-api)   │   CRUD · Query · Capabilities
+            │     (multiclouddb-api)   │   Base Ops · Query · Capabilities
             └────────────┬─────────────┘
                          │  ServiceLoader
             ┌────────────┼───────────────┐
@@ -33,7 +34,7 @@ switch providers by changing a single properties file, with zero code changes.
 
 ## Table of Contents
 
-- [Why Multicloud DB?](#why-clouddb)
+- [Why Multicloud DB?](#why-multicloud-db)
 - [Quick Start](#quick-start)
 - [Portable Query DSL](#portable-query-dsl)
 - [Architecture](#architecture)
@@ -42,10 +43,11 @@ switch providers by changing a single properties file, with zero code changes.
   - [SPI (Provider Interface)](#spi-provider-interface)
   - [Provider Discovery](#provider-discovery)
 - [Design Decisions](#design-decisions)
-  - [Why Key Is an Explicit Parameter](#why-key-is-an-explicit-parameter)
+  - [Why MulticloudDbKey Is an Explicit Parameter](#why-multiclouddbkey-is-an-explicit-parameter)
 - [Supported Providers](#supported-providers)
 - [Configuration](#configuration)
 - [Capabilities & Portability](#capabilities--portability)
+- [Partial Updates](#partial-updates)
 - [Result Set Control](#result-set-control)
 - [Document TTL](#document-ttl)
 - [Document Metadata](#document-metadata)
@@ -65,11 +67,11 @@ switch providers by changing a single properties file, with zero code changes.
 
 | Problem | Multicloud DB Solution |
 |---------|------------------|
-| Vendor lock-in - each cloud DB has its own SDK, data model, and query language | Single `MulticloudDbClient` interface with portable CRUD + query |
+| Vendor lock-in - each cloud DB has its own SDK, data model, and query language | Single `MulticloudDbClient` interface with portable point operations (create/read/upsert/delete) + query and explicit capability gates |
 | Each provider has a different query language (Cosmos SQL, PartiQL, GoogleSQL) | **Portable query DSL** - write `status = @status AND priority > @min`, auto-translated per provider |
 | Migrating between providers requires rewriting data-access code | Change **one property** (`multiclouddb.provider=dynamo` → `cosmos`) |
-| Understanding which features are portable vs. provider-specific | Runtime `CapabilitySet` introspection; `PortabilityWarning` on non-portable use |
-| Testing across providers | Conformance test suite runs identical tests against every provider |
+| Understanding which features are portable vs. provider-specific | Runtime `CapabilitySet` introspection and structured `UNSUPPORTED_CAPABILITY` errors |
+| Testing across providers | Shared conformance tests verify the common contract and capability-gated behavior |
 
 ---
 
@@ -123,9 +125,10 @@ mvn clean install -DskipTests
 
 ```java
 import com.multiclouddb.api.*;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
 
 // Configure - provider selected entirely by config, not code
 Properties props = new Properties();
@@ -134,45 +137,58 @@ props.load(getClass().getResourceAsStream("/todo-app-cosmos.properties"));
 String providerName = props.getProperty("multiclouddb.provider");   // "cosmos", "dynamo", etc.
 ProviderId provider = ProviderId.fromId(providerName);
 
+Map<String, String> connection = new HashMap<>();
+Map<String, String> auth = new HashMap<>();
+for (String name : props.stringPropertyNames()) {
+    if (name.startsWith("multiclouddb.connection.")) {
+        connection.put(name.substring("multiclouddb.connection.".length()),
+                props.getProperty(name));
+    } else if (name.startsWith("multiclouddb.auth.")) {
+        auth.put(name.substring("multiclouddb.auth.".length()),
+                props.getProperty(name));
+    }
+}
+
 MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
         .provider(provider)
-        .connection("endpoint", props.getProperty("multiclouddb.connection.endpoint"))
-        .connection("key", props.getProperty("multiclouddb.connection.key"))
+        .connection(connection)
+        .auth(auth)
         .build();
 
 // Create client via ServiceLoader discovery
 MulticloudDbClient client = MulticloudDbClientFactory.create(config);
 
-// CRUD - same code for every provider
-ObjectMapper mapper = new ObjectMapper();
-ObjectNode doc = mapper.createObjectNode();
-doc.put("title", "Buy groceries");
-doc.put("completed", false);
+// Portable point operations - same code for every provider
+Map<String, Object> doc = Map.of(
+        "title", "Buy groceries",
+        "completed", false,
+        "status", "active",
+        "category", "shopping");
 
 ResourceAddress todos = new ResourceAddress("mydb", "todos");
-Key key = Key.of("todo-1", "todo-1");   // partitionKey + sortKey
+MulticloudDbKey key = MulticloudDbKey.of("todo-1", "todo-1");
 
 client.upsert(todos, key, doc);                  // Create or replace (upsert)
 DocumentResult result = client.read(todos, key); // Point read → returns DocumentResult
 ObjectNode document = result.document();         // The document payload
-client.delete(todos, key);                       // Delete
 
 // Query with portable expressions - automatically translated per provider
 QueryRequest query = QueryRequest.builder()
         .expression("status = @status AND category = @cat")
         .parameters(Map.of("status", "active", "cat", "shopping"))
-        .pageSize(25)
+        .maxPageSize(25)
         .build();
 QueryPage page = client.query(todos, query);
-for (JsonNode item : page.items()) {
+for (Map<String, Object> item : page.items()) {
     System.out.println(item);
 }
+client.delete(todos, key);                       // Cleanup after query
 // Cosmos → SELECT * FROM c WHERE (c.status = @status AND c.category = @cat)
 // DynamoDB → SELECT * FROM "todos" WHERE (status = ? AND category = ?)
 // Spanner → SELECT * FROM `todos` WHERE (status = @status AND category = @cat)
 ```
 
-### 4. Native query escape hatch
+### 4. Native query expression (non-portable)
 
 When you need provider-specific query syntax, use `nativeExpression()`:
 
@@ -180,19 +196,19 @@ When you need provider-specific query syntax, use `nativeExpression()`:
 // Cosmos SQL (only works with Cosmos provider)
 QueryRequest cosmosQuery = QueryRequest.builder()
         .nativeExpression("SELECT * FROM c WHERE c.title LIKE '%flight%'")
-        .pageSize(25)
+        .maxPageSize(25)
         .build();
 
 // DynamoDB PartiQL (only works with DynamoDB provider)
 QueryRequest dynamoQuery = QueryRequest.builder()
         .nativeExpression("SELECT * FROM \"todos\" WHERE begins_with(title, 'Ship')")
-        .pageSize(25)
+        .maxPageSize(25)
         .build();
 
 // Spanner GoogleSQL (only works with Spanner provider)
 QueryRequest spannerQuery = QueryRequest.builder()
         .nativeExpression("SELECT * FROM todos WHERE STARTS_WITH(title, 'Ship')")
-        .pageSize(25)
+        .maxPageSize(25)
         .build();
 ```
 
@@ -285,28 +301,28 @@ This is fully transparent - you never see the translated SQL. For direct control
 | **multiclouddb-conformance** | `com.microsoft.multiclouddb:multiclouddb-conformance` | Cross-provider integration tests |
 
 Samples: see the [separate samples repo](https://github.com/microsoft/multiclouddb-sdk-for-java-samples).
+
 ### API Surface
 
 All application code depends on `multiclouddb-api`. The core types are:
 
 | Type | Purpose |
 |------|---------|
-| `MulticloudDbClient` | Portable interface: `create`, `read`, `update`, `delete`, `upsert`, `query`, `provisionSchema`, `capabilities`, `nativeClient` |
+| `MulticloudDbClient` | Portable interface: `create`, `read`, `delete`, full-replacement `upsert`, capability-gated shallow partial `update`, query, provisioning, and capabilities |
 | `MulticloudDbClientFactory` | Creates a `MulticloudDbClient` by discovering providers via `ServiceLoader` |
 | `MulticloudDbClientConfig` | Builder-pattern config: provider selection, connection, auth, feature flags |
 | `ResourceAddress` | `(database, collection)` pair targeting a container/table |
-| `Key` | `(partitionKey, sortKey)` pair - every document needs at least a partition key |
+| `MulticloudDbKey` | `(partitionKey, sortKey)` pair - every document needs at least a partition key |
 | `QueryRequest` | Portable expression, native expression, parameters, page size, continuation token, partition key scoping, `limit`, `orderBy` |
 | `QueryPage` | Result page: items + optional continuation token + optional `OperationDiagnostics` |
 | `SortOrder` | `(field, direction)` sort specification for `orderBy` — validates field names against injection |
 | `SortDirection` | `ASC` or `DESC` |
 | `DocumentResult` | Result of `read()`: document payload + optional `DocumentMetadata` |
-| `DocumentMetadata` | Write-metadata on demand: `lastModified`, `ttlExpiry`, `version` |
+| `DocumentMetadata` | Provider-available nullable metadata: `lastModified`, `ttlExpiry`, `version` |
 | `CapabilitySet` | Runtime introspection of provider capabilities |
 | `Capability` | Named capability with `supported` flag and notes |
 | `MulticloudDbException` | Structured error with `MulticloudDbError` (category, provider, native code) |
-| `PortabilityWarning` | Signals when an operation uses non-portable behavior |
-| `OperationOptions` | Timeout, TTL (`ttlSeconds`), metadata flag (`includeMetadata`) |
+| `OperationOptions` | Timeout, create/upsert-only TTL (`ttlSeconds`), metadata flag (`includeMetadata`) |
 | `OperationDiagnostics` | Latency, request units/charge, request ID, ETag, item count |
 | `Expression` | AST node interface for parsed query expressions |
 | `ExpressionParser` | Parses portable expression strings into an AST |
@@ -321,7 +337,7 @@ Provider modules implement two SPI contracts without importing each other:
 | SPI Interface | Responsibility |
 |---------------|---------------|
 | `MulticloudDbProviderAdapter` | Factory - creates a `MulticloudDbProviderClient` from config; registered via `META-INF/services` |
-| `MulticloudDbProviderClient` | CRUD + query + provisioning + capabilities - called by `DefaultMulticloudDbClient` |
+| `MulticloudDbProviderClient` | Key-based create/read/upsert/delete, capability-gated partial update, query, provisioning, and capabilities - called by `DefaultMulticloudDbClient` |
 
 ### Provider Discovery
 
@@ -338,30 +354,43 @@ Providers are discovered at runtime via Java's `ServiceLoader`:
 
 ## Design Decisions
 
-### Why Key Is an Explicit Parameter
+### Why MulticloudDbKey Is an Explicit Parameter
 
-You may notice that every CRUD operation requires an explicit `Key` parameter,
+You may notice that every document operation requires an explicit
+`MulticloudDbKey` parameter,
 even on writes where the key material could theoretically be extracted from the
 document:
 
 ```java
-// Key is always explicit - never extracted from the document
-client.upsert(addr, Key.of("tenant-1", "pos-42"), doc);
+// MulticloudDbKey is always explicit - never extracted from the document
+client.upsert(addr, MulticloudDbKey.of("tenant-1", "pos-42"), doc);
 ```
 
 Some database SDKs (notably the Azure Cosmos DB SDK) extract the partition key
 and ID from the document body automatically. Multicloud DB deliberately does **not**
 do this, for several reasons:
 
-1. **Each provider maps Key fields differently.** Cosmos DB stores `Key.sortKey()` as the built-in `id` field, while DynamoDB and Spanner store it as a `sortKey` attribute/column. A convention-based extractor would need provider-specific logic, undermining portability.
+1. **Each provider maps key fields differently.** Cosmos DB stores
+   `MulticloudDbKey.sortKey()` as the built-in `id` field, while DynamoDB and
+   Spanner store it as a `sortKey` attribute/column. A convention-based
+   extractor would need provider-specific logic, undermining portability.
 
-2. **`read()` and `delete()` have no document.** These operations require a Key with nothing to extract from. Making writes work differently would create an inconsistent API.
+2. **`read()` and `delete()` have no document.** These operations require a
+   `MulticloudDbKey` with nothing to extract from. Making writes work
+   differently would create an inconsistent API.
 
-3. **The Key is always authoritative.** Providers overwrite any `id`/`partitionKey` fields in the document with the Key values (see [Document Field Injection](docs/guide.md#document-field-injection) in the developer guide). This prevents accidental mismatches.
+3. **The key is always authoritative.** Complete writes reject caller-supplied
+   provider-owned top-level names (`id`, `partitionKey`, `sortKey`, `ttl`,
+   `ttlExpiry`, `data`, or any name beginning with `_`) before I/O, then
+   providers derive their native key fields from `MulticloudDbKey` (see
+   [Document Field Injection](docs/guide.md#document-field-injection) in the
+   developer guide). This prevents accidental mismatches.
 
-4. **Compile-time safety.** A missing Key is a compiler error. A missing field in a JSON document is a runtime error deep in the provider layer.
+4. **Compile-time safety.** A missing `MulticloudDbKey` is a compiler error. A
+   missing field in a JSON document is a runtime error deep in the provider
+   layer.
 
-See the [developer guide](docs/guide.md#why-key-is-an-explicit-parameter) for the full rationale and per-provider field mapping details.
+See the [developer guide](docs/guide.md#why-multiclouddbkey-is-an-explicit-parameter) for the full rationale and per-provider field mapping details.
 
 ---
 
@@ -416,16 +445,15 @@ All configuration flows through `MulticloudDbClientConfig` or a `.properties` fi
 
 ## Resource Provisioning
 
-The SDK provides a single method to provision an entire schema of databases and
-containers/tables. Parallelism is handled internally - the SDK creates all
-databases concurrently, waits for completion, then creates all containers
-concurrently. Application code does not need to manage threading.
+The SDK provides a single method to provision a provider-compatible schema of
+databases and containers/tables. Parallelism is handled internally - the SDK
+creates all addressed databases concurrently, waits for completion, then creates
+all containers concurrently. Application code does not need to manage threading.
 
 ```java
 // Define your schema: database name → list of collection/table names
 Map<String, List<String>> schema = Map.of(
-    "admin-db",    List.of("tenants"),
-    "acme-risk-db", List.of("portfolios", "positions", "risk_metrics")
+    "app-db", List.of("tenants", "portfolios", "positions", "risk_metrics")
 );
 
 // Single call - SDK handles parallel creation internally
@@ -434,13 +462,20 @@ client.provisionSchema(schema);
 
 | Provider | Database Phase | Container/Table Phase |
 |----------|---------------|----------------------|
-| **Cosmos DB** | Creates databases in parallel (management SDK for cloud, data-plane for emulator) | Creates containers in parallel via data-plane SDK |
+| **Cosmos DB** | Uses data-plane `createDatabaseIfNotExists` in all environments; the caller needs database-creation permission | Creates containers in parallel via the data-plane SDK |
 | **DynamoDB** | No-op (DynamoDB has no native database concept) | Creates tables in parallel, waits for ACTIVE status |
-| **Spanner** | No-op (database set at client construction time) | Creates tables in parallel |
+| **Spanner** | Creates the configured database; emulator mode also creates the configured instance if absent, while production requires the instance to pre-exist | Creates tables in parallel |
+
+For a schema definition portable to Spanner, use the single database name
+configured as `databaseId`. A Spanner client rejects other database names;
+Cosmos DB and DynamoDB mappings can represent multiple logical database entries.
 
 You can also call `ensureDatabase()` and `ensureContainer()` individually if
 you need fine-grained control, but `provisionSchema()` is the recommended
-approach for provisioning multiple resources.
+approach for provisioning multiple standard-schema resources. These methods are
+startup/development conveniences, not a replacement for infrastructure as code
+when production provisioning needs custom throughput, indexing, regions, or
+other advanced controls.
 
 ---
 
@@ -451,7 +486,7 @@ Each provider declares which cross-cutting features it supports. Query at runtim
 ```java
 CapabilitySet caps = client.capabilities();
 
-if (caps.supports(Capability.TRANSACTIONS)) {
+if (caps.isSupported(Capability.TRANSACTIONS)) {
     // safe to use transactions
 }
 
@@ -476,7 +511,100 @@ for (Capability cap : caps.all()) {
 | **Result limit** (`Top N`) | ✓ | ✓ (per-page) | ✓ |
 | **ORDER BY** | ✓ | ✗ | ✓ |
 | **Row-level TTL** | ✓ | ✓ | ✗ |
-| **Write timestamp / metadata** | ✓ | ✗ | ✗ |
+| **Write timestamp (`lastModified`)** | ✓ | ✗ | ✗ |
+| **Partial update** | ✓ | ✓ | ✗ (not in this release) |
+| **Case-sensitive partial-update fields** | ✓ | ✓ | — |
+
+---
+
+## Partial Updates
+
+> **Breaking change (pre-1.0 beta):** `update()` previously meant complete
+> replacement. It now means shallow partial update. Callers, including code
+> already compiled against an earlier beta, must migrate the payload and its
+> expectations before running with this release. Use `upsert()` for an
+> unguarded complete replacement; there is no exact portable atomic
+> full-document replace-if-present equivalent.
+
+`update()` sets or replaces only supplied top-level fields and preserves omitted
+fields. It returns `NOT_FOUND` without creating a missing item. Map/list values
+replace their complete top-level value, and Java `null` stores null. Values must be serializable with the SDK-owned Jackson configuration used by
+shared preflight. Caller-registered modules are not consulted, so values requiring
+custom modules, such as `Instant`, must first be converted to serializable values.
+
+```java
+if (client.capabilities().isSupported(Capability.PARTIAL_UPDATE)) {
+    client.update(address, key, Map.of("status", "shipped"));
+} else {
+    // Skip this optional operation or select a non-update workflow.
+}
+```
+
+On providers that advertise `PARTIAL_UPDATE`, the normalized contract is the
+same: at most 10 fields, shallow top-level set/replace semantics, preservation
+of omitted fields, one atomic native write, and `NOT_FOUND` for a missing item.
+The conservative 10-field initial-release limit guarantees one atomic native
+write on both supported providers. This release does not define a wider-update
+or multi-patch transaction path.
+
+Non-reserved field names are literal and case-sensitive: `foo` and `Foo` are
+separate fields, including when both appear in one atomic update. Names matching
+`id`, `partitionKey`, `sortKey`, `ttl`, `ttlExpiry`, or `data`
+case-insensitively, and names beginning with `_`, are reserved and fail shared
+preflight before provider I/O.
+
+"Top-level" describes the updated field path, not the shape of its replacement
+value. Each replacement value may contain at most 31 nested map/list containers,
+counting its top-level container as level 1. Every field name, including nested map
+keys, must be at most 50,000 UTF-8 bytes, and binary values are rejected. Cyclic graphs and non-collection iterables are also invalid. The
+incoming field map must also fit a 390 KiB structural footprint that includes UTF-8
+field names and native map/list overhead, independently of its serialized JSON
+size. Shared violations perform
+zero provider I/O and return non-retryable `INVALID_REQUEST` with
+`reason=partial_update_field_name_size_limit`, `reason=non_portable_binary_value`,
+`reason=non_portable_iterable`,
+`reason=partial_update_value_cycle`, `reason=partial_update_nesting_depth_limit`, or
+`reason=partial_update_structural_footprint_limit` and the applicable actual and
+maximum limit details.
+
+The `PARTIAL_UPDATE` portable contract applies only when both the resulting
+logical document's serialized JSON and its portable structural footprint are at
+or below 390 KiB. A state-dependent result above either bound is outside this
+release's portable contract and may succeed or fail under the selected
+provider's native limits. The SDK performs no read/merge preflight. A native
+result-size rejection remains non-retryable `UNSUPPORTED_CAPABILITY`, carries a
+stable provider-specific reason and limit details, and follows at most one
+attempted atomic write.
+
+TTL timing is also outside this release's portable partial-update contract.
+DynamoDB `UpdateItem` happens to leave `ttlExpiry` unchanged, while Cosmos DB
+`patchItem` advances `_ts` and restarts relative TTL. Until TTL behavior is
+normalized, callers that require a fixed absolute expiry must not call
+`update()` on TTL-bearing items.
+
+Follow-up normalization is tracked in [#113](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/113) for absolute TTL expiry and [#114](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/114) for state-dependent resulting size.
+
+Spanner does not advertise `PARTIAL_UPDATE`. `CapabilitySet` treats an omitted
+declaration as unsupported by default, so this API release remains compatible
+with older Spanner provider versions. A valid call fails safely at the shared
+capability gate with non-retryable `UNSUPPORTED_CAPABILITY` before provider
+delegation. This is a deliberate release scope: Spanner emulator validation
+covers shared preflight, capability rejection, and the provider-direct legacy
+regression, but this release does not claim live production Spanner validation.
+Each built-in provider exposes 18 effective capability rows: Cosmos DB and
+DynamoDB explicitly declare all 18, while Spanner declares 17 and
+`CapabilitySet` supplies only the omitted core `PARTIAL_UPDATE` unsupported
+default. Unrelated omitted capability names remain absent.
+
+Provider-native resulting-item ceilings remain constraints. Any resulting-item
+failure is atomic and surfaces as non-retryable
+`UNSUPPORTED_CAPABILITY` with a stable provider-specific `reason`; the SDK does
+not add a read-before-write size check that would introduce cost and a race.
+
+For complete replacement, use `upsert()` with the complete document; it creates
+a missing item. Read-then-upsert is not atomic, and this release has no exact
+portable atomic full-document replace-if-present equivalent. `ttlSeconds` is
+invalid on `update()` and fails before provider I/O with `INVALID_REQUEST`.
 
 ---
 
@@ -498,7 +626,7 @@ QueryPage page = client.query(address, q);
 Check capabilities before using `ORDER BY` — DynamoDB does not support server-side ordering:
 
 ```java
-if (client.capabilities().supports(Capability.ORDER_BY)) {
+if (client.capabilities().isSupported(Capability.ORDER_BY)) {
     // use orderBy()
 }
 ```
@@ -516,18 +644,22 @@ OperationOptions opts = OperationOptions.builder()
 
 client.create(address, key, doc, opts);
 client.upsert(address, key, doc, opts);
-client.update(address, key, updatedDoc, opts);
 ```
 
 TTL requires collection-level configuration first (enable "Default TTL" on the
 Cosmos DB container; enable TTL on the DynamoDB table using `ttlExpiry` as the
-attribute name). Spanner ignores `ttlSeconds` (`ROW_LEVEL_TTL=false`).
+attribute name). Spanner ignores TTL on create/upsert
+(`ROW_LEVEL_TTL=false`). `update()` rejects non-null `ttlSeconds` on every
+provider. Callers that require expiry must inspect `ROW_LEVEL_TTL` before
+writing.
 
 ---
 
 ## Document Metadata
 
-Read write-metadata (last-modified timestamp, TTL expiry, version/ETag) on demand:
+Read write-metadata (last-modified timestamp, TTL expiry, version/ETag) on demand.
+The snippets use a class-level SLF4J logger such as
+`private static final Logger LOG = LoggerFactory.getLogger(YourApplication.class)`:
 
 ```java
 OperationOptions opts = OperationOptions.builder()
@@ -535,12 +667,19 @@ OperationOptions opts = OperationOptions.builder()
         .build();
 
 DocumentResult result = client.read(address, key, opts);
-DocumentMetadata meta = result.metadata();   // null if provider doesn't support it
+DocumentMetadata meta = result.metadata();   // non-null because metadata was requested
 
 if (meta != null) {
-    System.out.println("Last modified: " + meta.lastModified());
-    System.out.println("Expires at   : " + meta.ttlExpiry());
-    System.out.println("ETag/version : " + meta.version());
+    // Each field is independently nullable.
+    if (meta.lastModified() != null) {
+        LOG.info("Last modified: {}", meta.lastModified());
+    }
+    if (meta.ttlExpiry() != null) {
+        LOG.info("Expires at: {}", meta.ttlExpiry());
+    }
+    if (meta.version() != null) {
+        LOG.info("ETag/version: {}", meta.version());
+    }
 }
 ```
 
@@ -550,12 +689,30 @@ if (meta != null) {
 | `ttlExpiry` | ✗ | ✓ | ✗ |
 | `version` | ✓ (ETag) | ✗ | ✗ |
 
+`metadata()` is `null` only when metadata was not requested. With
+`includeMetadata(true)`, the current providers return a metadata envelope and
+callers inspect each nullable field independently; Spanner's envelope is
+currently empty. `Capability.WRITE_TIMESTAMP` indicates whether
+`lastModified` may be populated (Cosmos DB only). It does not gate the metadata
+envelope or DynamoDB's independent `ttlExpiry` field.
+
 ---
 
 ## Document Size Enforcement
 
-All write operations are validated against a **399 KB** limit before any network
-call is made. Documents that exceed the limit are rejected with
+The SDK validates **independent 390 KiB serialized and structural input bounds**
+before any network call. Shared preflight snapshots the top-level map and uses
+bounded SDK-owned Jackson serialization while inspecting nested values. Binary
+values are rejected even when hidden in a POJO; cyclic graphs and non-collection
+iterables are invalid; and serialized JSON output is capped while it is produced.
+Every field name is limited to 50,000 UTF-8 bytes.
+
+For `create()` and `upsert()`, the input is the complete document. A null
+document, a top-level name matching `id`, `partitionKey`, `sortKey`, `ttl`,
+`ttlExpiry`, or `data` case-insensitively, or any top-level name beginning with
+`_` returns non-retryable `INVALID_REQUEST` before provider I/O. Other
+case-distinct names remain separate literal fields. For `update()`, the input is
+only the supplied field map. Inputs that exceed either limit are rejected with
 `MulticloudDbErrorCategory.INVALID_REQUEST`:
 
 ```java
@@ -563,14 +720,30 @@ try {
     client.create(address, key, largeDoc);
 } catch (MulticloudDbException e) {
     if (e.error().category() == MulticloudDbErrorCategory.INVALID_REQUEST) {
-        System.out.println("Document exceeds 399 KB limit");
+        LOG.warn("Write input exceeds a portable validation limit: {}",
+                e.error().message());
     }
 }
 ```
 
-The limit is 399 KB (not 400 KB) because providers inject additional fields
-before writing — see [Developer Guide](docs/guide.md#document-size-enforcement)
-for details.
+For `create()`/`upsert()`, the structural bound covers the complete document,
+which may contain at most 31 map/list containers below its root. For `update()`,
+it covers the incoming field map and also enforces the 31-level
+replacement-value nesting limit described above.
+These checks inspect only incoming fields; they do not preflight the resulting
+stored item, which remains subject to provider-native ceilings after one attempted
+atomic write.
+
+Results above either 390 KiB portable result bound are outside this release's
+portable contract and remain subject to the selected provider's native limit.
+These limits are enforced internally rather than exposed as compile-time Java
+constants. Applications should handle `INVALID_REQUEST` and its structured limit
+details instead of compiling against copied values. Runtime limit discovery and
+configuration are tracked in [#116](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/116).
+
+The portable size limits are rounded down to 390 KiB to leave headroom for
+provider-injected fields and native wire-format overhead — see
+[Developer Guide](docs/guide.md#document-size-enforcement) for details.
 
 ---
 
@@ -599,8 +772,8 @@ Sample applications are maintained in a **separate repository**:
 
 | Sample | Description | Port | Guide |
 |--------|-------------|------|-------|
-| **Portable CRUD + Query** | Minimal end-to-end CRUD and query sample | — | [README](https://github.com/microsoft/multiclouddb-sdk-for-java-samples#portable-crud--query-sample) |
-| **TODO App** | Simple CRUD web app with browser UI | `8080` | [README-todo-app.md](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-todo-app.md) |
+| **Portable Point Operations + Query** | Minimal create/read/upsert/delete/query sample; partial update is capability-gated | — | [README](https://github.com/microsoft/multiclouddb-sdk-for-java-samples#portable-crud--query-sample) |
+| **TODO App** | Key-based document web app; completion updates require `PARTIAL_UPDATE` | `8080` | [README-todo-app.md](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-todo-app.md) |
 | **Risk Analysis Platform** | Multi-tenant portfolio risk analytics with executive dashboard | `8090` | [README-risk-platform.md](https://github.com/microsoft/multiclouddb-sdk-for-java-samples/blob/main/README-risk-platform.md) |
 
 ### Quick Start
@@ -616,7 +789,8 @@ mvn clean install -DskipTests
 ```
 ┌─────────────────────────────────┐
 │  Browser UI (localhost:8080)    │
-│  Create · Read · Update · Delete│
+│  Create · Read · Delete         │
+│  Update when capability permits │
 └──────────────┬──────────────────┘
                │ REST API
 ┌──────────────▼──────────────────┐
@@ -645,6 +819,12 @@ mvn exec:java `
 ```
 
 Then open **http://localhost:8080** in your browser.
+
+The TODO app's base create/read/upsert/delete/query paths can target all three
+providers. Before toggling completion, callers must check
+`Capability.PARTIAL_UPDATE`: Cosmos DB and DynamoDB support it; the current
+Spanner provider does not and a valid `update()` is rejected before provider
+I/O.
 
 ### Risk Analysis Platform
 
@@ -709,9 +889,10 @@ mvn -pl multiclouddb-provider-dynamo clean install
 mvn test
 ```
 
-Runs 281+ tests across the API and provider modules, including the portable
-query expression parser, validator, translator, partition-key-scoped queries,
-and cross-provider conformance and integration tests.
+Runs the current unit suites across the API and provider modules, including the
+portable query expression parser, validator, translator, write preflight, and
+provider adapters. Test totals are intentionally not hard-coded because they
+change as conformance coverage grows.
 
 ### Integration / conformance tests
 
@@ -721,35 +902,10 @@ and cross-provider conformance and integration tests.
 mvn -pl multiclouddb-conformance verify
 ```
 
-The conformance suite runs identical CRUD + portable query tests against each
-provider emulator, verifying portable behavior with real data.
-
-| Suite | Provider | Tests |
-|-------|----------|-------|
-| API unit tests | - | 16 |
-| Cosmos Provider unit tests | Cosmos DB | 23 |
-| DynamoDB Provider unit tests | DynamoDB | 33 |
-| Spanner Provider unit tests | Spanner | 24 |
-| Expression parser tests | - | 43 |
-| Expression translation tests | - | 26 |
-| Expression validator tests | - | 8 |
-| Native expression tests | - | 8 |
-| Portable query conformance | - | 16 |
-| Cosmos CRUD conformance | Cosmos DB emulator | 13 |
-| DynamoDB CRUD conformance | DynamoDB Local | 13 |
-| Spanner CRUD conformance | Spanner Emulator | 13 |
-| Cosmos query integration | Cosmos DB emulator | 10 |
-| DynamoDB query integration | DynamoDB Local | 10 |
-| Spanner query integration | Spanner Emulator | 10 |
-| Cosmos US2 tests (Capabilities, Diagnostics, NativeClient, Portability) | Cosmos DB emulator | 15 |
-| DynamoDB US2 tests | DynamoDB Local | 20 |
-| Unsupported Capability conformance | - | 3 |
-| **Total** | | **281+** |
-
-> **Note**: The CRUD conformance suites each include 3 partition-key-scoped
-> query tests (queryByPartitionKey, queryWithoutPartitionKey,
-> queryNonexistentPartition) that validate the `QueryRequest.partitionKey()`
-> API across all providers.
+The conformance suite runs shared create/read/upsert/delete and portable-query
+tests against each provider emulator. Partial-update behavior runs only for
+providers advertising `PARTIAL_UPDATE`; all providers still exercise shared
+invalid-request validation and unsupported-capability behavior as applicable.
 
 ---
 
@@ -760,7 +916,7 @@ multiclouddb-sdk-java/
 ├── pom.xml                          # Parent POM (aggregator)
 ├── multiclouddb-api/                    # Portable API + SPI contracts
 │   └── src/main/java/com/multiclouddb/
-│       ├── api/                     # Public types (MulticloudDbClient, Key, etc.)
+│       ├── api/                     # Public types (MulticloudDbClient, MulticloudDbKey, etc.)
 │       │   ├── internal/            # DefaultMulticloudDbClient
 │       │   └── query/               # Portable expression AST, parser, validator, translator SPI
 │       └── spi/                     # Provider SPI interfaces
@@ -800,7 +956,7 @@ multiclouddb-sdk-java/
 | Document | Description |
 |----------|-------------|
 | [Developer Guide](docs/guide.md) | Comprehensive reference - partition keys, CRUD semantics, query DSL, multi-tenant patterns |
-| [Provider Compatibility](docs/compatibility.md) | Capability matrix, error mapping, native escape hatch, async guidance |
+| [Provider Compatibility](docs/compatibility.md) | Capability matrix, error mapping, native-query guidance, no-native-client policy, async guidance |
 
 ---
 

@@ -43,5 +43,11 @@ public final class DynamoCapabilities {
                     "Item-level TTL via " + DynamoConstants.ATTR_TTL_EXPIRY + " epoch-seconds attribute; "
                     + "requires DynamoDB table TTL enabled on that attribute — silently ignored otherwise"),
             Capability.of(Capability.WRITE_TIMESTAMP, false,
-                    "DynamoDB does not expose per-item write timestamps via GetItem")));
+                    "DynamoDB does not expose per-item write timestamps via GetItem"),
+            // Partial update (feature 002-partial-update): the core operation is supported
+            // and gated internally by DefaultMulticloudDbClient. Native envelope failures
+            // surface through structured provider-limit errors.
+            Capability.PARTIAL_UPDATE_CAP.withNotes(
+                    "One conditional aliased UpdateItem SET expression per accepted update; "
+                    + "portable limit: 10 fields; native limit: 400 KiB resulting item")));
 }

@@ -99,11 +99,12 @@ public abstract class ErrorNormalizationConformanceTest {
     @Order(1)
     @DisplayName("update-missing carries NOT_FOUND, OperationDiagnostics, and isRetryable=false")
     void notFoundIsFullyNormalized() {
-        // Update is the LCD probe for NOT_FOUND across providers: Cosmos replaceItem
-        // returns 404, Dynamo update with attribute_exists fails the condition, and
-        // Spanner Mutation.newUpdateBuilder rejects with NOT_FOUND. Delete is silent
-        // on missing across all three providers (idempotent), so it cannot be used
-        // to assert NOT_FOUND normalization.
+        Assumptions.assumeTrue(client.capabilities().isSupported(Capability.PARTIAL_UPDATE),
+                "NOT_FOUND via update applies only to participating providers");
+        // Update is the LCD probe for NOT_FOUND across participating providers:
+        // Cosmos returns 404 and Dynamo update with attribute_exists fails the
+        // condition. Delete is silent on missing across all providers, so it cannot
+        // be used to assert NOT_FOUND normalization.
         MulticloudDbKey key = MulticloudDbKey.of(
                 "norm-missing-" + System.nanoTime(),
                 "norm-missing-" + System.nanoTime());

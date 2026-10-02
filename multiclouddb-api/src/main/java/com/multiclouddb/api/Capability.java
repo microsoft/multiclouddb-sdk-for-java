@@ -14,21 +14,21 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>
  * <h3>Usage</h3>
  * Well-known capabilities are exposed as pre-built singleton pairs:
- * {@code Capability.TRANSACTIONS} (supported) and
+ * {@code Capability.TRANSACTIONS_CAP} (supported) and
  * {@code Capability.TRANSACTIONS_UNSUPPORTED} (unsupported).
  * Providers use these directly instead of constructing new instances:
  *
  * <pre>{@code
  * // preferred — reuses singletons
  * new CapabilitySet(List.of(
- *     Capability.TRANSACTIONS,
- *     Capability.CONTINUATION_TOKEN_PAGING,
+ *     Capability.TRANSACTIONS_CAP,
+ *     Capability.CONTINUATION_TOKEN_PAGING_CAP,
  *     Capability.CROSS_PARTITION_QUERY_UNSUPPORTED
  * ));
  *
  * // override notes when the provider-specific detail matters
  * new CapabilitySet(List.of(
- *     Capability.TRANSACTIONS.withNotes("TransactWriteItems up to 100 items")
+ *     Capability.TRANSACTIONS_CAP.withNotes("TransactWriteItems up to 100 items")
  * ));
  * }</pre>
  *
@@ -65,6 +65,9 @@ public final class Capability {
     public static final String ENDS_WITH                    = "ends_with";
     public static final String REGEX_MATCH                  = "regex_match";
     public static final String CASE_FUNCTIONS               = "case_functions";
+
+    /** Capability-gated portable shallow set/replace partial-update contract. */
+    public static final String PARTIAL_UPDATE               = "partial_update";
 
     // ── Pre-built singleton instances ─────────────────────────────────────────
     // Each well-known capability has a SUPPORTED and an _UNSUPPORTED singleton.
@@ -140,6 +143,11 @@ public final class Capability {
     public static final Capability CASE_FUNCTIONS_CAP               = intern(CASE_FUNCTIONS, true);
     /** Unsupported singleton — case functions. */
     public static final Capability CASE_FUNCTIONS_UNSUPPORTED       = intern(CASE_FUNCTIONS, false);
+
+    /** Supported singleton — portable shallow partial update. */
+    public static final Capability PARTIAL_UPDATE_CAP              = intern(PARTIAL_UPDATE, true);
+    /** Unsupported singleton — partial update (future provider without the core operation). */
+    public static final Capability PARTIAL_UPDATE_UNSUPPORTED      = intern(PARTIAL_UPDATE, false);
 
     // ── Instance fields ───────────────────────────────────────────────────────
 

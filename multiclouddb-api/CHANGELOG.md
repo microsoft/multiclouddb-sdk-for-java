@@ -7,6 +7,34 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+
+### Added
+
+- Added the well-known `PARTIAL_UPDATE` capability. Cosmos DB and DynamoDB support the shallow update contract; Spanner receives the backward-compatible unsupported API default. Portable behavior is guaranteed only when both the resulting logical document's serialized JSON and portable structural footprint are within 390 KiB.
+
+### Changed
+
+- Partial-update field-count rejections now include `reason=partial_update_field_count_limit`, `maximumFields=10`, and `observedFields=11`. Inspection stops at the first excess field; the observed count is a lower bound, not the total input size.
+- The proposed public compile-time write-limit constants were removed during review. Shared preflight still enforces the same limits and reports runtime details; a discoverable, customer-configurable limits API is deferred to [#116](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/116).
+- **BREAKING (pre-1.0 beta): `update()` changed from complete replacement to
+  shallow partial update.** Callers, including code already compiled against an
+  earlier beta, must migrate their update payloads and expectations before
+  running with this release. Use `upsert()` for unguarded complete replacement;
+  it creates missing items, and there is no exact portable atomic full-document
+  replace-if-present equivalent.
+- Clarified that `CapabilitySet` normalization is capability-specific: only an omitted `PARTIAL_UPDATE` declaration receives an unsupported default, while unrelated omitted well-known names remain absent. Each built-in provider exposes 18 effective rows; Cosmos DB and DynamoDB explicitly declare all 18, while Spanner declares 17 and receives the one core default. The proposed provider-specific result-size and TTL-preservation capabilities were removed during review because a single-provider behavior does not establish a portable contract. Follow-up normalization is tracked in [#113](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/113) for absolute TTL expiry and [#114](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/114) for state-dependent resulting size.
+
+- `MulticloudDbClient.update()` now specifies shallow top-level set/replace semantics: supplied fields are replaced, omitted fields remain, map/list values replace their complete top-level value, and a missing item returns `NOT_FOUND` without create. Non-reserved case-distinct names such as `foo` and `Foo` remain separate even in one atomic update. Replaying absolute assignments is idempotent for logical fields, not provider metadata or TTL timing. Portable behavior is guaranteed only when both resulting logical-document size measures are at or below 390 KiB; larger state-dependent results may succeed or fail under native limits. TTL timing is outside the portable contract, so callers requiring a fixed absolute expiry must not call `update()` on TTL-bearing items. The synchronous one-write/no-read-merge execution contract is unchanged.
+- `DefaultMulticloudDbClient` now removes adapter-injected identity, TTL, and system-metadata fields case-insensitively from `DocumentResult.document()` and `QueryPage.items()` after provider mapping; requested read metadata remains separate in `DocumentMetadata`.
+- Update payloads are validated before delegation. Non-null `OperationOptions.ttlSeconds()` returns non-retryable `INVALID_REQUEST` with zero provider I/O, at most 10 fields are accepted per call, and the serialized field map is limited to 390 KiB.
+- Shared create/upsert/update preflight snapshots top-level maps and performs one bounded SDK-owned Jackson serialization. Its detached normalized result is the exact provider input, preventing POJOs, custom serializers, or later caller mutation from changing validated content. Binary values are rejected even when hidden in a POJO.
+- Shared preflight snapshots the supplied top-level `Map` entries before validation, so class-level map serializers cannot rewrite validated field names or counts. Bounded graph/serialization inspection maps POJO cycles, excessive POJO depth, serializer re-entry, non-collection `Iterable` values, and over-limit output to stable non-retryable `INVALID_REQUEST` failures; `char[]` follows Jackson string semantics.
+- Null create/upsert documents, top-level names matching `id`, `partitionKey`, `sortKey`, `ttl`, `ttlExpiry`, or `data` case-insensitively, and top-level names beginning with `_` now fail before provider I/O with non-retryable `INVALID_REQUEST`. Complete-write top-level names must also be unique ignoring case and at most 128 Unicode characters so the contract is representable by Spanner's case-insensitive column namespace.
+- Nested field names and partial-update names remain limited to 50,000 UTF-8 bytes. Complete create/upsert documents and partial-update replacements are limited to 31 nested map/list containers below the document root and a separate 390 KiB structural footprint covering UTF-8 names and native map/list overhead. Violations fail before the capability gate or provider I/O with non-retryable `INVALID_REQUEST` and stable reason plus actual/maximum details.
+- The shared serialized-input ceiling is reduced from 399 KiB to 390 KiB. Complete documents for `create()` and `upsert()` and the incoming field map for `update()` must each fit both the serialized and structural 390 KiB bounds; oversized inputs fail before provider I/O with non-retryable `INVALID_REQUEST`. Inputs that cannot be serialized now fail through the same non-retryable `INVALID_REQUEST` envelope with the serialization cause preserved.
+- Supported update-provider timeouts have an explicit SPI contract: Cosmos DB HTTP 408/410 and DynamoDB service or SDK API-call/API-call-attempt timeouts map to retryable `TRANSIENT_FAILURE` on `update()`.
+- Full-document replacement callers must use `upsert()` with the complete desired document. `upsert()` creates a missing item and is not an update-only replacement; this release has no exact portable atomic full-document replace-if-present equivalent.
+
 ## [0.1.0-beta.2] — 2026-06-17
 
 ### Added
