@@ -7,6 +7,24 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- Cosmos clients now always use Gateway mode with HTTP/2 enabled. Upgraded
+  `azure-cosmos` from 4.78.0 to 4.82.0 so account-advertised Gateway V2
+  endpoints and the SDK connectivity probe can select routing automatically.
+- Gateway version selection is now left entirely to Cosmos account
+  configuration and the Azure SDK. Successful construction logs the fixed
+  Gateway/HTTP2 policy and automatic selection without claiming a negotiated
+  request route.
+
+### Removed
+
+- Removed `connectionMode` and its public constants. Direct mode is no longer
+  selectable. Stale `connectionMode`, `gatewayHttp2Enabled`, and pre-release
+  `gatewayV2Enable`/`thinClientEnabled` settings now fail fast instead of being
+  silently ignored. Multicloud DB exposes no HTTP-version or Gateway-version
+  selector.
+
 ## [0.1.0-beta.2] — 2026-06-17
 
 > **Requires `multiclouddb-api` 0.1.0-beta.2 or later** — this release consumes API surface (change-feed cursors, `CLIENT_CLOSED` envelope, `EXTENDED_CHANGE_FEED_HISTORY` capability) introduced in API beta.2. The dependency is pinned in the published POM.

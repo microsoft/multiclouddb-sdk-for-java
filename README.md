@@ -369,8 +369,8 @@ See the [developer guide](docs/guide.md#why-key-is-an-explicit-parameter) for th
 
 | Provider | Module | Status | Native SDK |
 |----------|--------|--------|------------|
-| **Azure Cosmos DB** | `multiclouddb-provider-cosmos` | Full | Azure Cosmos Java SDK 4.60.0 |
-| **Amazon DynamoDB** | `multiclouddb-provider-dynamo` | Full | AWS SDK for Java 2.25.16 |
+| **Azure Cosmos DB** | `multiclouddb-provider-cosmos` | Full | Azure Cosmos Java SDK 4.82.0 |
+| **Amazon DynamoDB** | `multiclouddb-provider-dynamo` | Full | AWS SDK for Java 2.34.0 |
 | **Google Cloud Spanner** | `multiclouddb-provider-spanner` | Full | Google Cloud Spanner 6.62.0 |
 
 ---
@@ -382,7 +382,7 @@ All configuration flows through `MulticloudDbClientConfig` or a `.properties` fi
 | Property | Description | Example |
 |----------|-------------|---------|
 | `multiclouddb.provider` | Provider ID | `cosmos`, `dynamo`, `spanner` |
-| `multiclouddb.connection.*` | Connection properties | `endpoint`, `key`, `region`, `connectionMode` |
+| `multiclouddb.connection.*` | Connection properties | `endpoint`, `key`, `region` |
 | `multiclouddb.auth.*` | Authentication properties | `accessKeyId`, `secretAccessKey` |
 | `multiclouddb.feature.*` | Feature flags | Provider-specific opt-ins |
 
@@ -392,7 +392,15 @@ All configuration flows through `MulticloudDbClientConfig` or a `.properties` fi
 |-----|-------|
 | `multiclouddb.connection.endpoint` | `https://localhost:8081` (emulator) or your Cosmos account URI |
 | `multiclouddb.connection.key` | Master key or Cosmos emulator well-known key |
-| `multiclouddb.connection.connectionMode` | `gateway` or `direct` |
+
+Cosmos clients always use Gateway mode with HTTP/2 enabled. Connection mode,
+HTTP version, and Gateway version are not configurable through Multicloud DB.
+Azure Cosmos DB account configuration and SDK connectivity checks automatically
+select Gateway V1 or V2 for each eligible request.
+
+At client creation, the provider logs the fixed transport and automatic route
+selection policy, not a negotiated Gateway version. See the
+[configuration guide](docs/configuration.md#transport-defaults) for details.
 
 ### DynamoDB connection properties
 

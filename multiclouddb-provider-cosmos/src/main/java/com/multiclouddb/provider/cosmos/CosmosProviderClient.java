@@ -75,7 +75,8 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
      * @param config client configuration carrying connection, auth, and options
      * @throws IllegalArgumentException if {@code connection.endpoint} is missing or blank,
      *                                  or if {@code connection.consistencyLevel} is present
-     *                                  but not a valid consistency level value
+     *                                  but not a valid consistency level value, or if a removed
+     *                                  transport option is present
      */
     public CosmosProviderClient(MulticloudDbClientConfig config) {
         this.config = config;
@@ -85,6 +86,12 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         if (endpoint == null || endpoint.isBlank()) {
             throw new IllegalArgumentException(CosmosConstants.ERR_ENDPOINT_REQUIRED);
         }
+
+        validateTransportConfig(config);
+        String consistencyStr = config.connection().get(CosmosConstants.CONFIG_CONSISTENCY_LEVEL);
+        ConsistencyLevel readConsistencyOverride = consistencyStr == null
+                ? null
+                : CosmosConstants.parseConsistencyLevel(consistencyStr);
 
         CosmosClientBuilder builder = new CosmosClientBuilder()
                 .endpoint(endpoint)
@@ -104,18 +111,11 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             LOG.info("Cosmos client using DefaultAzureCredential (supports Managed Identity, Azure CLI, environment variables)");
         }
 
-        String connectionMode = config.connection().getOrDefault(
-                CosmosConstants.CONFIG_CONNECTION_MODE, CosmosConstants.CONNECTION_MODE_DEFAULT);
-        if (CosmosConstants.CONNECTION_MODE_DIRECT.equalsIgnoreCase(connectionMode)) {
-            builder.directMode();
-        } else {
-            builder.gatewayMode();
-        }
+        GatewayConnectionConfig gatewayConfig = new GatewayConnectionConfig()
+                .setHttp2ConnectionConfig(new Http2ConnectionConfig().setEnabled(true));
+        builder.gatewayMode(gatewayConfig);
 
-        String consistencyStr = config.connection().get(CosmosConstants.CONFIG_CONSISTENCY_LEVEL);
-        ConsistencyLevel readConsistencyOverride = null;
-        if (consistencyStr != null) {
-            readConsistencyOverride = CosmosConstants.parseConsistencyLevel(consistencyStr);
+        if (readConsistencyOverride != null) {
             builder.consistencyLevel(readConsistencyOverride);
             LOG.warn("Cosmos read consistency override set to '{}'. " +
                     "This must be equal to or weaker than the account's default consistency level; " +
@@ -126,6 +126,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         builder.userAgentSuffix(SdkUserAgent.userAgent(config));
 
         this.cosmosClient = builder.buildClient();
+        logTransportConfiguration();
         // Stamp the configured extendedRetention onto every minted cursor so a
         // persisted token can outlive the 24h portable baseline up to the
         // server-side AVAD retention window. Defaults to the baseline when
@@ -137,6 +138,39 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         this.changeFeedReader = new CosmosChangeFeedReader(ProviderId.COSMOS, effectiveRetentionMillis);
         LOG.info("Cosmos client created for endpoint: {}", endpoint);
         LOG.info("Cosmos read consistency: {}", readConsistencyOverride != null ? readConsistencyOverride : "account default");
+    }
+
+    private static void validateTransportConfig(MulticloudDbClientConfig config) {
+        if (config.connection().containsKey(CosmosConstants.REMOVED_CONNECTION_MODE_CONFIG)) {
+            throw new IllegalArgumentException(
+                    "Cosmos connection property '" + CosmosConstants.REMOVED_CONNECTION_MODE_CONFIG
+                            + "' is no longer supported; "
+                            + "Gateway mode is always used");
+        }
+        if (config.connection().containsKey(CosmosConstants.REMOVED_GATEWAY_HTTP2_CONFIG)) {
+            throw new IllegalArgumentException(
+                    "Cosmos connection property '" + CosmosConstants.REMOVED_GATEWAY_HTTP2_CONFIG
+                            + "' is not supported; "
+                            + "Gateway HTTP/2 is always enabled");
+        }
+        if (config.connection().containsKey(CosmosConstants.REMOVED_GATEWAY_V2_CONFIG)) {
+            throw unsupportedGatewayVersionOption(CosmosConstants.REMOVED_GATEWAY_V2_CONFIG);
+        }
+        if (config.connection().containsKey(CosmosConstants.REMOVED_THIN_CLIENT_CONFIG)) {
+            throw unsupportedGatewayVersionOption(CosmosConstants.REMOVED_THIN_CLIENT_CONFIG);
+        }
+    }
+
+    private static IllegalArgumentException unsupportedGatewayVersionOption(String key) {
+        return new IllegalArgumentException("Cosmos connection property '" + key
+                + "' is not supported; Gateway V1/V2 routing is selected automatically "
+                + "from account configuration by Azure Cosmos DB and its SDK");
+    }
+
+    private static void logTransportConfiguration() {
+        LOG.info("Cosmos transport configured: Gateway mode, HTTP/2 enabled. "
+                + "Gateway V1/V2 routing is selected automatically from account configuration "
+                + "by Azure Cosmos DB and its SDK.");
     }
 
     /**
@@ -990,4 +1024,3 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         return MAPPER.convertValue(node, MAP_TYPE);
     }
 }
-

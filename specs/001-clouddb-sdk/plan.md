@@ -31,6 +31,22 @@ Finally, the SDK supports **partition-key-scoped queries** via an optional `part
 
 This eliminates cross-partition scans when the application data model co-locates related documents under a shared partition key (e.g., positions partitioned by portfolioId).
 
+### 2026-08-31 Cosmos Transport Amendment
+
+The Cosmos adapter now has one supported transport policy: Gateway mode with
+HTTP/2 explicitly enabled because Gateway V2 and newer supported Cosmos
+features require it. Azure Cosmos Java SDK 4.82.0 supplies probe-gated Gateway
+V2 routing with automatic Gateway V1 fallback. Multicloud DB exposes no HTTP
+version or Gateway version selector; account configuration advertises Gateway
+V2 availability and the Azure SDK owns connectivity probing and per-request
+routing. Pre-release transport keys are rejected, and construction logs policy
+rather than a negotiated route.
+
+The durable transport rationale is in
+[Architecture - Cosmos Gateway Transport](../../docs/architecture.md#cosmos-gateway-transport).
+Configuration and migration guidance is maintained in the
+[Configuration Reference](../../docs/configuration.md#transport-defaults).
+
 ### What Already Exists
 
 The SDK is fully implemented with CRUD + query + paging + conformance tests (47 passing). However, `QueryRequest.expression()` is currently an opaque string that each provider interprets in its own native syntax. **No portable expression code exists**: no AST, no parser, no translator. DynamoDB currently uses Scan + FilterExpression (not PartiQL).
@@ -53,7 +69,7 @@ The SDK is fully implemented with CRUD + query + paging + conformance tests (47 
 ## Technical Context
 
 **Language/Version**: Java 17 LTS (Eclipse Adoptium Temurin-17.0.10.7-hotspot)
-**Primary Dependencies**: Jackson 2.17.0, SLF4J 2.0.12, Azure Cosmos SDK 4.60.0, Azure Identity 1.12.0, Azure Resource Manager Cosmos 2.51.0, Azure Core Management 1.17.0, AWS SDK v2 2.25.16 (DynamoDB + DynamoDB Enhanced), Google Cloud Spanner 6.62.0
+**Primary Dependencies**: Jackson 2.22.2, SLF4J 2.0.12, Azure Cosmos SDK 4.82.0, Azure Identity 1.18.2, AWS SDK v2 2.34.0 (DynamoDB + DynamoDB Enhanced), Google Cloud Spanner 6.62.0
 **Storage**: Cosmos DB (NoSQL), DynamoDB, Spanner (via provider SDKs)
 **Testing**: JUnit 5.10.2, Mockito 5.11.0, Maven Surefire/Failsafe
 **Target Platform**: JVM 17+ (server-side)
