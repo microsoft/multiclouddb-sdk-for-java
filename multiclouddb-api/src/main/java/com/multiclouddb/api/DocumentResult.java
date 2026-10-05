@@ -18,7 +18,7 @@ import java.util.Objects;
  * DocumentMetadata meta = result.metadata(); // may be null if includeMetadata=false
  * }</pre>
  *
- * @see MulticloudDbClient#read(ResourceAddress, Key, OperationOptions)
+ * @see MulticloudDbClient#read(ResourceAddress, MulticloudDbKey, OperationOptions)
  */
 public final class DocumentResult {
 

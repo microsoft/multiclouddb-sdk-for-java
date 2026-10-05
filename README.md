@@ -43,6 +43,7 @@ switch providers by changing a single properties file, with zero code changes.
   - [Provider Discovery](#provider-discovery)
 - [Design Decisions](#design-decisions)
   - [Why Key Is an Explicit Parameter](#why-key-is-an-explicit-parameter)
+  - [Common Baseline and Optional Capabilities](#common-baseline-and-optional-capabilities)
 - [Supported Providers](#supported-providers)
 - [Configuration](#configuration)
 - [Capabilities & Portability](#capabilities--portability)
@@ -68,7 +69,7 @@ switch providers by changing a single properties file, with zero code changes.
 | Vendor lock-in - each cloud DB has its own SDK, data model, and query language | Single `MulticloudDbClient` interface with portable CRUD + query |
 | Each provider has a different query language (Cosmos SQL, PartiQL, GoogleSQL) | **Portable query DSL** - write `status = @status AND priority > @min`, auto-translated per provider |
 | Migrating between providers requires rewriting data-access code | Change **one property** (`multiclouddb.provider=dynamo` → `cosmos`) |
-| Understanding which features are portable vs. provider-specific | Runtime `CapabilitySet` introspection; `PortabilityWarning` on non-portable use |
+| Understanding which features are portable vs. provider-specific | Common LCD baseline plus explicitly capability-gated optional extensions |
 | Testing across providers | Conformance test suite runs identical tests against every provider |
 
 ---
@@ -123,9 +124,8 @@ mvn clean install -DskipTests
 
 ```java
 import com.multiclouddb.api.*;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.util.Map;
 
 // Configure - provider selected entirely by config, not code
 Properties props = new Properties();
@@ -144,59 +144,35 @@ MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
 MulticloudDbClient client = MulticloudDbClientFactory.create(config);
 
 // CRUD - same code for every provider
-ObjectMapper mapper = new ObjectMapper();
-ObjectNode doc = mapper.createObjectNode();
-doc.put("title", "Buy groceries");
-doc.put("completed", false);
+Map<String, Object> doc = Map.of("title", "Buy groceries", "completed", false);
 
 ResourceAddress todos = new ResourceAddress("mydb", "todos");
-Key key = Key.of("todo-1", "todo-1");   // partitionKey + sortKey
+MulticloudDbKey key = MulticloudDbKey.of("todo-1", "todo-1");   // partitionKey + sortKey
 
 client.upsert(todos, key, doc);                  // Create or replace (upsert)
 DocumentResult result = client.read(todos, key); // Point read → returns DocumentResult
 ObjectNode document = result.document();         // The document payload
-client.delete(todos, key);                       // Delete
 
 // Query with portable expressions - automatically translated per provider
 QueryRequest query = QueryRequest.builder()
-        .expression("status = @status AND category = @cat")
-        .parameters(Map.of("status", "active", "cat", "shopping"))
-        .pageSize(25)
+        .partitionKey(key.partitionKey())    // query the partition just written
+        .expression("completed = @completed")
+        .parameter("completed", false)
+        .maxPageSize(25)
         .build();
 QueryPage page = client.query(todos, query);
-for (JsonNode item : page.items()) {
+for (Map<String, Object> item : page.items()) {
     System.out.println(item);
 }
-// Cosmos → SELECT * FROM c WHERE (c.status = @status AND c.category = @cat)
-// DynamoDB → SELECT * FROM "todos" WHERE (status = ? AND category = ?)
-// Spanner → SELECT * FROM `todos` WHERE (status = @status AND category = @cat)
+// Predicate translation (partition scoping is applied separately):
+// Cosmos → c.completed = @completed
+// DynamoDB → completed = ? (bound to false)
+// Spanner → completed = @completed
+
+client.delete(todos, key);                       // Cleanup after querying
 ```
 
-### 4. Native query escape hatch
-
-When you need provider-specific query syntax, use `nativeExpression()`:
-
-```java
-// Cosmos SQL (only works with Cosmos provider)
-QueryRequest cosmosQuery = QueryRequest.builder()
-        .nativeExpression("SELECT * FROM c WHERE c.title LIKE '%flight%'")
-        .pageSize(25)
-        .build();
-
-// DynamoDB PartiQL (only works with DynamoDB provider)
-QueryRequest dynamoQuery = QueryRequest.builder()
-        .nativeExpression("SELECT * FROM \"todos\" WHERE begins_with(title, 'Ship')")
-        .pageSize(25)
-        .build();
-
-// Spanner GoogleSQL (only works with Spanner provider)
-QueryRequest spannerQuery = QueryRequest.builder()
-        .nativeExpression("SELECT * FROM todos WHERE STARTS_WITH(title, 'Ship')")
-        .pageSize(25)
-        .build();
-```
-
-### 5. Switch providers
+### 4. Switch providers
 
 Change **only** the properties file - no code changes:
 
@@ -268,7 +244,10 @@ When you call `client.query()` with a portable expression:
 3. **Translate** - Provider-specific `ExpressionTranslator` generates native query syntax
 4. **Execute** - Provider runs the translated query against the database
 
-This is fully transparent - you never see the translated SQL. For direct control, use `nativeExpression()` to bypass the pipeline entirely.
+The portable DSL translates filters without requiring provider-specific SQL.
+For native syntax, `QueryRequest.nativeExpression()` provides a separate
+escape hatch that bypasses portable DSL validation. Native syntax is not
+portable. `MulticloudDbClient` does not expose a `nativeClient()` accessor.
 
 ---
 
@@ -291,22 +270,20 @@ All application code depends on `multiclouddb-api`. The core types are:
 
 | Type | Purpose |
 |------|---------|
-| `MulticloudDbClient` | Portable interface: `create`, `read`, `update`, `delete`, `upsert`, `query`, `provisionSchema`, `capabilities`, `nativeClient` |
+| `MulticloudDbClient` | Portable interface: `create`, `read`, `update`, `delete`, `upsert`, `query`, `provisionSchema`, `capabilities` |
 | `MulticloudDbClientFactory` | Creates a `MulticloudDbClient` by discovering providers via `ServiceLoader` |
 | `MulticloudDbClientConfig` | Builder-pattern config: provider selection, connection, auth, feature flags |
 | `ResourceAddress` | `(database, collection)` pair targeting a container/table |
-| `Key` | `(partitionKey, sortKey)` pair - every document needs at least a partition key |
-| `QueryRequest` | Portable expression, native expression, parameters, page size, continuation token, partition key scoping, `limit`, `orderBy` |
+| `MulticloudDbKey` | Required `partitionKey` and optional `sortKey`; use `of(partitionKey)` when no separate sort key is needed |
+| `QueryRequest` | Portable or native expression, parameters, page-size hint, continuation token, optional `partitionKey`, `limit`, and provider-supported `orderBy` |
 | `QueryPage` | Result page: items + optional continuation token + optional `OperationDiagnostics` |
-| `SortOrder` | `(field, direction)` sort specification for `orderBy` — validates field names against injection |
-| `SortDirection` | `ASC` or `DESC` |
-| `DocumentResult` | Result of `read()`: document payload + optional `DocumentMetadata` |
-| `DocumentMetadata` | Write-metadata on demand: `lastModified`, `ttlExpiry`, `version` |
+| `SortOrder` / `SortDirection` | Field ordering and `ASC` or `DESC`, subject to provider support |
+| `DocumentResult` | Result of `read()`: document `ObjectNode` payload + optional metadata |
+| `DocumentMetadata` | Available last-modified timestamp, TTL expiry, and version/ETag |
 | `CapabilitySet` | Runtime introspection of provider capabilities |
 | `Capability` | Named capability with `supported` flag and notes |
 | `MulticloudDbException` | Structured error with `MulticloudDbError` (category, provider, native code) |
-| `PortabilityWarning` | Signals when an operation uses non-portable behavior |
-| `OperationOptions` | Timeout, TTL (`ttlSeconds`), metadata flag (`includeMetadata`) |
+| `OperationOptions` | Per-call timeout, write `ttlSeconds`, and read `includeMetadata` opt-in |
 | `OperationDiagnostics` | Latency, request units/charge, request ID, ETag, item count |
 | `Expression` | AST node interface for parsed query expressions |
 | `ExpressionParser` | Parses portable expression strings into an AST |
@@ -340,28 +317,53 @@ Providers are discovered at runtime via Java's `ServiceLoader`:
 
 ### Why Key Is an Explicit Parameter
 
-You may notice that every CRUD operation requires an explicit `Key` parameter,
+You may notice that every CRUD operation requires an explicit `MulticloudDbKey` parameter,
 even on writes where the key material could theoretically be extracted from the
 document:
 
 ```java
 // Key is always explicit - never extracted from the document
-client.upsert(addr, Key.of("tenant-1", "pos-42"), doc);
+client.upsert(addr, MulticloudDbKey.of("tenant-1", "pos-42"), doc);
 ```
 
 Some database SDKs (notably the Azure Cosmos DB SDK) extract the partition key
 and ID from the document body automatically. Multicloud DB deliberately does **not**
 do this, for several reasons:
 
-1. **Each provider maps Key fields differently.** Cosmos DB stores `Key.sortKey()` as the built-in `id` field, while DynamoDB and Spanner store it as a `sortKey` attribute/column. A convention-based extractor would need provider-specific logic, undermining portability.
+1. **Each provider maps key fields differently.** Cosmos DB stores `MulticloudDbKey.sortKey()` as the built-in `id` field, while DynamoDB and Spanner store it as a `sortKey` attribute/column. A convention-based extractor would need provider-specific logic, undermining portability.
 
-2. **`read()` and `delete()` have no document.** These operations require a Key with nothing to extract from. Making writes work differently would create an inconsistent API.
+2. **`read()` and `delete()` have no document.** These operations require a `MulticloudDbKey` with nothing to extract from. Making writes work differently would create an inconsistent API.
 
-3. **The Key is always authoritative.** Providers overwrite any `id`/`partitionKey` fields in the document with the Key values (see [Document Field Injection](docs/guide.md#document-field-injection) in the developer guide). This prevents accidental mismatches.
+3. **The key is always authoritative.** Providers overwrite any `id`/`partitionKey` fields in the document with the key values (see [Document Field Injection](docs/guide.md#document-field-injection) in the developer guide). This prevents accidental mismatches.
 
-4. **Compile-time safety.** A missing Key is a compiler error. A missing field in a JSON document is a runtime error deep in the provider layer.
+4. **Compile-time safety.** Omitting the required `MulticloudDbKey` argument is a compiler error. A missing field in a JSON document is a runtime error deep in the provider layer.
 
 See the [developer guide](docs/guide.md#why-key-is-an-explicit-parameter) for the full rationale and per-provider field mapping details.
+
+### Common Baseline and Optional Capabilities
+
+The common API baseline targets **all three** providers. Optional extensions
+remain explicitly capability-gated rather than being part of that baseline.
+`QueryRequest.nativeExpression()` retains provider-native query passthrough;
+it is not a portable SQL contract. There is no `nativeClient()` accessor.
+For example, extended change-feed
+history remains an opt-in supported by Cosmos and Spanner, but explicitly
+unsupported by DynamoDB.
+
+This is a deliberate trade-off:
+
+- **Pro:** common-baseline code targets all three providers through one contract.
+  Optional extensions require capability checks and retain fail-fast
+  `UNSUPPORTED_CAPABILITY` errors when unavailable, except for the currently
+  unimplemented unsupported-TTL gate described under [Document TTL](#document-ttl).
+- **Con:** native query syntax, expression functions, field ordering, and
+  `limit` semantics vary by provider. Check capability support before using
+  those features; DynamoDB explicitly rejects `orderBy`, including `sortKey`.
+  A deterministic order does not guarantee a snapshot across page requests.
+
+See [Provider Compatibility](docs/compatibility.md) for the full list of
+portable capabilities and the [`multiclouddb-api` CHANGELOG](multiclouddb-api/CHANGELOG.md)
+for the retained query contract and other draft API changes.
 
 ---
 
@@ -446,13 +448,16 @@ approach for provisioning multiple resources.
 
 ## Capabilities & Portability
 
-Each provider declares which cross-cutting features it supports. Query at runtime:
+The SDK separates the common Lowest-Common-Denominator (LCD) baseline from
+optional capability-gated extensions. `client.capabilities()` declares both
+supported and unsupported capabilities. Baseline support does not imply that
+every query feature or extension is supported on every provider.
 
 ```java
 CapabilitySet caps = client.capabilities();
 
-if (caps.supports(Capability.TRANSACTIONS)) {
-    // safe to use transactions
+if (caps.isSupported(Capability.EXTENDED_CHANGE_FEED_HISTORY)) {
+    // This provider supports extended history; configure the opt-in at client creation.
 }
 
 for (Capability cap : caps.all()) {
@@ -465,40 +470,58 @@ for (Capability cap : caps.all()) {
 
 | Capability | Cosmos DB | DynamoDB | Spanner |
 |------------|:---------:|:--------:|:-------:|
-| **Portable query DSL** | ✓ | ✓ | ✓ |
-| Native expression passthrough | ✓ (SQL) | ✓ (PartiQL) | ✓ (GoogleSQL) |
+| Portable query DSL | ✓ | ✓ | ✓ |
 | Continuation token paging | ✓ | ✓ | ✓ |
-| Cross-partition query | ✓ | ✗ | ✓ |
 | Transactions | ✓ | ✓ | ✓ |
 | Batch operations | ✓ | ✓ | ✓ |
 | Strong consistency | ✓ | ✓ | ✓ |
 | Change feed | ✓ | ✓ | ✓ |
-| **Result limit** (`Top N`) | ✓ | ✓ (per-page) | ✓ |
-| **ORDER BY** | ✓ | ✗ | ✓ |
-| **Row-level TTL** | ✓ | ✓ | ✗ |
-| **Write timestamp / metadata** | ✓ | ✗ | ✗ |
+| Cross-partition query (`CROSS_PARTITION_QUERY`) | ✓ | ✗ declaration; unscoped Scan retained | ✓ |
+| Native SQL (`NATIVE_SQL_QUERY`) | ✓ SQL passthrough | ✗ declaration; native PartiQL retained | ✓ GoogleSQL passthrough |
+| Result limit (`RESULT_LIMIT`) | ✓ `TOP N` | ✗ as total cap; per-page limit accepted | ✓ per-page `LIMIT` |
+| ORDER BY (provider-supported fields) | ✓ | ✗ | ✓ |
+| Row-level TTL (`ROW_LEVEL_TTL`) | ✓ configured container | ✓ configured table | ✗ option ignored |
+| Write timestamp (`WRITE_TIMESTAMP`) | ✓ | ✗ TTL expiry only | ✗ empty metadata shell |
+| Extended change-feed history (optional opt-in) | ✓ | ✗ | ✓ |
+
+Cosmos `LIKE` and cross-partition query, and Spanner regex, remain supported.
+Query partition scoping is optional. DynamoDB's unsupported
+`CROSS_PARTITION_QUERY` and `NATIVE_SQL_QUERY` declarations do not automatically
+block its existing Scan and native PartiQL execution paths; explicit `orderBy`
+is different and fails with `UNSUPPORTED_CAPABILITY`, including for `sortKey`.
+`limit` is not a common cumulative cap across continuation tokens. See the
+[query support matrix](docs/compatibility.md#query-extensions-and-native-expressions)
+for provider-specific behavior.
+
+Per-document TTL and opt-in metadata remain available with provider-specific
+support; see [Document TTL](#document-ttl) and [Document Metadata](#document-metadata).
+For extended history, retain the explicit `ChangeFeedConfig.extendedRetention(...)`
+opt-in and its `UNSUPPORTED_CAPABILITY` gate; see
+[change-feed retention](docs/compatibility.md#change-feed-history-retention).
 
 ---
 
 ## Result Set Control
 
-Limit and sort results portably across providers:
+Limit and sort results using the provider's supported query features:
 
 ```java
 QueryRequest q = QueryRequest.builder()
         .expression("status = @s")
         .parameter("s", "active")
-        .limit(25)                                    // top 25 results
+        .limit(25)                                    // per-page on Spanner
         .orderBy("createdAt", SortDirection.DESC)     // newest first
         .build();
 
 QueryPage page = client.query(address, q);
 ```
 
-Check capabilities before using `ORDER BY` — DynamoDB does not support server-side ordering:
+Check capabilities before using `ORDER BY` - DynamoDB rejects this option.
+`limit` is not a portable cumulative cap: DynamoDB and Spanner apply it per
+page, whereas Cosmos translates it to `TOP N`.
 
 ```java
-if (client.capabilities().supports(Capability.ORDER_BY)) {
+if (client.capabilities().isSupported(Capability.ORDER_BY)) {
     // use orderBy()
 }
 ```
@@ -522,6 +545,9 @@ client.update(address, key, updatedDoc, opts);
 TTL requires collection-level configuration first (enable "Default TTL" on the
 Cosmos DB container; enable TTL on the DynamoDB table using `ttlExpiry` as the
 attribute name). Spanner ignores `ttlSeconds` (`ROW_LEVEL_TTL=false`).
+This is current behavior, not fulfillment of FR-057: the required unsupported-TTL
+fail-fast gate remains unimplemented follow-up work. See the
+[TTL implementation status](specs/001-clouddb-sdk/spec.md#document-ttl-and-write-metadata-requirements).
 
 ---
 
@@ -535,7 +561,7 @@ OperationOptions opts = OperationOptions.builder()
         .build();
 
 DocumentResult result = client.read(address, key, opts);
-DocumentMetadata meta = result.metadata();   // null if provider doesn't support it
+DocumentMetadata meta = result == null ? null : result.metadata();
 
 if (meta != null) {
     System.out.println("Last modified: " + meta.lastModified());
@@ -549,6 +575,10 @@ if (meta != null) {
 | `lastModified` | ✓ (`_ts`) | ✗ | ✗ |
 | `ttlExpiry` | ✗ | ✓ | ✗ |
 | `version` | ✓ (ETag) | ✗ | ✗ |
+
+Metadata is null unless requested. On opt-in, DynamoDB can return a stored
+TTL expiry despite `WRITE_TIMESTAMP=false`; Spanner returns an empty metadata
+object. Unsupported or unavailable fields are null.
 
 ---
 
@@ -706,12 +736,17 @@ mvn -pl multiclouddb-provider-dynamo clean install
 ### Unit tests
 
 ```bash
-mvn test
+mvn -Punit test
 ```
 
-Runs 281+ tests across the API and provider modules, including the portable
-query expression parser, validator, translator, partition-key-scoped queries,
-and cross-provider conformance and integration tests.
+The `unit` profile excludes provider/emulator-tagged tests. Unit and mock tests
+cover areas such as the portable expression pipeline and query routing;
+they do not certify service-backed cross-provider behavior.
+Use `-Dtest=CapabilityTest -pl multiclouddb-api` to select one test class.
+A selected test run is not the full unit suite. See
+[Building and Testing](docs/contributing.md#building-and-testing) for existing
+module and test-selection commands. Add `-o` for offline execution when
+dependencies are already cached.
 
 ### Integration / conformance tests
 
@@ -724,32 +759,9 @@ mvn -pl multiclouddb-conformance verify
 The conformance suite runs identical CRUD + portable query tests against each
 provider emulator, verifying portable behavior with real data.
 
-| Suite | Provider | Tests |
-|-------|----------|-------|
-| API unit tests | - | 16 |
-| Cosmos Provider unit tests | Cosmos DB | 23 |
-| DynamoDB Provider unit tests | DynamoDB | 33 |
-| Spanner Provider unit tests | Spanner | 24 |
-| Expression parser tests | - | 43 |
-| Expression translation tests | - | 26 |
-| Expression validator tests | - | 8 |
-| Native expression tests | - | 8 |
-| Portable query conformance | - | 16 |
-| Cosmos CRUD conformance | Cosmos DB emulator | 13 |
-| DynamoDB CRUD conformance | DynamoDB Local | 13 |
-| Spanner CRUD conformance | Spanner Emulator | 13 |
-| Cosmos query integration | Cosmos DB emulator | 10 |
-| DynamoDB query integration | DynamoDB Local | 10 |
-| Spanner query integration | Spanner Emulator | 10 |
-| Cosmos US2 tests (Capabilities, Diagnostics, NativeClient, Portability) | Cosmos DB emulator | 15 |
-| DynamoDB US2 tests | DynamoDB Local | 20 |
-| Unsupported Capability conformance | - | 3 |
-| **Total** | | **281+** |
-
-> **Note**: The CRUD conformance suites each include 3 partition-key-scoped
-> query tests (queryByPartitionKey, queryWithoutPartitionKey,
-> queryNonexistentPartition) that validate the `QueryRequest.partitionKey()`
-> API across all providers.
+> **Note**: The CRUD conformance suites validate the `QueryRequest.partitionKey()`
+> API across all providers. Query partition scoping remains optional;
+> unscoped queries retain provider-specific routing and capability limitations.
 
 ---
 

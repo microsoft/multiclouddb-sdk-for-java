@@ -208,6 +208,11 @@ public final class QueryRequest {
          * Set query parameters as a bulk map, <strong>replacing</strong> any
          * parameters previously set via {@link #parameter(String, Object)}.
          * <p>
+         * For portable expressions, use bare names as map keys: bind
+         * {@code status = @status} with {@code Map.of("status", "active")}.
+         * This builder stores keys as supplied; the portable query pipeline
+         * validates parameter references before translation.
+         * <p>
          * A defensive copy is made immediately; subsequent mutations to
          * {@code params} do not affect this builder or the built
          * {@link QueryRequest}.
@@ -221,7 +226,9 @@ public final class QueryRequest {
          * Add a single named query parameter.
          * May be called multiple times to accumulate parameters.
          *
-         * @param name  the parameter name (e.g. {@code "@status"})
+         * @param name  the bare parameter name for portable expressions
+         *              (e.g. {@code "status"} for {@code @status});
+         *              stored as supplied, without normalization or validation
          * @param value the parameter value
          */
         public Builder parameter(String name, Object value) {

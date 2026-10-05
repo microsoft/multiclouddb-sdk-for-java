@@ -601,7 +601,11 @@ RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use sing
 
 ## Phase 15: User Story 5 — Result Set Control: Top N and Ordering (Priority: P1)
 
-**Goal**: `QueryRequest` supports an optional result limit (Top N) and optional ORDER BY, enabling efficient "top K results" queries. ORDER BY is capability-gated: only Cosmos DB and Spanner support it. All three providers support LIMIT N.
+**Goal**: `QueryRequest` exposes optional `limit` and `orderBy` for result-set control. ORDER BY is capability-gated: only Cosmos DB and Spanner support it. Current limit handling is provider/query-path-specific: Cosmos uses `TOP N` on generated queries; DynamoDB and Spanner accept page-local limits. Accepting the option is distinct from declaring `RESULT_LIMIT` (Cosmos/Spanner true, DynamoDB false) and does not establish the across-page Top N requirement in FR-052.
+
+**Implementation status (2026-09)**: The completed tasks below record the API and provider work actually delivered, including the per-page caps in T143/T144. They do not mark the across-page Top N requirement in FR-052 and [issue #25](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/25) complete. DynamoDB/Spanner continuation requests can still return more than N items in total. See the [result-limit implementation status](spec.md#result-set-control-requirements) and [current provider behavior](../../docs/compatibility.md#query-extensions-and-native-expressions).
+
+- [ ] [US5 follow-up / FR-052] Implement and verify a remaining-result budget across continuation requests so the total returned items do not exceed N. This cumulative behavior is deferred and unimplemented; the existing per-page caps and provider-specific SQL limits are not cross-provider, all-query-path completion of the requirement.
 
 ### New Types for User Story 5
 
@@ -627,7 +631,7 @@ RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use sing
 - [x] T144 [P] [US5] Update `SpannerProviderClient` to apply `limit` and `orderBy` from `QueryRequest` in `executeStatement()` and `queryWithTranslation()`. When `limit` is set, cap the effective page size via `Math.min(pageSize, limit)`. When `orderBy` is non-empty, append `ORDER BY {field} {ASC|DESC}` before LIMIT/OFFSET using `appendResultSetControl()` helper.
   File: `multiclouddb-provider-spanner/src/main/java/com/multiclouddb/provider/spanner/SpannerProviderClient.java`
 
-- [x] T145 [P] [US5] Update all three provider capabilities files to add `RESULT_LIMIT` entries: `CosmosCapabilities`: `RESULT_LIMIT=true` ("TOP N supported in Cosmos SQL"); `DynamoCapabilities`: `RESULT_LIMIT=true` ("LIMIT N via DynamoDB Scan/PartiQL limit"), `ORDER_BY` note updated; `SpannerCapabilities`: `RESULT_LIMIT=true` ("LIMIT N supported in GoogleSQL").
+- [x] T145 [P] [US5] Record the current `RESULT_LIMIT` declarations and notes: `CosmosCapabilities`: `RESULT_LIMIT=true` ("TOP N supported in Cosmos SQL (SELECT TOP N)"); `DynamoCapabilities`: `RESULT_LIMIT=false` ("DynamoDB limit parameter caps the current scan/query page only; pagination via continuation tokens can exceed the stated limit. A true server-side total cap (like Cosmos SELECT TOP N) is not supported."), `ORDER_BY` remains unsupported; `SpannerCapabilities`: `RESULT_LIMIT=true` ("Per-page LIMIT N supported in GoogleSQL queries; cap is per-page only, not a hard total across pagination"). Spanner's true declaration does not guarantee a cumulative limit across continuation pages or complete FR-052.
   Files: `CosmosCapabilities.java`, `DynamoCapabilities.java`, `SpannerCapabilities.java`
 
 ### Tests for User Story 5
@@ -640,6 +644,10 @@ RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use sing
 ## Phase 16: User Story 6 — Document TTL and Write Metadata (Priority: P2)
 
 **Goal**: Applications can set a TTL on individual documents at write time (where supported) and retrieve document metadata (remaining TTL + write timestamp) on reads via an opt-in `OperationOptions` flag. `read()` returns `DocumentResult` wrapping the document and optional metadata.
+
+**Implementation status (2026-09)**: The completed API, metadata and capability-declaration tasks below do not mark FR-057's unsupported-TTL error requirement complete. Spanner currently ignores the TTL hint, so current-behavior regression tests are not capability-gate conformance tests. The [FR-057 requirement](spec.md#document-ttl-and-write-metadata-requirements) is retained; see [current provider behavior](../../docs/compatibility.md#ttl-and-read-metadata).
+
+- [ ] [US6 follow-up / FR-057] Implement and verify a fail-fast capability gate that raises a clear unsupported-capability error when TTL is requested on a provider without row-level TTL support. This remains deferred and unimplemented; preserving the current ignore behavior is not completion of the requirement.
 
 ### New Types for User Story 6
 

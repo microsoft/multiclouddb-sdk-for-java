@@ -6,6 +6,10 @@ and architecture overview, see the [Getting Started](getting-started.md) guide. 
 portable API surface and error mapping reference, see
 [Compatibility](compatibility.md).
 
+The common LCD baseline is distinct from optional capability-gated extensions.
+Extended change-feed history remains an explicit opt-in on Cosmos and Spanner;
+DynamoDB declares it unsupported and rejects the opt-in before I/O.
+
 ---
 
 ## Table of Contents
@@ -293,14 +297,17 @@ performance and scalability. Here are common strategies:
 **Entity-per-partition** (`MulticloudDbKey.of(pk, pk)`):
 - Every document gets its own partition
 - Optimal for point reads - always a single-partition operation
-- Queries for "all items of type X" require a **cross-partition scan**
+- Queries may omit the partition key: Cosmos and Spanner retain unscoped
+  queries, and DynamoDB retains its Scan route. These can cost more than a
+  targeted query when searching "all items of type X"; DynamoDB still declares
+  `CROSS_PARTITION_QUERY` unsupported rather than treating Scan as that capability
 - Works well when you don't need to query within groups
 
 **Grouped partitions** (`MulticloudDbKey.of(parentId, childId)`):
 - Related documents share a partition
 - Point reads still work (the SDK resolves the full key)
 - Queries within the group can be **partition-scoped** - much more efficient
-- Requires knowing the partition key value at query time
+- Efficient partition-scoped queries require knowing the partition key value
 
 **Rule of thumb**: If you frequently query "give me all X within Y", use Y
 as the partition key. If you only read documents by their ID, use the
@@ -1190,11 +1197,13 @@ boolean canOrder  = caps.isSupported(Capability.ORDER_BY);
 
 | Capability | Cosmos DB | DynamoDB | Spanner |
 |------------|:---------:|:--------:|:-------:|
-| `result_limit` (Top N) | ✓ (`SELECT TOP N`) | ✓ (per-page) | ✓ (`LIMIT`) |
+| `result_limit` | ✓ (`SELECT TOP N`) | ✗ (per-page `limit` still accepted) | ✓ (per-page `LIMIT`) |
 | `order_by` | ✓ | ✗ | ✓ |
 
-> **Note:** DynamoDB's `result_limit=true` caps the _current scan page_, not
-> the total result set. Use continuation tokens to iterate all matching items.
+> **Note:** DynamoDB declares `result_limit=false`; its `limit` still caps the
+> current scan/query page. Spanner also applies `limit` per page. Neither is a
+> cumulative cap across continuation tokens. Ordering does not provide a
+> snapshot across concurrent writes.
 
 ### Limiting Results
 
@@ -1202,7 +1211,7 @@ boolean canOrder  = caps.isSupported(Capability.ORDER_BY);
 QueryRequest q = QueryRequest.builder()
         .expression("score >= @min")
         .parameter("min", 80)
-        .limit(10)                        // top 10 results
+        .limit(10)                        // provider-specific limit semantics
         .build();
 
 QueryPage page = client.query(address, q);
@@ -1566,7 +1575,7 @@ client.create(address, key, doc, opts);
 // TTL on upsert (create-or-replace)
 client.upsert(address, key, doc, opts);
 
-// TTL on update - carries TTL forward through the full-replace write
+// Reapply the requested TTL on update
 client.update(address, key, updatedDoc, opts);
 ```
 
@@ -1583,10 +1592,11 @@ if (client.capabilities().isSupported(Capability.ROW_LEVEL_TTL)) {
 }
 ```
 
-> **Important:** If you omit `ttlSeconds` on an `update()` call, the previously
-> stored TTL attribute will be overwritten with no TTL (documents become
-> permanent). Always pass the same `OperationOptions` on every write if you
-> want TTL to persist.
+> **Important:** Cosmos and DynamoDB replace the document on `update()` and
+> `upsert()`. Omitting `ttlSeconds` does not preserve a previously stored TTL
+> field unless it is supplied in the replacement payload. Cosmos may then use
+> its container default TTL. Pass the option on each write when you need a
+> per-document TTL; DynamoDB recalculates the expiry from that write's time.
 
 ---
 
@@ -1602,7 +1612,7 @@ OperationOptions opts = OperationOptions.builder()
         .build();
 
 DocumentResult result = client.read(address, key, opts);
-DocumentMetadata meta = result.metadata();
+DocumentMetadata meta = result == null ? null : result.metadata();
 
 if (meta != null) {
     System.out.println("Last modified : " + meta.lastModified());
@@ -1619,21 +1629,29 @@ if (meta != null) {
 | `ttlExpiry` | ✗ | ✓ (stored attribute) | ✗ |
 | `version` | ✓ (ETag) | ✗ | ✗ |
 
-Fields the provider cannot supply are returned as `null`. Use
-`Capability.WRITE_TIMESTAMP` to check before accessing `metadata()`.
+Fields the provider cannot supply are returned as `null`. `WRITE_TIMESTAMP`
+declares timestamp support, not whether the read option can be used:
+DynamoDB can return stored TTL expiry with `WRITE_TIMESTAMP=false`, while
+Spanner returns an empty metadata object when requested. Metadata is null
+without opt-in; a missing document returns null from `read()`.
 
 ```java
 if (client.capabilities().isSupported(Capability.WRITE_TIMESTAMP)) {
     DocumentResult r = client.read(address, key,
             OperationOptions.builder().includeMetadata(true).build());
-    System.out.println(r.metadata().lastModified());
+    if (r != null && r.metadata() != null) {
+        System.out.println(r.metadata().lastModified());
+    }
 }
 ```
 
 ### System Property Stripping
 
-The `document()` field of `DocumentResult` is always stripped of provider
-system properties (`_ts`, `_etag`, `_rid`, `_self`, `_attachments`, `partitionKey`) before being returned, ensuring the same document shape regardless of which provider it was read from.
+Cosmos point reads strip `_ts`, `_etag`, `_rid`, `_self`, `_attachments`, `id`,
+and `partitionKey` from `document()`, extracting requested metadata from the
+original response. DynamoDB returns stored attributes (including `ttlExpiry`);
+Spanner hides its internal `data` field-tracking column. Do not infer identical
+payload shapes from the presence of the common metadata API.
 
 ---
 
@@ -1645,7 +1663,11 @@ data leaves the client. This limit applies to `create()`, `upsert()`, and
 
 ### Why 399 KB, not 400 KB?
 
-Providers inject additional fields (`partitionKey`, `sortKey`, `id`, `ttlExpiry`) before writing. DynamoDB measures its 400 KB limit against the internal wire format, which can be larger than raw JSON bytes. The 1 KB safety margin prevents valid-looking documents from exceeding the wire limit after field injection.
+Providers inject additional fields (`partitionKey`, `sortKey`, `id`, and TTL
+fields when requested) before writing. DynamoDB measures its 400 KB limit
+against the internal wire format, which can be larger than raw JSON bytes.
+The 1 KB margin reserves space for injected fields; it is not a full
+provider-wire-size calculation.
 
 ### Validation Behaviour
 

@@ -6,6 +6,9 @@ package com.multiclouddb.provider.dynamo;
 import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
+import com.multiclouddb.api.MulticloudDbException;
+import com.multiclouddb.api.MulticloudDbErrorCategory;
+import com.multiclouddb.api.SortDirection;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -45,6 +48,23 @@ class DynamoQueryRoutingTest {
 
     private DynamoDbClient mockDynamoClient;
     private DynamoProviderClient client;
+
+    @Test
+    void explicitOrderingRemainsUnsupportedIncludingSortKey() {
+        for (String field : new String[] {"sortKey", "createdAt"}) {
+            for (SortDirection direction : SortDirection.values()) {
+                QueryRequest request = QueryRequest.builder()
+                        .partitionKey("pk-001")
+                        .orderBy(field, direction)
+                        .build();
+                MulticloudDbException error = assertThrows(MulticloudDbException.class,
+                        () -> client.query(new ResourceAddress("testdb", "users"), request, null));
+                assertEquals(MulticloudDbErrorCategory.UNSUPPORTED_CAPABILITY,
+                        error.error().category());
+            }
+        }
+        verifyNoInteractions(mockDynamoClient);
+    }
 
     @BeforeEach
     void setUp() {

@@ -46,14 +46,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class DefaultMulticloudDbClientCheckCapabilityOperationTest {
 
     /**
-     * Bare-minimum fake provider client whose CapabilitySet declares only the
-     * basic CRUD capability — every other capability check fails. Other SPI
+     * Bare-minimum fake provider client that declares change feeds unsupported. Other SPI
      * methods throw if invoked because we never reach them; the capability
      * gate fires first.
      */
     private static final class FakeProviderClient implements MulticloudDbProviderClient {
         private final ProviderId pid = ProviderId.fromId("fake-checkcap-op-test");
-        private final CapabilitySet caps = new CapabilitySet(List.of(Capability.NATIVE_SQL_QUERY_CAP));
+        private final CapabilitySet caps = new CapabilitySet(List.of(Capability.CHANGE_FEED_UNSUPPORTED));
 
         @Override public ProviderId providerId() { return pid; }
         @Override public CapabilitySet capabilities() { return caps; }

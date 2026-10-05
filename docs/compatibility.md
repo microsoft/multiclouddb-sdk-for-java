@@ -1,18 +1,23 @@
 # Portable API Surface
 
-The Multicloud DB SDK's portable API surface covers capabilities that work
-identically across all three providers. The features listed below require no
-runtime capability checks - they are guaranteed to work on Azure Cosmos DB,
-Amazon DynamoDB, and Google Cloud Spanner. Some providers offer additional
-capabilities (e.g., `CROSS_PARTITION_QUERY`, `ORDER_BY`, `LIKE`); use
-`client.capabilities()` to discover what the current provider supports.
+The Multicloud DB SDK separates a **common Lowest-Common-Denominator (LCD)
+baseline** from optional capability-gated extensions. The baseline targets
+Azure Cosmos DB, Amazon DynamoDB, and Google Cloud Spanner. Optional extensions
+may have different provider support and must declare that difference explicitly.
+
+`EXTENDED_CHANGE_FEED_HISTORY` remains a supported opt-in on Cosmos and Spanner
+and an explicitly unsupported extension on DynamoDB. Its factory gate reports
+`UNSUPPORTED_CAPABILITY` before I/O when requested on an unsupported provider.
+Native query passthrough via `QueryRequest.nativeExpression()` remains available.
+Per-document TTL and opt-in read metadata remain available with the provider
+differences described below.
 
 ---
 
 ## What Works Everywhere
 
-Every capability listed below is fully supported on **all** providers. There are
-no asterisks, no provider-specific caveats, and no runtime checks required.
+The following sections describe the common baseline. Provider prerequisites and
+optional-extension gates still apply; see the retention support matrix below.
 
 ### CRUD Operations
 
@@ -73,9 +78,36 @@ QueryPage page = client.query(address, query);
 |---------|-------------|
 | **Structured diagnostics** | Latency, request charge, and provider correlation IDs per operation |
 | **Portable error categories** | All provider exceptions mapped to `MulticloudDbErrorCategory` |
-| **Capability introspection** | `client.capabilities()` reports what the current provider supports |
+| **Capability introspection** | `client.capabilities()` declares baseline and optional features, including explicitly unsupported ones |
 
 ---
+
+## TTL and Read Metadata
+
+| Capability / field | Cosmos DB | DynamoDB | Spanner |
+|--------------------|-----------|----------|---------|
+| `ROW_LEVEL_TTL` | Supported; enable container TTL | Supported; enable table TTL on `ttlExpiry` | Unsupported; `ttlSeconds` ignored |
+| `WRITE_TIMESTAMP` | Supported | Unsupported | Unsupported |
+| `metadata().lastModified()` | `_ts` | null | null |
+| `metadata().ttlExpiry()` | null | Stored `ttlExpiry`, if present | null |
+| `metadata().version()` | ETag | null | null |
+
+**Implementation gap (FR-057):** The table describes current behavior, not
+fulfillment of the required unsupported-TTL error. Spanner currently ignores a
+TTL hint and can write without expiry. The
+[FR-057 MUST requirement](../specs/001-clouddb-sdk/spec.md#document-ttl-and-write-metadata-requirements)
+is unchanged; the fail-fast capability gate remains
+[deferred, unimplemented US6 follow-up](../specs/001-clouddb-sdk/tasks.md#phase-16-user-story-6--document-ttl-and-write-metadata-priority-p2).
+Check `ROW_LEVEL_TTL` before requesting expiry; do not rely on the SDK to reject
+an unsupported TTL request today.
+
+`OperationOptions.ttlSeconds()` applies to create/update/upsert and must be
+positive. `includeMetadata(true)` requests metadata on point reads; metadata is
+null by default. Unsupported `WRITE_TIMESTAMP` does not disable this read
+option: DynamoDB returns available TTL expiry, and Spanner returns an empty
+metadata object. A missing document still returns null.
+See [TTL setup and write behavior](guide.md#document-ttl-time-to-live) and
+[metadata availability](guide.md#provider-metadata-availability).
 
 ## Portable Error Mapping
 
@@ -124,66 +156,63 @@ target provider does not declare the `EXTENDED_CHANGE_FEED_HISTORY` capability.
 your bill differently on each provider; the windows are not interchangeable.
 See `docs/guide.md` → *"Extending change-feed history beyond 24 hours"* for the
 per-provider price-driver detail before opting in.
-## Default Sort-Key Ordering
 
-All Cosmos DB and DynamoDB query paths return results sorted by the document's
-sort key ascending.
+---
 
-> **Design note:** The default `ORDER BY` is applied to **all** Cosmos queries
-> (both partition-scoped and cross-partition), not just partition-scoped ones.
-> This gives the strongest consistency guarantee: every query, on every provider,
-> returns items sorted by sort key. The early PR description mentioned
-> partition-scoped only as a starting point; the final implementation was
-> intentionally broadened to cover all queries.
+## Query Extensions and Native Expressions
 
-### Cosmos DB
+Query partition scoping remains optional. Cosmos and Spanner support
+cross-partition queries; DynamoDB retains its unscoped Scan route but declares
+`CROSS_PARTITION_QUERY` unsupported because a scan is not a partition-targeted
+query. The builder does not require a partition key.
+The unsupported `CROSS_PARTITION_QUERY` and `NATIVE_SQL_QUERY` declarations
+do not automatically block DynamoDB's existing Scan and native PartiQL routes.
+This is a limitation of the current declaration/legacy-execution contract,
+not the fail-fast behavior used for DynamoDB's explicit `orderBy`.
 
-Cosmos DB appends `ORDER BY c.id ASC` to every query that does not already carry
-an explicit `ORDER BY` clause (and is not an aggregate / `GROUP BY` query). This
-is applied server-side, so the order is globally consistent across all pages.
+| Capability | Cosmos | DynamoDB | Spanner |
+|------------|--------|----------|---------|
+| `CROSS_PARTITION_QUERY` | Supported | Unsupported (Scan route retained) | Supported |
+| `NATIVE_SQL_QUERY` | Supported | Unsupported (native PartiQL passthrough retained) | Supported |
+| `ORDER_BY` | Supported | Unsupported, including explicit `sortKey` | Supported |
+| `LIKE_OPERATOR`, `ENDS_WITH`, `REGEX_MATCH`, `CASE_FUNCTIONS` | Supported | Unsupported | Supported |
+| `RESULT_LIMIT` | Supported (`TOP N`) | Unsupported as a total cap; per-page limit only | Supported; per-page limit only |
 
-> **⚠️ Custom indexing policy - composite index required**
-> If your Cosmos container uses a **custom indexing policy** that does not include
-> a composite index on `(filterField ASC, id ASC)`, Cosmos DB will throw a
-> `400 Bad Request` at runtime for cross-partition queries that combine `WHERE` and
-> the default `ORDER BY c.id ASC`. The default indexing policy includes all paths
-> and supports this automatically. If you have tuned your indexing policy, add the
-> composite index for every field you filter on:
-> ```json
-> { "compositeIndexes": [ [{ "path": "/filterField", "order": "ascending" },
->                          { "path": "/id", "order": "ascending" }] ] }
-> ```
->
-> **⚠️ RU cost**
-> Appending `ORDER BY c.id ASC` to all Cosmos queries incurs an additional RU
-> charge versus unordered queries, proportional to result-set size. This cost is
-> the price of cross-provider consistency and is expected behavior.
->
-> **⚠️ Aggregates and GROUP BY**
-> Cosmos DB rejects `ORDER BY` on aggregate expressions (`COUNT`, `SUM`, `MIN`,
-> `MAX`, `AVG`) and `GROUP BY` queries. The SDK automatically detects these patterns
-> and omits the default `ORDER BY` for them.
+`QueryRequest.nativeExpression()` preserves native query passthrough (Cosmos
+SQL, DynamoDB PartiQL, or Spanner GoogleSQL). Native syntax is not portable and
+is not validated as the portable expression DSL. `MulticloudDbClient` does not
+expose a `nativeClient()` accessor.
 
-### DynamoDB
+`QueryRequest.limit()` has provider-specific semantics. It is not
+a portable cumulative limit across continuation tokens; the client does not
+truncate returned pages to impose a cumulative cap. Applications must
+inspect provider capabilities rather than assume every query option is common.
 
-DynamoDB results are sorted in memory per page after fetching (client-side).
-Within a single page, items are returned sorted by sort key ascending.
-For multi-page scans the overall order across pages is determined by DynamoDB's
-internal token-based traversal, not sort key - this is a known limitation.
+### Ordering and Pagination Boundaries
 
-### Spanner
+Cosmos uses its existing server-side field ordering and default `c.id ASC`
+when no caller ordering or aggregate prevents it. DynamoDB retains native
+partition Query ordering and page-local ascending sorting on scan/translated
+paths; this does not create globally sorted scan pagination or new DESC support.
+Spanner retains default partition-key/sort-key ordering and missing-key
+tiebreakers, with guards for caller SQL ordering, literals, and aggregates.
+Deterministic ordering does not guarantee a snapshot across concurrent writes
+or successive page requests.
 
-The Spanner provider does not yet implement default sort-key ordering.
-Consumers relying on consistent cross-provider sort behavior should not use
-the Spanner provider until this gap is addressed.
+### Cosmos ORDER BY Indexing and RU Cost
 
-> **Tracking**: A follow-up issue will be filed to implement default sort-key
-> ordering for the Spanner provider. Until resolved, do not mix Spanner with
-> Cosmos or DynamoDB in conformance-sensitive workloads.
+The default `ORDER BY c.id ASC` affects the indexing and cost of queries that
+do not supply their own ordering and are not aggregate/GROUP BY queries.
+For a custom indexing policy, verify that filter and order-by paths are
+covered. Multiple-field `ORDER BY` requires a matching composite index; some
+filter/order combinations may also need or benefit from a composite index.
+Do not assume every policy or every single-field query requires one: review
+the actual query shape and indexing policy, including the appended `id` sort.
+Insufficient index coverage can cause a query to be rejected by Cosmos DB.
 
-## Escape Hatch Policy
-
-The SDK does not expose a `nativeClient()` method. Direct access to the
-underlying provider client is intentionally omitted to enforce portability
-guarantees - code written against the SDK must remain switchable between
-providers by configuration alone.
+Ordering and cross-partition fan-out can increase RU consumption. Inspect
+`QueryPage.diagnostics().requestCharge()` when diagnostics are available and
+compare representative query shapes and indexes before choosing a policy.
+This guidance complements the default-ordering entry in the
+[Cosmos provider changelog](../multiclouddb-provider-cosmos/CHANGELOG.md);
+it is not a claim that all providers have equal cost or snapshot behavior.

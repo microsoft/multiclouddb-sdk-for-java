@@ -11,8 +11,8 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * DynamoDB capability conformance test — verifies unsupported capabilities
- * are correctly declared.
+ * DynamoDB supports the common LCD baseline and explicitly declares
+ * unsupported optional extensions.
  */
 @Tag("dynamo")
 @Tag("emulator")

@@ -11,8 +11,8 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Spanner capability conformance test — verifies all capabilities are
- * supported.
+ * Spanner capability conformance test for query extensions and
+ * the extended change-feed history opt-in.
  */
 @Tag("spanner")
 @Tag("emulator")

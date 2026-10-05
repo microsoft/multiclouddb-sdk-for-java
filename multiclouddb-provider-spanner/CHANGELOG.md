@@ -16,6 +16,19 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Clarified existing optional partition scoping, native GoogleSQL, field
+  ordering, and per-page `limit` on non-native paths. Native query-option
+  handling, PK/SK defaults and tiebreakers, and caller-order/literal/aggregate
+  guards remain unchanged; ordering is not a concurrent-write snapshot and
+  pages are not truncated into a cumulative cap.
+- Clarified existing extended-history opt-in provisioning/error checks,
+  unsupported TTL (the option is ignored), and opt-in empty metadata objects.
+  Provider execution and capability declarations remain unchanged.
+- Strengthened local mock regressions with independent create-mutation
+  table/operation/key/value expectations and separate metadata opt-in/default
+  checks. The zero-column read fixture verifies the empty metadata shell,
+  not payload round-tripping or service-level TTL behavior.
+
 - `upsert(address, key, document)` now uses Spanner `INSERT_OR_UPDATE` (was `REPLACE`). `REPLACE` is internally delete-then-insert, which change streams surface as `mod_type=INSERT` — making a second upsert of the same key appear as `ChangeType.CREATE` instead of `ChangeType.UPDATE`. `INSERT_OR_UPDATE` matches the `UPDATE` / `MODIFY` behaviour of Cosmos AVAD and DynamoDB Streams. The observable upsert semantics are unchanged: `FIELD_DATA` continues to project only the new document''s fields on read, so `CrudConformanceTests.upsertOverwrites` still passes.
 - Spanner instance creation in `ensureDatabase` is gated to emulator mode. In production (no `emulatorHost` configured), the instance is expected to pre-exist; only the database is created. Creating a Spanner instance is a billable, region-specific operation that should be done deliberately.
 - Complex container values (`Map`, `Collection`) round-trip through STRING columns using an unambiguous prefix marker (`U+0001` + `mcdb:json:`). User strings that happen to start with `{` or `[` are returned verbatim; user strings that themselves begin with `U+0001` are escaped at write time.
