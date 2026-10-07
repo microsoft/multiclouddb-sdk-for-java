@@ -26,6 +26,9 @@ public final class DynamoConstants {
     /** Connection config key for a custom endpoint URL (used for DynamoDB Local). */
     public static final String CONFIG_ENDPOINT = "endpoint";
 
+    /** Maximum connections in the synchronous Apache HTTP/1.1 connection pool. */
+    public static final String CONFIG_MAX_CONNECTIONS = "maxConnections";
+
     /** Auth config key for the AWS access key ID. */
     public static final String CONFIG_ACCESS_KEY_ID = "accessKeyId";
 
@@ -147,4 +150,3 @@ public final class DynamoConstants {
      */
     public static final String KEY_CONDITION_PK_PARAM = ":_pkval";
 }
-

@@ -41,29 +41,9 @@ class CosmosConstantsTest {
 
 
     @Test
-    @DisplayName("CONFIG_CONNECTION_MODE key value")
-    void configConnectionModeKey() {
-        assertEquals("connectionMode", CosmosConstants.CONFIG_CONNECTION_MODE);
-    }
-
-    // ── Connection mode values ────────────────────────────────────────────────
-
-    @Test
-    @DisplayName("CONNECTION_MODE_GATEWAY value")
-    void connectionModeGateway() {
-        assertEquals("gateway", CosmosConstants.CONNECTION_MODE_GATEWAY);
-    }
-
-    @Test
-    @DisplayName("CONNECTION_MODE_DIRECT value")
-    void connectionModeDirect() {
-        assertEquals("direct", CosmosConstants.CONNECTION_MODE_DIRECT);
-    }
-
-    @Test
-    @DisplayName("CONNECTION_MODE_DEFAULT is gateway")
-    void connectionModeDefaultIsGateway() {
-        assertEquals(CosmosConstants.CONNECTION_MODE_GATEWAY, CosmosConstants.CONNECTION_MODE_DEFAULT);
+    @DisplayName("CONFIG_THIN_CLIENT_ENABLED key value")
+    void configThinClientEnabledKey() {
+        assertEquals("thinClientEnabled", CosmosConstants.CONFIG_THIN_CLIENT_ENABLED);
     }
 
     // ── Consistency ───────────────────────────────────────────────────────────
@@ -238,4 +218,3 @@ class CosmosConstantsTest {
         assertEquals(100.0, CosmosConstants.DIAG_THRESHOLD_QUERY_RU);
     }
 }
-

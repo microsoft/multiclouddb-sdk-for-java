@@ -237,8 +237,15 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        createWithDiagnostics(address, key, document, options);
+    }
+
+    @Override
+    public OperationDiagnostics createWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                      Map<String, Object> document, OperationOptions options) {
         checkOpen(OperationNames.CREATE);
         validateNoReservedFields(document, OperationNames.CREATE);
+        java.time.Instant start = java.time.Instant.now();
         try {
             String table = address.collection();
             Mutation.WriteBuilder mutation = Mutation.newInsertBuilder(table)
@@ -246,8 +253,9 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
                     .set(SpannerConstants.FIELD_SORT_KEY).to(key.sortKey() != null ? key.sortKey() : key.partitionKey());
 
             writeFullDocument(mutation, document, OperationNames.CREATE);
-            databaseClient.write(List.of(mutation.build()));
+            com.google.cloud.Timestamp commitTimestamp = databaseClient.write(List.of(mutation.build()));
             logItemDiagnostics(OperationNames.CREATE, address);
+            return buildItemDiagnostics(OperationNames.CREATE, start, commitTimestamp);
         } catch (SpannerException e) {
             throw SpannerErrorMapper.map(e, OperationNames.CREATE);
         }
@@ -294,8 +302,15 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        updateWithDiagnostics(address, key, document, options);
+    }
+
+    @Override
+    public OperationDiagnostics updateWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                      Map<String, Object> document, OperationOptions options) {
         checkOpen(OperationNames.UPDATE);
         validateNoReservedFields(document, OperationNames.UPDATE);
+        java.time.Instant start = java.time.Instant.now();
         try {
             String table = address.collection();
             String pk = key.partitionKey();
@@ -373,6 +388,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
             });
 
             logItemDiagnostics(OperationNames.UPDATE, address);
+            return buildItemDiagnostics(OperationNames.UPDATE, start, null);
         } catch (SpannerException e) {
             throw SpannerErrorMapper.map(e, OperationNames.UPDATE);
         }
@@ -409,8 +425,15 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        upsertWithDiagnostics(address, key, document, options);
+    }
+
+    @Override
+    public OperationDiagnostics upsertWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                      Map<String, Object> document, OperationOptions options) {
         checkOpen(OperationNames.UPSERT);
         validateNoReservedFields(document, OperationNames.UPSERT);
+        java.time.Instant start = java.time.Instant.now();
         try {
             String table = address.collection();
             Mutation.WriteBuilder mutation = Mutation.newInsertOrUpdateBuilder(table)
@@ -418,8 +441,9 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
                     .set(SpannerConstants.FIELD_SORT_KEY).to(key.sortKey() != null ? key.sortKey() : key.partitionKey());
 
             writeFullDocument(mutation, document, OperationNames.UPSERT);
-            databaseClient.write(List.of(mutation.build()));
+            com.google.cloud.Timestamp commitTimestamp = databaseClient.write(List.of(mutation.build()));
             logItemDiagnostics(OperationNames.UPSERT, address);
+            return buildItemDiagnostics(OperationNames.UPSERT, start, commitTimestamp);
         } catch (SpannerException e) {
             throw SpannerErrorMapper.map(e, OperationNames.UPSERT);
         }
@@ -570,6 +594,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
     @Override
     public DocumentResult read(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
         checkOpen(OperationNames.READ);
+        java.time.Instant start = java.time.Instant.now();
         try {
             String table = address.collection();
             String partitionKeyVal = key.partitionKey();
@@ -598,7 +623,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
                         // the table has allow_commit_timestamp=true. Return empty shell.
                         metadata = DocumentMetadata.builder().build();
                     }
-                    return new DocumentResult(item, metadata);
+                    return new DocumentResult(item, metadata, buildItemDiagnostics(OperationNames.READ, start, null));
                 }
                 return null;
             }
@@ -622,7 +647,14 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
+        deleteWithDiagnostics(address, key, options);
+    }
+
+    @Override
+    public OperationDiagnostics deleteWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                      OperationOptions options) {
         checkOpen(OperationNames.DELETE);
+        java.time.Instant start = java.time.Instant.now();
         try {
             String table = address.collection();
             String partitionKeyVal = key.partitionKey();
@@ -631,6 +663,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
             databaseClient.write(List.of(
                     Mutation.delete(table, Key.of(partitionKeyVal, sortKeyVal))));
             logItemDiagnostics(OperationNames.DELETE, address);
+            return buildItemDiagnostics(OperationNames.DELETE, start, null);
         } catch (SpannerException e) {
             throw SpannerErrorMapper.map(e, OperationNames.DELETE);
         }
@@ -1475,6 +1508,16 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
             LOG.debug("{} op={} db={} col={} itemCount={} hasMore={}",
                     SpannerConstants.DIAG_PREFIX, op, db, col, itemCount, hasMore);
         }
+    }
+
+    private OperationDiagnostics buildItemDiagnostics(String operation, java.time.Instant start,
+            com.google.cloud.Timestamp commitTimestamp) {
+        OperationDiagnostics.Builder builder = OperationDiagnostics.builder(
+                ProviderId.SPANNER, operation, Duration.between(start, java.time.Instant.now()));
+        if (commitTimestamp != null) {
+            builder.etag(commitTimestamp.toString());
+        }
+        return builder.build();
     }
 
     /**

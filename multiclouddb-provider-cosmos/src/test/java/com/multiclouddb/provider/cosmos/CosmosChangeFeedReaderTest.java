@@ -28,11 +28,11 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -111,15 +111,11 @@ class CosmosChangeFeedReaderTest {
         when(container.getFeedRanges()).thenReturn(List.of(range));
 
         CosmosPagedIterable<JsonNode> paged = mock(CosmosPagedIterable.class);
-        Iterable<FeedResponse<JsonNode>> pages = mock(Iterable.class);
-        Iterator<FeedResponse<JsonNode>> it = mock(Iterator.class);
         FeedResponse<JsonNode> resp = mock(FeedResponse.class);
         when(container.queryChangeFeed(any(CosmosChangeFeedRequestOptions.class), eq(JsonNode.class)))
                 .thenReturn(paged);
-        when(paged.iterableByPage()).thenReturn(pages);
-        when(pages.iterator()).thenReturn(it);
-        when(it.hasNext()).thenReturn(true);
-        when(it.next()).thenReturn(resp);
+        // A fresh stream per call: a Stream is single-use, and the reader may page more than once.
+        when(paged.streamByPage()).thenAnswer(inv -> Stream.of(resp));
         when(resp.getContinuationToken()).thenReturn("   "); // blank → triggers fallback
 
         List<ChangeFeedCursor> cursors = newReader().listCursors(container, ADDR);
@@ -149,15 +145,11 @@ class CosmosChangeFeedReaderTest {
         when(container.getFeedRanges()).thenReturn(List.of(range));
 
         CosmosPagedIterable<JsonNode> paged = mock(CosmosPagedIterable.class);
-        Iterable<FeedResponse<JsonNode>> pages = mock(Iterable.class);
-        Iterator<FeedResponse<JsonNode>> it = mock(Iterator.class);
         FeedResponse<JsonNode> resp = mock(FeedResponse.class);
         when(container.queryChangeFeed(any(CosmosChangeFeedRequestOptions.class), eq(JsonNode.class)))
                 .thenReturn(paged);
-        when(paged.iterableByPage()).thenReturn(pages);
-        when(pages.iterator()).thenReturn(it);
-        when(it.hasNext()).thenReturn(true);
-        when(it.next()).thenReturn(resp);
+        // A fresh stream per call: a Stream is single-use, and the reader may page more than once.
+        when(paged.streamByPage()).thenAnswer(inv -> Stream.of(resp));
         when(resp.getContinuationToken()).thenReturn("real-cosmos-continuation-token-xyz");
 
         long preCall = System.currentTimeMillis();
@@ -268,15 +260,11 @@ class CosmosChangeFeedReaderTest {
         // Each queryChangeFeed call returns an empty page with a fresh
         // continuation; we just want to observe the head-partition rotation.
         CosmosPagedIterable<JsonNode> paged = mock(CosmosPagedIterable.class);
-        Iterable<FeedResponse<JsonNode>> pages = mock(Iterable.class);
-        Iterator<FeedResponse<JsonNode>> it = mock(Iterator.class);
         FeedResponse<JsonNode> resp = mock(FeedResponse.class);
         when(container.queryChangeFeed(any(CosmosChangeFeedRequestOptions.class), eq(JsonNode.class)))
                 .thenReturn(paged);
-        when(paged.iterableByPage()).thenReturn(pages);
-        when(pages.iterator()).thenReturn(it);
-        when(it.hasNext()).thenReturn(true);
-        when(it.next()).thenReturn(resp);
+        // A fresh stream per call: a Stream is single-use, and the reader may page more than once.
+        when(paged.streamByPage()).thenAnswer(inv -> Stream.of(resp));
         when(resp.getResults()).thenReturn(List.of());
         when(resp.getContinuationToken()).thenReturn("next-continuation");
 
@@ -325,15 +313,11 @@ class CosmosChangeFeedReaderTest {
         ChangeFeedCursor cursor = new ChangeFeedCursor(seed);
 
         CosmosPagedIterable<JsonNode> paged = mock(CosmosPagedIterable.class);
-        Iterable<FeedResponse<JsonNode>> pages = mock(Iterable.class);
-        Iterator<FeedResponse<JsonNode>> it = mock(Iterator.class);
         FeedResponse<JsonNode> resp = mock(FeedResponse.class);
         when(container.queryChangeFeed(any(CosmosChangeFeedRequestOptions.class), eq(JsonNode.class)))
                 .thenReturn(paged);
-        when(paged.iterableByPage()).thenReturn(pages);
-        when(pages.iterator()).thenReturn(it);
-        when(it.hasNext()).thenReturn(true);
-        when(it.next()).thenReturn(resp);
+        // A fresh stream per call: a Stream is single-use, and the reader may page more than once.
+        when(paged.streamByPage()).thenAnswer(inv -> Stream.of(resp));
         when(resp.getResults()).thenReturn(List.of(envelope));
         when(resp.getContinuationToken()).thenReturn("next-continuation");
 
@@ -374,15 +358,11 @@ class CosmosChangeFeedReaderTest {
         ChangeFeedCursor cursor = new ChangeFeedCursor(seed);
 
         CosmosPagedIterable<JsonNode> paged = mock(CosmosPagedIterable.class);
-        Iterable<FeedResponse<JsonNode>> pages = mock(Iterable.class);
-        Iterator<FeedResponse<JsonNode>> it = mock(Iterator.class);
         FeedResponse<JsonNode> resp = mock(FeedResponse.class);
         when(container.queryChangeFeed(any(CosmosChangeFeedRequestOptions.class), eq(JsonNode.class)))
                 .thenReturn(paged);
-        when(paged.iterableByPage()).thenReturn(pages);
-        when(pages.iterator()).thenReturn(it);
-        when(it.hasNext()).thenReturn(true);
-        when(it.next()).thenReturn(resp);
+        // A fresh stream per call: a Stream is single-use, and the reader may page more than once.
+        when(paged.streamByPage()).thenAnswer(inv -> Stream.of(resp));
         when(resp.getResults()).thenReturn(List.of(envelope));
         when(resp.getContinuationToken()).thenReturn("next-continuation");
 
@@ -417,15 +397,11 @@ class CosmosChangeFeedReaderTest {
         ChangeFeedCursor cursor = new ChangeFeedCursor(seed);
 
         CosmosPagedIterable<JsonNode> paged = mock(CosmosPagedIterable.class);
-        Iterable<FeedResponse<JsonNode>> pages = mock(Iterable.class);
-        Iterator<FeedResponse<JsonNode>> it = mock(Iterator.class);
         FeedResponse<JsonNode> resp = mock(FeedResponse.class);
         when(container.queryChangeFeed(any(CosmosChangeFeedRequestOptions.class), eq(JsonNode.class)))
                 .thenReturn(paged);
-        when(paged.iterableByPage()).thenReturn(pages);
-        when(pages.iterator()).thenReturn(it);
-        when(it.hasNext()).thenReturn(true);
-        when(it.next()).thenReturn(resp);
+        // A fresh stream per call: a Stream is single-use, and the reader may page more than once.
+        when(paged.streamByPage()).thenAnswer(inv -> Stream.of(resp));
         when(resp.getResults()).thenReturn(List.of(envelope));
         when(resp.getContinuationToken()).thenReturn("next-continuation");
 
@@ -464,15 +440,11 @@ class CosmosChangeFeedReaderTest {
         ChangeFeedCursor cursor = new ChangeFeedCursor(seed);
 
         CosmosPagedIterable<JsonNode> paged = mock(CosmosPagedIterable.class);
-        Iterable<FeedResponse<JsonNode>> pages = mock(Iterable.class);
-        Iterator<FeedResponse<JsonNode>> it = mock(Iterator.class);
         FeedResponse<JsonNode> resp = mock(FeedResponse.class);
         when(container.queryChangeFeed(any(CosmosChangeFeedRequestOptions.class), eq(JsonNode.class)))
                 .thenReturn(paged);
-        when(paged.iterableByPage()).thenReturn(pages);
-        when(pages.iterator()).thenReturn(it);
-        when(it.hasNext()).thenReturn(true);
-        when(it.next()).thenReturn(resp);
+        // A fresh stream per call: a Stream is single-use, and the reader may page more than once.
+        when(paged.streamByPage()).thenAnswer(inv -> Stream.of(resp));
         when(resp.getResults()).thenReturn(List.of(envelope));
         when(resp.getContinuationToken()).thenReturn("next-continuation");
 

@@ -28,9 +28,9 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -400,8 +400,8 @@ class CosmosConsistencyTest {
 
         CosmosPagedIterable<com.fasterxml.jackson.databind.JsonNode> mockPagedIterable =
                 mock(CosmosPagedIterable.class);
-        when(mockPagedIterable.iterableByPage(anyInt())).thenReturn(Collections.emptyList());
-        when(mockPagedIterable.iterableByPage(anyString(), anyInt())).thenReturn(Collections.emptyList());
+        when(mockPagedIterable.streamByPage(anyInt())).thenAnswer(inv -> Stream.empty());
+        when(mockPagedIterable.streamByPage(anyString(), anyInt())).thenAnswer(inv -> Stream.empty());
         when(mockContainer.queryItems(any(SqlQuerySpec.class),
                 any(CosmosQueryRequestOptions.class),
                 eq(com.fasterxml.jackson.databind.JsonNode.class)))
@@ -443,8 +443,8 @@ class CosmosConsistencyTest {
 
         CosmosPagedIterable<com.fasterxml.jackson.databind.JsonNode> mockPagedIterable =
                 mock(CosmosPagedIterable.class);
-        when(mockPagedIterable.iterableByPage(anyInt())).thenReturn(Collections.emptyList());
-        when(mockPagedIterable.iterableByPage(anyString(), anyInt())).thenReturn(Collections.emptyList());
+        when(mockPagedIterable.streamByPage(anyInt())).thenAnswer(inv -> Stream.empty());
+        when(mockPagedIterable.streamByPage(anyString(), anyInt())).thenAnswer(inv -> Stream.empty());
         when(mockContainer.queryItems(any(SqlQuerySpec.class),
                 any(CosmosQueryRequestOptions.class),
                 eq(com.fasterxml.jackson.databind.JsonNode.class)))
@@ -491,8 +491,8 @@ class CosmosConsistencyTest {
 
         CosmosPagedIterable<com.fasterxml.jackson.databind.JsonNode> mockPagedIterable =
                 mock(CosmosPagedIterable.class);
-        when(mockPagedIterable.iterableByPage(anyInt())).thenReturn(Collections.emptyList());
-        when(mockPagedIterable.iterableByPage(anyString(), anyInt())).thenReturn(Collections.emptyList());
+        when(mockPagedIterable.streamByPage(anyInt())).thenAnswer(inv -> Stream.empty());
+        when(mockPagedIterable.streamByPage(anyString(), anyInt())).thenAnswer(inv -> Stream.empty());
         when(mockContainer.queryItems(any(SqlQuerySpec.class),
                 any(CosmosQueryRequestOptions.class),
                 eq(com.fasterxml.jackson.databind.JsonNode.class)))
@@ -533,8 +533,8 @@ class CosmosConsistencyTest {
 
         CosmosPagedIterable<com.fasterxml.jackson.databind.JsonNode> mockPagedIterable =
                 mock(CosmosPagedIterable.class);
-        when(mockPagedIterable.iterableByPage(anyInt())).thenReturn(Collections.emptyList());
-        when(mockPagedIterable.iterableByPage(anyString(), anyInt())).thenReturn(Collections.emptyList());
+        when(mockPagedIterable.streamByPage(anyInt())).thenAnswer(inv -> Stream.empty());
+        when(mockPagedIterable.streamByPage(anyString(), anyInt())).thenAnswer(inv -> Stream.empty());
         when(mockContainer.queryItems(any(SqlQuerySpec.class),
                 any(CosmosQueryRequestOptions.class),
                 eq(com.fasterxml.jackson.databind.JsonNode.class)))
