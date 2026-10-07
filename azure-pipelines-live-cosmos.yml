@@ -1,0 +1,144 @@
+# Live Cosmos DB conformance starter for the cosmos-db-sdk-public ADO project.
+#
+# ADO administrators must:
+# - authorize only this pipeline to use the multiclouddb-cosmos-live-ci WIF
+#   service connection and the multiclouddb-cosmos-live environment;
+# - configure resource-owned branch-control checks on both protected resources
+#   to require refs/heads/main and fail closed for unknown or unprotected refs;
+# - add an exclusive-lock check to that environment. The starter uses
+#   administrator-selected shared fixture database/container resources and
+#   provides per-run item-key isolation only; serialized execution reduces
+#   collisions but does not provide resource-level isolation or crash-proof
+#   cleanup;
+# - grant this pipeline access to the approved OneES pool; do not authorize the
+#   live WIF service connection for jobs on alternate or queue-selectable pools;
+# - restrict manual runs and variable changes to trusted maintainers;
+# - set COSMOS_ENDPOINT to the expected account URI as a fixed, non-secret
+#   pipeline/variable-group value and do not allow queue-time overrides;
+# - scope the WIF service connection identity's Cosmos data-plane RBAC role to
+#   that expected account (and the narrowest practical database/container scope);
+# - keep fork builds unable to request this pipeline or its protected resources;
+# - review the future Java sentinel/profile implementation. The checked-in
+#   preflight catches known onboarding mistakes; it does not prove arbitrary
+#   trusted Java code safe or prove live WIF/RBAC behavior without execution.
+#
+# The YAML branch condition below is defense in depth. An altered branch can
+# remove YAML checks, so the environment/service-connection checks are the
+# authorization boundary for the protected identity.
+
+trigger:
+  batch: true
+  branches:
+    include:
+      - main
+
+pr: none
+
+schedules:
+  - cron: '0 5 * * *'
+    displayName: Nightly live Cosmos DB validation
+    branches:
+      include:
+        - main
+    always: true
+
+lockBehavior: sequential
+
+stages:
+  - stage: LiveCosmos
+    displayName: Cosmos DB live-account tests
+    # Defense in depth for manual runs; protected-resource branch control must
+    # independently reject any source other than protected refs/heads/main.
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: CosmosLiveConformance
+        displayName: Cosmos DB live conformance (Entra ID)
+        timeoutInMinutes: 60
+        pool:
+          # Keep the protected WIF identity bound to the approved runner.
+          name: OneES
+        environment: multiclouddb-cosmos-live
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  clean: true
+                  fetchDepth: 1
+                  persistCredentials: false
+
+                - task: PowerShell@2
+                  displayName: Remove stale test results
+                  condition: always()
+                  inputs:
+                    targetType: filePath
+                    filePath: $(Build.SourcesDirectory)/scripts/live-cosmos/Remove-LiveCosmosTestResults.ps1
+                    arguments: >-
+                      -SourceDirectory "$(Build.SourcesDirectory)"
+                    pwsh: true
+
+                - task: JavaToolInstaller@0
+                  displayName: Use Java 17
+                  inputs:
+                    versionSpec: '17'
+                    jdkArchitectureOption: x64
+                    jdkSourceOption: PreInstalled
+
+                - task: PowerShell@2
+                  displayName: Preflight live Cosmos DB configuration
+                  inputs:
+                    targetType: filePath
+                    filePath: $(Build.SourcesDirectory)/scripts/live-cosmos/Invoke-LiveCosmosPreflight.ps1
+                    arguments: >-
+                      -SourceDirectory "$(Build.SourcesDirectory)"
+                      -TempDirectory "$(Agent.TempDirectory)"
+                    pwsh: true
+                    workingDirectory: $(Build.SourcesDirectory)
+                  env:
+                    COSMOS_ENDPOINT: $(COSMOS_ENDPOINT)
+
+                - task: AzureCLI@2
+                  displayName: Run live Cosmos DB tests with WIF
+                  inputs:
+                    azureSubscription: multiclouddb-cosmos-live-ci
+                    scriptType: pscore
+                    scriptLocation: scriptPath
+                    cwd: $(Build.SourcesDirectory)
+                    visibleAzLogin: false
+                    useGlobalConfig: false
+                    addSpnToEnvironment: false
+                    # AzureCLI logs in with the WIF service connection. Maven runs
+                    # in the same task so DefaultAzureCredential can use AzureCliCredential.
+                    scriptPath: $(Build.SourcesDirectory)/scripts/live-cosmos/Invoke-LiveCosmosTests.ps1
+                    arguments: >-
+                      -SourceDirectory "$(Build.SourcesDirectory)"
+                      -TempDirectory "$(Agent.TempDirectory)"
+                  env:
+                    # Deliberately pass no account key or client secret.
+                    COSMOS_ENDPOINT: $(COSMOS_ENDPOINT)
+                    # azure-identity 1.18.2 supports narrowing
+                    # DefaultAzureCredential to this named credential.
+                    AZURE_TOKEN_CREDENTIALS: AzureCliCredential
+
+                - task: PublishTestResults@2
+                  displayName: Publish live Cosmos DB test results
+                  condition: succeededOrFailed()
+                  inputs:
+                    testResultsFormat: JUnit
+                    testResultsFiles: >-
+                      multiclouddb-conformance/target/surefire-reports/TEST-com.multiclouddb.conformance.LiveCosmosEntraAuthenticationTest.xml
+                    searchFolder: $(Build.SourcesDirectory)
+                    mergeTestResults: true
+                    failTaskOnFailedTests: true
+                    failTaskOnMissingResultsFile: true
+                    testRunTitle: Multicloud DB live Cosmos conformance
+
+                - task: PowerShell@2
+                  displayName: Verify live Cosmos DB results
+                  condition: succeededOrFailed()
+                  inputs:
+                    targetType: filePath
+                    filePath: $(Build.SourcesDirectory)/scripts/live-cosmos/Test-LiveCosmosResults.ps1
+                    arguments: >-
+                      -SourceDirectory "$(Build.SourcesDirectory)"
+                    pwsh: true

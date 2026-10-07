@@ -1,0 +1,4 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>
+  <parent><groupId>fixture</groupId><artifactId>root</artifactId><version>1</version></parent>
+  <artifactId>multiclouddb-api</artifactId>
+</project>

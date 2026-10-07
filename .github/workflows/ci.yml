@@ -31,6 +31,11 @@ jobs:
       - name: Run unit tests
         run: mvn verify -Punit
 
+      - name: Validate live Cosmos pipeline scripts (no live auth)
+        shell: pwsh
+        run: |
+          ./scripts/live-cosmos/tests/Invoke-LiveCosmosRegression.ps1
+
       - name: Stage release artifacts
         run: |
           mvn deploy -DskipTests \
