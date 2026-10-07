@@ -6,9 +6,21 @@
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - Write Once, Run Anywhere CRUD + Query (Priority: P1)
+### User Story 1 - Write Once, Run Anywhere Point Operations + Query (Priority: P1)
 
-As an application developer, I can use a single SDK interface to perform basic create/update, read, delete, and read-query operations against a chosen cloud database provider, switching providers by configuration only.
+As an application developer, I can use a single SDK interface to perform create, read, upsert, delete, and read-query operations against a chosen cloud database provider, switching providers by configuration only.
+
+Partial `update()` is capability-gated: Cosmos DB and DynamoDB support it in
+this release; the current Spanner provider receives the API-default
+`PARTIAL_UPDATE` unsupported declaration before provider I/O. Portable behavior
+is guaranteed only when both the resulting logical document's serialized JSON
+and portable structural footprint are at or below 390 KiB. TTL timing is
+outside this release's portable contract: DynamoDB `UpdateItem` happens to
+leave `ttlExpiry` unchanged, while Cosmos DB `patchItem` advances `_ts` and
+restarts relative TTL. Until behavior is normalized, callers requiring fixed
+absolute expiry must not call `update()` on TTL-bearing items.
+
+Follow-up normalization is tracked in [#113](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/113) for absolute TTL expiry and [#114](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/114) for state-dependent resulting size.
 
 **Why this priority**: This is the core value proposition: portability across Cosmos DB, DynamoDB, and Spanner without rewriting the application’s data access layer.
 
@@ -42,7 +54,10 @@ As an application developer, I can write query filter expressions once using a p
 
 As an application developer, I can use provider-specific query features (e.g., `LIKE` on Cosmos DB, regex on Spanner) by submitting a native expression that bypasses the portable translator. The SDK passes the expression through directly and clearly signals that this is a non-portable operation.
 
-**Why this priority**: The portable subset covers the intersection of all providers. Developers need an escape hatch for advanced provider-specific queries without losing the SDK's benefits for everything else.
+**Why this priority**: The portable subset covers the intersection of all
+providers. Developers need an explicit non-portable query field for advanced
+provider-specific syntax without exposing the underlying native client or a
+provider-extension API.
 
 **Independent Test**: A native Cosmos DB SQL expression with `LIKE` executes correctly on Cosmos DB. Attempting to run the same native expression against DynamoDB produces a clear error.
 
@@ -56,19 +71,33 @@ As an application developer, I can use provider-specific query features (e.g., `
 
 ### User Story 1d - Portable Resource Provisioning (Priority: P2)
 
-As an application developer, I can use the SDK to ensure that the required database and collection/container/table resources exist before performing data operations, without writing any provider-specific provisioning code or using provider SDKs directly.
+As an application developer, I can use the SDK to ensure that required
+standard-schema database and collection/container/table resources exist before
+performing data operations, without using provider SDKs directly. The schema
+must respect provider addressing constraints: a Spanner client provisions only
+its configured `databaseId`.
 
-**Why this priority**: Applications need database and collection resources to exist before CRUD/query operations can succeed. Without portable provisioning, developers must write provider-specific setup code (Cosmos SDK, DynamoDB SDK, Spanner Admin API), which defeats the "write once, run anywhere" goal and leaks provider details into application code.
+**Why this priority**: Applications need database and collection resources to exist before portable point operations and queries can succeed. Without portable provisioning, developers must write provider-specific setup code (Cosmos SDK, DynamoDB SDK, Spanner Admin API), which defeats the "write once, run anywhere" goal and leaks provider details into application code.
 
-**Independent Test**: A sample application can call `provisionSchema` (or individual `ensureDatabase` and `ensureContainer`) to set up its resources, then perform CRUD operations, switching providers by configuration only. No provider-specific provisioning code is needed.
+**Independent Test**: A sample application can call `provisionSchema` (or
+individual `ensureDatabase` and `ensureContainer`) with a schema containing the
+configured Spanner database name, set up standard-schema resources, then perform
+create/read/upsert/delete and query operations while switching providers by
+configuration only. Partial `update()` is exercised only when `PARTIAL_UPDATE`
+is advertised. No provider SDK calls are needed.
 
 **Acceptance Scenarios**:
 
-1. **Given** a valid configuration for any supported provider, **When** the application calls `ensureDatabase(databaseName)`, **Then** the database/namespace is created if it does not exist, or the call succeeds silently if it already exists.
+1. **Given** a valid configuration for any supported provider and a database name valid for that configuration (equal to `databaseId` for Spanner), **When** the application calls `ensureDatabase(databaseName)`, **Then** the database/namespace is created if it does not exist, or the call succeeds silently if it already exists.
 2. **Given** a valid configuration for any supported provider, **When** the application calls `ensureContainer(resourceAddress)`, **Then** the collection/container/table is created with the SDK's standard schema (partition key, sort key, data column) if it does not exist, or the call succeeds silently if it already exists.
 3. **Given** a provider where databases are implicit (e.g., DynamoDB has no explicit database concept), **When** the application calls `ensureDatabase(databaseName)`, **Then** the call succeeds as a no-op without error.
 4. **Given** a race condition where two processes simultaneously provision the same resource, **When** both call `ensureContainer`, **Then** both succeed without error (idempotent behavior).
-5. **Given** a schema map of multiple databases and collections, **When** the application calls `provisionSchema(schema)`, **Then** all databases and containers are created in parallel without provider-specific code, and the call is equivalent to calling `ensureDatabase` and `ensureContainer` individually for each entry.
+5. **Given** a provider-compatible schema map (one entry matching the configured
+   `databaseId` for Spanner; one or more logical database entries for
+   Cosmos DB or DynamoDB), **When** the application calls
+   `provisionSchema(schema)`, **Then** the addressed databases and containers
+   are created in parallel, and the call is equivalent to calling
+   `ensureDatabase` and `ensureContainer` individually for each entry.
 
 ---
 
@@ -100,6 +129,14 @@ As an application developer, I can determine whether a feature/behavior is porta
 **Acceptance Scenarios**:
 
 1. **Given** a provider that does not support a requested capability, **When** the application attempts that operation, **Then** it receives a structured error indicating the capability gap and how to handle it.
+2. **Given** any built-in provider, **When** the application reads its effective
+   capabilities, **Then** it receives 18 rows; Cosmos DB and DynamoDB explicitly
+   declare 18, while Spanner declares 17 and receives only the omitted core
+   `PARTIAL_UPDATE` unsupported default.
+3. **Given** a TTL-bearing item whose absolute expiry must not move, **When**
+   the application evaluates partial-update support, **Then** it treats TTL
+   timing as outside the portable contract and does not call `update()` until
+   TTL behavior is normalized.
 
 ---
 
@@ -118,13 +155,18 @@ As an application developer or operator, I can understand and respond to errors 
 
 ---
 
-### User Story 4 - Opt-in Provider Extensions with Visible Portability Impact (Priority: P2)
+### User Story 4 - Configuration-Only Provider Opt-ins with Visible Portability Impact (Priority: P2)
 
-As an application developer, I can opt into provider-specific features or behaviors through explicit extensions/hooks, and the SDK clearly denotes that this choice may reduce portability.
+As an application developer, I can opt into provider-specific features or
+behaviors through explicit SDK configuration, and the SDK clearly denotes that
+this choice may reduce portability. The SDK does not expose native-client access
+or a provider-extension API.
 
 **Why this priority**: This preserves “portable-by-default” while still letting advanced users benefit from provider capabilities when they deliberately choose to.
 
-**Independent Test**: A sample app can enable a provider-specific extension and the SDK visibly signals reduced portability (before or at the time of use), while the portable contract remains unchanged when extensions are not enabled.
+**Independent Test**: A sample app can enable a provider-specific configuration
+option and the SDK visibly signals reduced portability (before or at the time of
+use), while the portable contract remains unchanged when the option is absent.
 
 **Acceptance Scenarios**:
 
@@ -153,35 +195,35 @@ As an application developer, I can limit query results to the first N items and 
 
 ### User Story 6 - Document Time-to-Live and Write Metadata (Priority: P2)
 
-As an application developer, I can set a time-to-live (TTL) on individual documents so they are automatically removed after expiration, and I can retrieve metadata (TTL remaining, last write timestamp) to make data freshness decisions — all without writing provider-specific code.
+As an application developer, I can set a time-to-live (TTL) on individual documents where the selected provider supports it, and I can request a portable metadata envelope whose provider-available fields support expiry and freshness decisions without provider-specific response types.
 
-**Why this priority**: TTL-based automatic expiration is a critical pattern for time-series data, session management, and operational data with defined retention windows. Write timestamps enable applications to determine data freshness when reconciling across multiple sources. Both are heavily used in Cassandra workloads being migrated.
+**Why this priority**: TTL-based automatic expiration is a critical pattern for time-series data, session management, and operational data with defined retention windows. Provider-available write timestamps and expiry metadata help applications make freshness and retention decisions when migrating Cassandra workloads.
 
-**Independent Test**: A document created with a TTL of 60 seconds is automatically removed after 60 seconds on any provider that supports TTL. Reading the document before expiration returns the TTL remaining and the last write timestamp.
+**Independent Test**: A document written with TTL becomes eligible for expiration after the requested duration and is removed within the provider's documented enforcement window. With `includeMetadata=true`, a read returns an envelope whose fields are independently nullable: Cosmos DB supplies `lastModified` and `version`, DynamoDB supplies `ttlExpiry` when present, and Spanner currently supplies an empty envelope.
 
 **Acceptance Scenarios**:
 
-1. **Given** a provider that supports row-level TTL, **When** a document is created with a TTL of 300 seconds, **Then** the document is automatically removed after approximately 300 seconds.
-2. **Given** a document with TTL set, **When** the document is read, **Then** the response includes metadata indicating the approximate remaining TTL.
-3. **Given** a document that was recently written, **When** the document is read, **Then** the response includes metadata indicating the write timestamp.
-4. **Given** a provider that does not support row-level TTL, **When** a document is created with a TTL value, **Then** the SDK raises a clear error indicating the capability is unavailable.
-5. **Given** a document without TTL set, **When** the document is read, **Then** the TTL metadata is absent or indicates no expiration, and the write timestamp is still available.
+1. **Given** a provider that supports row-level TTL, **When** a document is created with a TTL of 300 seconds, **Then** it becomes eligible for provider-managed expiration after 300 seconds and is removed within that provider's documented enforcement window.
+2. **Given** a DynamoDB document with TTL and `includeMetadata=true`, **When** it is read, **Then** `ttlExpiry` contains the absolute expiry time.
+3. **Given** a provider advertising `WRITE_TIMESTAMP` and `includeMetadata=true`, **When** a document is read, **Then** `lastModified` is populated.
+4. **Given** a provider that does not support row-level TTL, **When** a document is created or upserted with a TTL value, **Then** the provider ignores the TTL and stores the document without expiry; callers requiring expiry must first inspect `ROW_LEVEL_TTL`.
+5. **Given** a document without TTL and `includeMetadata=true`, **When** it is read, **Then** `ttlExpiry` is null and all other fields follow their provider mappings.
 
 ---
 
-### User Story 7 - Uniform Document Size and Quota Limits (Priority: P2)
+### User Story 7 - Uniform Write-Input Envelope and Quota Limits (Priority: P2)
 
-As an application developer, I experience consistent document size limits and quota constraints across all providers, so that my application behaves predictably regardless of which provider is selected.
+As an application developer, I experience consistent serialized and structural write-input limits and quota constraints across all providers, so that my application behaves predictably regardless of which provider is selected.
 
-**Why this priority**: Providers impose different native limits for document size, partition size, and other quotas (e.g., DynamoDB's 400 KB item size vs. Cosmos DB's 2 MB default, or varying logical partition size caps). Without uniform enforcement, applications may work on one provider but fail unexpectedly on another, undermining portability.
+**Why this priority**: Providers impose different native limits for document size, partition size, and other quotas (e.g., DynamoDB's 400 KiB item size vs. Cosmos DB's 2 MiB default, or varying logical partition size caps). Without uniform enforcement, applications may work on one provider but fail unexpectedly on another, undermining portability.
 
-**Independent Test**: A document exceeding 400 KB is rejected with a clear error on every provider, and a document within 400 KB is accepted on every provider.
+**Independent Test**: A portable JSON document whose serialized JSON and structural footprint are each at most 390 KiB is accepted on every provider; exceeding either bound, using a binary value, or using a field name above 50,000 UTF-8 bytes is rejected consistently before I/O.
 
 **Acceptance Scenarios**:
 
-1. **Given** a document within the SDK's uniform size limit, **When** it is stored on any provider, **Then** it is persisted successfully.
-2. **Given** a document exceeding the SDK's uniform size limit, **When** the application attempts to store it on any provider, **Then** the SDK raises a clear, consistent error indicating the limit before sending the request to the provider.
-3. **Given** a provider with a native size limit larger than the SDK's uniform limit, **When** a document exceeding the SDK limit is submitted, **Then** the SDK still rejects it to maintain cross-provider consistency.
+1. **Given** a portable JSON document within both 390 KiB write-input bounds, **When** it is stored on any provider, **Then** it is persisted successfully.
+2. **Given** a document exceeding either serialized or structural 390 KiB bound, **When** the application attempts to store it on any provider, **Then** the SDK raises a clear, consistent error indicating the limit before sending the request to the provider.
+3. **Given** a provider with a larger native envelope, **When** a write input exceeds either portable bound, **Then** the SDK still rejects it to maintain cross-provider consistency.
 4. **Given** quota limits defined by the SDK (e.g., maximum partition size), **When** those limits are approached or exceeded, **Then** the SDK surfaces clear, provider-neutral errors or warnings.
 
 ---
@@ -241,7 +283,7 @@ As an application developer, I can specify a read consistency level (e.g., stron
 
 As an application developer, I can store and retrieve binary payloads (serialized objects, protocol buffers, compressed archives) that exceed the SDK's uniform document size limit, and the SDK transparently offloads the oversized payload to provider-appropriate external object storage while maintaining a reference in the database document — so that my application code treats these as normal document fields without awareness of the offloading mechanism. Large object handling is enabled by SDK configuration that selects eligible document field paths; no code-level annotations or hooks are required.
 
-**Why this priority**: Applications migrating from Cassandra commonly store large serialized objects inline (e.g., protobuf-encoded aggregated positions, pre-composed cached objects up to 3–4 MB). The SDK's 400 KB uniform document size limit would reject these payloads outright, blocking migration. Transparent offloading enables these workloads without requiring application-level chunking or external storage management code.
+**Why this priority**: Applications migrating from Cassandra commonly store large serialized objects inline (e.g., protobuf-encoded aggregated positions, pre-composed cached objects up to 3–4 MB). The SDK's 390 KiB uniform document size limit would reject these payloads outright, blocking migration. Transparent offloading enables these workloads without requiring application-level chunking or external storage management code.
 
 **Independent Test**: A sample application stores a 2 MB binary field via the SDK on any supported provider, and reads it back identically. The application code is unchanged between providers — only configuration (including storage backend endpoint/credentials and configured large-object field paths) varies.
 
@@ -250,7 +292,7 @@ As an application developer, I can store and retrieve binary payloads (serialize
 1. **Given** a document with a field selected in configuration for large object handling and a payload of 2 MB, **When** the application upserts the document, **Then** the SDK transparently stores the oversized payload in external object storage and persists a reference in the database document.
 2. **Given** a document with a large object reference stored in the database, **When** the application reads the document, **Then** the SDK transparently retrieves the payload from external storage and returns the complete document to the application with the large object field fully materialized.
 3. **Given** a document with a large object that is deleted from the database, **When** the delete operation completes, **Then** the SDK also removes the corresponding object from external storage (or marks it for deferred cleanup).
-4. **Given** a configured large object field whose payload is within the SDK's uniform size limit (≤ 400 KB), **When** the document is stored, **Then** the SDK stores it inline in the database document without offloading (no external storage overhead for small payloads).
+4. **Given** a configured large object field whose payload is within the SDK's uniform size limit (≤ 390 KiB), **When** the document is stored, **Then** the SDK stores it inline in the database document without offloading (no external storage overhead for small payloads).
 5. **Given** external object storage that is temporarily unavailable, **When** the application attempts to read a document with an offloaded large object, **Then** the SDK returns a clear error indicating the external storage dependency is unavailable.
 
 ---
@@ -259,7 +301,7 @@ As an application developer, I can store and retrieve binary payloads (serialize
 
 As an application developer, I can store and retrieve structured documents that exceed the SDK's uniform document size limit, and the SDK transparently splits the document into multiple linked chunks stored within the same database collection — so that my application sees a single logical document without managing chunking logic.
 
-**Why this priority**: Some workloads have structured JSON documents that naturally exceed 400 KB (e.g., deeply nested configuration objects, aggregated time-series snapshots). When external object storage is not desired or available, the SDK can transparently chunk within the database itself, keeping all data co-located with the same consistency and query guarantees.
+**Why this priority**: Some workloads have structured JSON documents that naturally exceed 390 KiB (e.g., deeply nested configuration objects, aggregated time-series snapshots). When external object storage is not desired or available, the SDK can transparently chunk within the database itself, keeping all data co-located with the same consistency and query guarantees.
 
 **Independent Test**: A sample application stores a 1.5 MB JSON document via the SDK on any supported provider, reads it back identically, and the application code is unaware of chunking internals.
 
@@ -341,7 +383,11 @@ As an application developer, I can declare which providers my application target
 2. **Given** a customer who has declared a target set of [Cosmos DB, DynamoDB], **When** they use a feature supported on both Cosmos DB and DynamoDB, **Then** compilation succeeds with no warnings.
 3. **Given** a customer who has declared a target set of [Cosmos DB, DynamoDB], **When** they use a feature only supported on Cosmos DB, **Then** the SDK produces a compile-time error indicating the feature is not available on DynamoDB.
 4. **Given** a customer who has declared a target set of all three providers (equivalent to default), **When** they use a 2-of-3 feature, **Then** the SDK produces a compile-time error.
-5. **Given** the provider target set configuration, **When** a maintainer explicitly marks a feature as "provider-specific extension" (not part of the portable contract), **Then** the feature is only usable via the escape hatch mechanism regardless of the declared target set.
+5. **Given** the provider target set configuration, **When** a maintainer
+   explicitly marks behavior as provider-specific (not part of the portable
+   contract), **Then** it is available only through explicit SDK configuration,
+   never through native-client access or a provider-extension API, regardless
+   of the declared target set.
 6. **Given** a new feature with conformance tests passing on only 1 provider, **When** a release is attempted, **Then** the CI portability gate fails with a clear message identifying the feature and the missing provider coverage.
 7. **Given** an existing feature that previously passed 2 providers, **When** a provider adapter regresses and conformance tests fail, **Then** the CI gate fails and blocks release until the regression is fixed or the feature is explicitly downgraded.
 
@@ -562,7 +608,7 @@ As an application developer, I can perform portable secondary lookups and, separ
 - What happens when a field name in the expression is a reserved word in the target provider (e.g., `status` in DynamoDB)? The SDK must handle escaping/quoting automatically.
 - What happens when the expression references a field that does not exist on some documents? Items where the field is absent should not match equality/comparison conditions.
 - What happens when a document exceeds the SDK's uniform size limit? The SDK must reject it with a clear error before sending the request to the provider.
-- What happens when TTL is set on a provider that does not support row-level TTL? The SDK must fail fast with a clear error.
+- What happens when TTL is set on a provider that does not support row-level TTL? Create/upsert stores the document without expiry; callers requiring expiry must inspect `ROW_LEVEL_TTL` first.
 - What happens when a provider's native quota (e.g., partition size) is exceeded? The SDK must surface the provider error in a provider-neutral format so applications can handle it uniformly.
 - What happens when a query with a result limit spans multiple pages? The limit applies to the total result count, not per-page.
 - What happens when ORDER BY is requested on a field that is not indexed by the provider? Performance may degrade; the SDK should allow the query but may log a diagnostic warning.
@@ -573,7 +619,7 @@ As an application developer, I can perform portable secondary lookups and, separ
 - What happens when a consistency level override is requested on a query that also uses partition key scoping? The consistency level and partition scope must be combinable without interference.
 - What happens when a large object is offloaded to external storage and the database record is deleted but external storage cleanup fails? The SDK must attempt cleanup and report a partial failure with guidance to manually remove the orphaned object. Deferred cleanup (garbage collection) may be used as an alternative.
 - What happens when external object storage is unavailable during a read of a document with an offloaded large object? The SDK must return a clear error identifying the external dependency failure, not silently return the document without the large object field.
-- What happens when a large object field's payload is exactly at the SDK's uniform size limit boundary (400 KB)? Payloads at or below the limit are stored inline; only payloads exceeding the limit are offloaded.
+- What happens when a large object field's payload is exactly at the SDK's uniform size limit boundary (390 KiB)? Payloads at or below the limit are stored inline; only payloads exceeding the limit are offloaded.
 - What happens when a chunked document is partially written (some chunks succeed, others fail)? The SDK must clean up partial chunks and report the failure. On providers supporting transactional batch, chunks must be written atomically.
 - What happens when a chunked document's chunks are inconsistent (e.g., a chunk is missing or corrupted)? The SDK must detect the inconsistency and return a clear error rather than returning a partial/corrupted document.
 - What happens when a query matches a chunked document but the query field is in a secondary chunk (not the root)? Only fields in the root/primary chunk are queryable; secondary chunk fields are not indexed or queryable.
@@ -599,7 +645,10 @@ Portability is the default mode of the SDK.
 
 The initial SDK version exposes **synchronous (blocking) APIs only**.
 
-- All operations (`read`, `upsert`, `delete`, `query`, `ensureDatabase`, `ensureContainer`, `provisionSchema`) return results synchronously.
+- All listed operations (`create`, `read`, `upsert`, `delete`, `query`,
+  `ensureDatabase`, `ensureContainer`, `provisionSchema`) return results
+  synchronously. The capability-gated `update()` operation is also synchronous
+  when `PARTIAL_UPDATE` is supported.
 - **Async APIs are explicitly out of scope for v1.** Reactive or non-blocking variants introduce cross-provider incompatibilities (e.g., Reactor vs. CompletableFuture vs. ListenableFuture) that cannot be abstracted without leaking provider-specific execution models.
 - Applications that require async behavior may wrap SDK calls using their own executor or async framework.
 
@@ -616,10 +665,19 @@ The SDK enforces a strict no-code-escape-hatch policy to preserve portability:
 ### Functional Requirements
 
 - **FR-001**: The SDK MUST allow selecting the target provider (Cosmos DB, DynamoDB, Spanner) through configuration only, without requiring application code changes.
-- **FR-002**: The SDK MUST expose a single, provider-neutral client abstraction for core operations: read-by-key, upsert/replace-by-key, delete-by-key, and read-query.
+- **FR-002**: The SDK MUST expose a single, provider-neutral client abstraction
+  for portable point operations (create-by-key, read-by-key,
+  upsert/full-replace-by-key, and delete-by-key) plus read-query. Shallow
+  `update()` is an optional operation gated by `PARTIAL_UPDATE` and is not
+  universally available across providers.
 - **FR-003**: The SDK MUST define a portable “resource addressing” scheme that can uniquely identify a logical database/namespace and a logical collection (container/table) for all supported providers.
 - **FR-004**: The SDK MUST define a portable key representation that can express the minimum key material required by each provider, and it MUST validate key completeness before issuing a request.
-- **FR-005**: The SDK MUST support a portable document payload for common operations and MUST preserve user-provided data fields through write/read cycles.
+- **FR-005**: The SDK MUST support a portable document payload for common
+  operations and MUST preserve user-provided data fields through write/read
+  cycles, except for top-level provider-owned names. Complete `create()` and
+  `upsert()` documents MUST reject `id`, `partitionKey`, `sortKey`, `ttl`,
+  `ttlExpiry`, and `data` case-insensitively, plus every underscore-prefixed
+  top-level name, before provider I/O.
 - **FR-006**: The SDK MUST support paging for read-queries, including requesting a page size and returning a continuation token (or equivalent) when more results exist.
 - **FR-007**: The SDK MUST provide explicit capability discovery so applications can determine whether an advanced feature or behavior is supported by the selected provider.
 - **FR-008**: When an operation cannot be provided with the same behavior across providers, the SDK MUST clearly flag the difference in a provider-neutral way (documentation and/or structured metadata) before users rely on it.
@@ -635,6 +693,9 @@ The SDK enforces a strict no-code-escape-hatch policy to preserve portability:
 - **FR-018**: The SDK MUST document a compatibility and support policy that states which providers are supported and what “portable” means within the SDK’s guarantees.
 - **FR-019**: The SDK MUST define the “portable contract” as the default behavior for all provider-neutral APIs, and it MUST NOT require provider-specific code for the portable contract.
 - **FR-020**: Provider-specific features/behaviors MUST be available only via explicit opt-in through SDK configuration and MUST NOT change default portable behavior unless the user explicitly enables them. Code-level escape hatches (hooks, interceptors, direct native client access) are not part of the public API.
+- The explicitly modeled `QueryRequest.nativeExpression` request field is a
+  documented non-portable query mode; it does not expose a native client,
+  provider object, hook, interceptor, or provider-extension API.
 - **FR-021**: When a provider-specific feature/behavior is enabled, the SDK MUST make it obvious to the user that portability may be reduced (e.g., via metadata, documentation, and/or structured warnings).
 
 #### Portable Resource Provisioning Requirements
@@ -648,7 +709,10 @@ The SDK enforces a strict no-code-escape-hatch policy to preserve portability:
 
 #### Bulk Schema Provisioning Requirements
 
-- **FR-043**: The SDK MUST provide `provisionSchema(Map<String, List<String>> schema)` on both the public client and SPI interfaces, enabling applications to provision all databases and containers in a single call.
+- **FR-043**: The SDK MUST provide
+  `provisionSchema(Map<String, List<String>> schema)` on both the public client
+  and SPI interfaces, enabling applications to provision all
+  provider-compatible addressed databases and containers in a single call.
 - **FR-044**: The default SPI implementation of `provisionSchema` MUST create databases in parallel (Phase 1), wait for all to complete, then create containers in parallel (Phase 2), using a bounded thread pool (max 10 threads).
 - **FR-045**: Providers MAY override `provisionSchema` for provider-specific optimizations while maintaining the same contract.
 
@@ -706,18 +770,70 @@ The SDK enforces a strict no-code-escape-hatch policy to preserve portability:
 
 #### Document TTL and Write Metadata Requirements
 
-- **FR-056**: The SDK MUST support setting a time-to-live (TTL) duration (in seconds) on individual documents during create or upsert operations. When set, the provider MUST automatically remove the document after the specified duration.
-- **FR-057**: Row-level TTL MUST be a capability-gated feature. When TTL is set on a provider that does not support row-level TTL, the SDK MUST raise a clear error indicating the capability is unavailable.
-- **FR-058**: When reading a document, the SDK MUST return available document metadata — including approximate remaining TTL (when set) and last write timestamp — in a portable metadata envelope alongside the document payload.
-- **FR-059**: Document metadata retrieval MUST be optional and opt-in. Applications that do not request metadata MUST NOT incur additional overhead or behavioral changes.
+- **FR-056**: The SDK MUST support setting a time-to-live (TTL) duration (in
+  seconds) on individual documents during create or upsert operations. When the
+  selected provider advertises `ROW_LEVEL_TTL`, it MUST automatically remove the
+  document after approximately the specified duration. A provider without that
+  capability MUST ignore `ttlSeconds` and store the document without expiry as
+  specified by FR-057.
+- **FR-057**: Providers MUST declare `ROW_LEVEL_TTL`. Create/upsert on a provider that does not support it MUST ignore `ttlSeconds` and store the document without expiry; callers requiring expiry MUST inspect the capability before writing. `update()` rejects any non-null TTL before provider I/O.
+- **FR-058**: When `includeMetadata=true`, the SDK MUST return a portable
+  `DocumentMetadata` envelope containing the fields available from that read,
+  with `lastModified`, `ttlExpiry`, and `version` independently nullable.
+  Current mappings are: Cosmos DB (`lastModified`, `version`), DynamoDB
+  (`ttlExpiry` when present), and Spanner (empty envelope). `WRITE_TIMESTAMP`
+  indicates whether `lastModified` may be populated; it does not gate the
+  envelope or the other fields.
+- **FR-059**: Document metadata retrieval MUST be optional and opt-in.
+  `DocumentResult.metadata()` MUST be null when metadata was not requested.
+  When requested, callers inspect each nullable metadata field independently;
+  applications that do not request metadata MUST NOT incur additional overhead
+  or behavioral changes.
 
 #### Uniform Document Size and Quota Limit Requirements
 
-- **FR-060**: The SDK MUST define a uniform maximum document size that is enforced consistently across all providers. The lowest common denominator is currently DynamoDB's 400 KB item size limit, so the SDK's uniform limit MUST be 400 KB, ensuring documents accepted by the SDK are storable on every provider.
-- **FR-061**: The SDK MUST validate document size against the uniform limit before sending the request to the provider and MUST reject oversized documents with a clear, actionable error.
+- **FR-060**: The SDK MUST enforce independent 399,360-byte (390 KiB)
+  serialized UTF-8 and structural-footprint bounds across all providers. The
+  input is the complete document for `create()` and `upsert()`, and the supplied
+  field map for `update()`. Every field name, including nested map keys, MUST be
+  at most 50,000 UTF-8 bytes; map/list nesting below the document root MUST not
+  exceed 31 levels; and one partial update MUST contain at most 10 top-level
+  assignments.
+- **FR-061**: Shared write preflight MUST run before provider I/O and reject
+  violations with non-retryable `INVALID_REQUEST`. A null `create()`/`upsert()`
+  document MUST be rejected. Complete documents MUST reject top-level `id`,
+  `partitionKey`, `sortKey`, `ttl`, `ttlExpiry`, and `data`
+  case-insensitively, and every underscore-prefixed top-level name. The top-level
+  `Map` entries MUST be snapshotted before validation so custom map serializers
+  cannot rewrite validated fields. Values MUST be serializable with the SDK-owned
+  Jackson configuration. Cyclic value graphs and non-collection `Iterable`
+  values MUST fail bounded shared inspection before I/O; `char[]` follows Jackson
+  string semantics. Binary values, including values exposed while serializing a
+  POJO, MUST be rejected. Serialized JSON output MUST be capped at 390 KiB while
+  it is produced so oversized POJO or custom-serializer output is not fully
+  materialized. `update()` MUST NOT read and merge the existing item to prevalidate
+  result size. Its base result envelope requires both serialized JSON and portable
+  structural footprint at or below 390 KiB. State-dependent results above either
+  bound are outside this release's portable contract and MAY succeed or fail
+  under provider-native ceilings after at most one attempted atomic write.
+  Native size rejection MUST remain reason-coded, non-retryable
+  `UNSUPPORTED_CAPABILITY`.
 - **FR-062**: The SDK MUST define and document uniform quota limits for provider resources (e.g., maximum logical partition size) so that applications can anticipate constraints regardless of the selected provider.
 - **FR-063**: When a provider-specific quota limit is reached (e.g., partition size exceeded, throughput exhausted), the SDK MUST surface the failure through the standard provider-neutral error model with clear categorization and actionable guidance.
-- **FR-064**: The SDK MUST expose the configured uniform document size limit and documented quota limits programmatically so applications can perform pre-validation or display limits to end users.
+- **FR-064**: The 399,360-byte serialized and structural bounds, 50,000-byte
+  nested/partial-update field-name bound, 128-character complete-document
+  top-level-name bound, 31-container depth bound, and 10-field partial-update
+  bound MUST be enforced by the shared API layer. Their implementation constants
+  MUST remain outside the public Java API; failures MUST expose the applicable
+  maximum through typed `INVALID_REQUEST` details. Runtime discovery and customer
+  configuration are deferred to [#116](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/116).
+- **FR-064a**: `CapabilitySet` MUST supply an unsupported default only for an
+  omitted `PARTIAL_UPDATE` declaration, without synthesizing unrelated omitted
+  names. Every built-in provider's effective set MUST contain 18 rows. Cosmos
+  DB and DynamoDB MUST explicitly declare 18; Spanner MUST declare 17 and
+  receive the one core default. TTL timing MUST remain outside the portable
+  partial-update contract; callers requiring fixed absolute expiry MUST NOT
+  call `update()` on TTL-bearing items until behavior is normalized.
 
 #### Change Data Capture / Change Feed Requirements
 
@@ -774,13 +890,13 @@ The SDK enforces a strict no-code-escape-hatch policy to preserve portability:
 
 #### Transparent Large Object (BLOB) Offloading Requirements
 
-- **FR-082**: The SDK MUST provide a large object offloading facility that transparently stores binary payloads exceeding the SDK's uniform document size limit (400 KB) in an external object storage backend, while persisting a reference (pointer) in the database document.
+- **FR-082**: The SDK MUST provide a large object offloading facility that transparently stores binary payloads exceeding the SDK's uniform document size limit (390 KiB) in an external object storage backend, while persisting a reference (pointer) in the database document.
 - **FR-083**: Large object offloading MUST be opt-in per field via SDK configuration only, using a provider-neutral configuration interface. Fields not designated for offloading in configuration continue to be stored inline and are subject to the uniform size limit.
 - **FR-084**: When a document with a large object field designated for offloading in SDK configuration is upserted and the field's payload exceeds the inline threshold, the SDK MUST: (1) store the payload in the configured external storage backend, (2) replace the field value in the database document with a structured reference containing the storage location and size metadata, and (3) persist the database document.
 - **FR-085**: When a document with a large object reference is read, the SDK MUST transparently retrieve the payload from external storage and return the fully materialized document to the application, identical to the original write (minus any provider-added metadata).
 - **FR-086**: When a document with a large object reference is deleted, the SDK MUST also remove (or schedule for deferred removal) the corresponding object from external storage. Orphaned objects due to partial failure MUST be detectable and cleanable via a maintenance/cleanup mechanism.
 - **FR-087**: Large object offloading MUST support configurable external storage backends per provider: Azure Blob Storage for Cosmos DB, Amazon S3 for DynamoDB, Google Cloud Storage for Spanner. A provider-neutral configuration interface MUST be used so applications can switch object storage backends alongside the database provider.
-- **FR-088**: Payloads at or below the inline threshold (≤ 400 KB) on opted-in large object fields MUST be stored inline in the database document without offloading, avoiding external storage overhead for small payloads.
+- **FR-088**: Payloads at or below the inline threshold (≤ 390 KiB) on opted-in large object fields MUST be stored inline in the database document without offloading, avoiding external storage overhead for small payloads.
 - **FR-089**: Large object offloading MUST be a capability-gated feature. When offloading is configured but the external storage backend is unavailable or misconfigured, the SDK MUST raise a clear error at operation time.
 - **FR-090**: The SDK MUST define a maximum large object size limit (configurable, default 16 MB) and reject payloads exceeding it with a clear error.
 
@@ -841,7 +957,11 @@ The SDK enforces a strict no-code-escape-hatch policy to preserve portability:
 - **FR-122**: When no target provider set is explicitly declared, the SDK MUST default to requiring all three providers, meaning all features used must be supported on Cosmos DB, DynamoDB, AND Spanner.
 - **FR-123**: The SDK MUST produce a compile-time error when an application uses a feature that is not supported on all providers in the declared (or default) target set. The error message MUST identify the unsupported feature and the provider(s) lacking support.
 - **FR-124**: Applications MUST be able to resolve the compile-time error by either: (a) removing usage of the unsupported feature, or (b) explicitly declaring a reduced provider target set that excludes the unsupported provider.
-- **FR-125**: Features explicitly declared as "provider-specific extensions" (not part of the portable contract) MUST be exempt from the target set validation and MUST only be accessible via the escape hatch mechanism.
+- **FR-125**: Provider-specific behavior outside the portable contract MUST be
+  explicit SDK configuration and MAY be exempt from target-set validation only
+  as documented non-portable configuration. The SDK MUST NOT expose an
+  underlying native client, provider-extension object, hook, or interceptor to
+  access it.
 - **FR-160**: The SDK MUST maintain a machine-readable capability manifest that maps each feature to its provider support status, enabling both compile-time validation and CI gate enforcement.
 - **FR-161**: The CI portability gate MUST enforce that every feature in the portable contract has conformance test coverage passing on at least 2 of the 3 supported providers before release.
 - **FR-162**: When a previously-passing provider adapter regresses (conformance tests fail), the CI gate MUST block release and identify the specific features and providers affected.
@@ -972,7 +1092,9 @@ The following operators and functions form the portable query subset, available 
 | `ORDER BY` (with ASC/DESC direction) | Cosmos DB, Spanner |
 | `TOP N` / result limit | Cosmos DB, DynamoDB, Spanner |
 | Row-level TTL | Cosmos DB, DynamoDB |
-| Write timestamp metadata | Cosmos DB, DynamoDB, Spanner |
+| Write timestamp metadata (`DocumentMetadata.lastModified`) | Cosmos DB |
+| Partial update (`PARTIAL_UPDATE`) | Cosmos DB, DynamoDB; Spanner unsupported in this release |
+| Extended partial-update result size | Cosmos DB; DynamoDB and Spanner unsupported |
 | Change feed (create/update events) | Cosmos DB, DynamoDB, Spanner |
 | Change feed (delete detection) | Cosmos DB (all versions and deletes mode), DynamoDB, Spanner |
 | Bulk write | Cosmos DB, DynamoDB, Spanner |
@@ -1005,18 +1127,33 @@ The following operators and functions form the portable query subset, available 
 - **Provider**: The selected database service (Cosmos DB, DynamoDB, Spanner) plus its identity used for diagnostics and error reporting.
 - **Client Configuration**: The set of settings that selects provider and supplies connection/auth details.
 - **Resource Address**: The portable identifiers for logical database/namespace and collection.
-- **Key**: The portable representation of the minimum key parts required to uniquely identify a record.
+- **MulticloudDbKey**: The portable representation of the minimum key parts
+  required to uniquely identify a record.
 - **Document**: A portable, JSON-like payload used for common operations.
+  Complete write documents are non-null JSON objects. Shared preflight snapshots
+  top-level maps and uses bounded SDK-owned Jackson serialization while inspecting
+  nested values. Top-level `id`, `partitionKey`, `sortKey`, `ttl`,
+  `ttlExpiry`, and `data` are reserved case-insensitively, as is every
+  underscore-prefixed top-level name.
 - **Query**: A provider-neutral request to retrieve data, including parameters and paging controls.
 - **Portable Expression**: A text string using the SQL-subset syntax and portable function names. Represents the WHERE clause of a query without any provider-specific syntax.
 - **Expression Parameters**: A map of named parameter values (`@paramName` → value) that are bound to the expression before execution.
 - **Expression Translator**: A component within each provider adapter that converts a portable expression into the provider's native query format.
 - **Native Expression**: A text string using provider-specific syntax, passed through without translation. Tagged to prevent cross-provider misuse.
-- **Resource Provisioning**: The ability to create database and collection resources portably using the provider's data-plane SDK. `ensureDatabase` creates a database/namespace; `ensureContainer` creates a collection/container/table with the SDK's standard schema. `provisionSchema` bulk-creates multiple databases and containers in parallel via a single call. All operations are subject to the caller's runtime permissions; insufficient permissions result in a clear authorization failure. The SDK does not depend on management or ARM SDKs for provisioning.
+- **Resource Provisioning**: The ability to create database and collection
+  resources portably using the provider's data-plane SDK. `ensureDatabase`
+  creates a database/namespace; `ensureContainer` creates a
+  collection/container/table with the SDK's standard schema.
+  `provisionSchema` creates provider-compatible addressed databases and
+  containers in parallel via a single call. A Spanner client accepts only its
+  configured `databaseId`; Cosmos DB and DynamoDB can represent multiple logical
+  database entries. All operations are subject to the caller's runtime
+  permissions; insufficient permissions result in a clear authorization
+  failure. The SDK does not depend on management or ARM SDKs for provisioning.
 - **Query Page**: A single page of results and an optional continuation token.
 - **Capability**: A named feature/behavior that can be supported or unsupported by a provider.
 - **Error**: A provider-neutral categorization of failures with retryability and provider details.
-- **Document Metadata**: An optional envelope of system-managed properties returned alongside a document, including approximate remaining TTL and last write timestamp. Not all metadata fields are available on all providers.
+- **Document Metadata**: An optional envelope of independently nullable system-managed properties returned alongside a document. Cosmos DB exposes `lastModified` and `version`, DynamoDB exposes absolute `ttlExpiry` when present, and Spanner currently exposes an empty envelope.
 - **Result Limit**: An optional constraint on the maximum number of items a query returns (Top N). Applied after filtering and partition scoping.
 - **Sort Order**: An optional specification of one or more fields and their sort direction (ascending or descending) for query results. Capability-gated to providers that support ORDER BY.
 - **Quota Limit**: A provider-neutral constraint on resource usage (e.g., maximum logical partition size, throughput caps) that the SDK documents and surfaces uniformly across all providers.
@@ -1046,7 +1183,7 @@ The following operators and functions form the portable query subset, available 
 
 ### Measurable Outcomes
 
-- **SC-001**: A developer can run the same CRUD + query sample application against Cosmos DB, DynamoDB, and Spanner by changing configuration only, in under 10 minutes per provider.
+- **SC-001**: A developer can run the same create/read/upsert/delete + query sample application against Cosmos DB, DynamoDB, and Spanner by changing configuration only, in under 10 minutes per provider; partial update is included only when `PARTIAL_UPDATE` is supported.
 - **SC-002**: The conformance test suite passes at least 95% of scenarios for each supported provider, with any exceptions explicitly documented as portability gaps.
 - **SC-003**: In 100% of cases where an operation relies on an unsupported capability, the SDK returns a structured, actionable error and exposes the capability state that explains the failure.
 - **SC-004**: For failures in production-like environments, a developer can identify the provider, operation, and correlation/request identifier from SDK diagnostics in under 5 minutes.
@@ -1056,9 +1193,16 @@ The following operators and functions form the portable query subset, available 
 - **SC-008**: Attempting to use an unsupported capability-gated query feature on a provider that lacks it produces a clear, descriptive error message before executing the query.
 - **SC-009**: Native expression mode allows full access to each provider's proprietary query features without interference from the portable expression translator.
 - **SC-010**: Complex expressions combining 3 or more conditions with mixed boolean logic (`AND`, `OR`, `NOT`, parentheses) produce correct results on all providers.
-- **SC-011**: A developer can provision database and collection resources using `ensureDatabase` and `ensureContainer` without any provider-specific code, and the same provisioning code works across all providers by changing configuration only.
+- **SC-011**: A developer can provision standard-schema database and collection
+  resources using `ensureDatabase` and `ensureContainer` without provider SDK
+  calls. The same calls work across providers when addressed to a database valid
+  for the selected client; Spanner requires the configured `databaseId`.
 - **SC-012**: Calling `ensureDatabase` and `ensureContainer` on resources that already exist succeeds idempotently without error on all providers.
-- **SC-015**: `provisionSchema` creates all specified databases and containers in parallel, equivalent to individual `ensureDatabase`/`ensureContainer` calls, on all supported providers.
+- **SC-015**: `provisionSchema` creates all provider-compatible addressed
+  databases and containers in parallel, equivalent to individual
+  `ensureDatabase`/`ensureContainer` calls. A Spanner client accepts one
+  configured database; Cosmos DB and DynamoDB can represent multiple logical
+  database entries.
 - **SC-016**: The Cosmos DB provider authenticates via `DefaultAzureCredential` when no account key is provided. When the caller holds sufficient RBAC permissions for control-plane operations, `ensureDatabase` succeeds; when permissions are insufficient, the SDK returns a clear, structured authorization failure rather than silently succeeding or hanging.
 - **SC-013**: A query with `partitionKey` set returns only items within that partition on all supported providers.
 - **SC-014**: A query with both `partitionKey` and a filter expression correctly scopes to the partition first, then applies the filter, on all supported providers.
@@ -1066,9 +1210,18 @@ The following operators and functions form the portable query subset, available 
 - **SC-018**: On every successful data-plane operation, the SDK emits a `DEBUG`-level diagnostic log line capturing the provider's native correlation ID and cost metric. A developer can correlate SDK log output with Azure portal Activity IDs or AWS CloudTrail request IDs without requiring a failure to trigger the diagnostic.
 - **SC-019**: A query with a result limit of N returns at most N items on all supported providers, regardless of how many items match the filter.
 - **SC-020**: A query specifying ORDER BY with a descending sort direction returns items in reverse order on all providers that support ORDER BY. Providers that do not support ORDER BY produce a clear, actionable error.
-- **SC-021**: A document created with a TTL of T seconds is automatically removed after approximately T seconds on all providers that support row-level TTL.
-- **SC-022**: Reading a document returns write timestamp metadata on all providers that support it, enabling applications to determine data freshness within 1 second of accuracy.
-- **SC-023**: A document within the SDK's uniform size limit can be stored and retrieved identically on all supported providers. A document exceeding the uniform limit is rejected with a clear, consistent error on every provider, regardless of individual provider native limits.
+- **SC-021**: A document written with a TTL of T seconds becomes eligible for expiration after T seconds and is removed within the selected provider's documented enforcement window when `ROW_LEVEL_TTL` is supported.
+- **SC-022**: With `includeMetadata=true`, a provider advertising `WRITE_TIMESTAMP` returns `lastModified`, enabling applications to determine data freshness within 1 second of accuracy.
+- **SC-023**: A portable JSON document within both 390 KiB serialized and
+  structural bounds can be stored and retrieved identically on all supported
+  providers. An input exceeding either size bound, containing binary, exceeding
+  31 nested containers, containing an overlong field name, using a null complete
+  document, using a case-insensitive top-level provider-owned name (`id`,
+  `partitionKey`, `sortKey`, `ttl`, `ttlExpiry`, or `data`), or using an
+  underscore-prefixed top-level name is rejected consistently before provider I/O.
+- **SC-023a**: Every built-in provider exposes 18 effective capability rows.
+  Cosmos DB and DynamoDB explicitly declare 18; Spanner declares 17 and
+  receives only the core `PARTIAL_UPDATE` unsupported API default.
 - **SC-024**: When a provider-specific quota limit is reached (e.g., partition size exceeded), the SDK surfaces a provider-neutral error with clear categorization and actionable guidance, consistent across all providers.
 - **SC-025**: Every Java source file (main and test) across all modules carries the standard Microsoft copyright header (`// Copyright (c) Microsoft Corporation. All rights reserved.` / `// Licensed under the MIT License.`) as its first two lines. A `LICENSE` file exists at the repository root with the full MIT license text. Both are verifiable by inspection of any file in the repository.
 - **SC-026**: A change feed consumer can receive a chronologically ordered stream of create and update events from a collection on all providers that support change feed, by changing configuration only.
@@ -1080,7 +1233,7 @@ The following operators and functions form the portable query subset, available 
 - **SC-032**: A read or query operation with no consistency override continues to use the provider's default consistency behavior, maintaining backward compatibility.
 - **SC-033**: A 2 MB binary payload stored via the SDK's large object offloading facility is transparently persisted in external storage and retrieved identically on read, without the application being aware of the offloading mechanism. The same application code works across all supported providers by changing only storage backend configuration.
 - **SC-034**: When a document with an offloaded large object is deleted, the corresponding external storage object is also removed (or scheduled for removal) within a configurable cleanup window.
-- **SC-035**: A payload at or below 400 KB on an opted-in large object field is stored inline without incurring external storage overhead, verifiable by observing no external storage call in diagnostics.
+- **SC-035**: A payload at or below 390 KiB on an opted-in large object field is stored inline without incurring external storage overhead, verifiable by observing no external storage call in diagnostics.
 - **SC-036**: When external object storage is unavailable during a read, the SDK returns a clear error identifying the external dependency failure within the standard error model.
 - **SC-037**: A 1.5 MB JSON document stored via the SDK's chunking facility is transparently split, persisted, and reassembled identically on read across all supported providers. The application code is unaware of chunking.
 - **SC-038**: When a chunked document is deleted, all associated chunks are removed. On providers supporting transactional batch, deletion is atomic; on others, eventual consistency of cleanup is documented.
@@ -1108,15 +1261,23 @@ The following operators and functions form the portable query subset, available 
 
 ## Assumptions
 
-- The initial MVP targets a portable core (CRUD + read-query + paging) and treats higher-level semantics (e.g., complex transactions, stored procedures, triggers) as capability-gated or provider-specific.
+- The initial MVP targets portable create/read/upsert/delete plus read-query and
+  paging. Shallow partial `update()` and higher-level semantics (e.g., complex
+  transactions, stored procedures, triggers) are capability-gated or
+  provider-specific rather than promised by the every-provider base.
 - “Write once, run anywhere” means “same application code for the portable contract”; provider-specific configuration and credentials are expected to vary.
 - When providers differ in unavoidable ways, the SDK's responsibility is to (1) make differences visible, and (2) provide safe defaults and clear guidance, not to hide differences.
 - The DynamoDB adapter will use PartiQL (`executeStatement`) as the primary backend for portable query expressions rather than native Scan + FilterExpression. PartiQL provides SQL-like syntax closer to Cosmos DB and Spanner, simplifying translation. Performance is equivalent.
 - Nested property access (e.g., `address.city`) is limited to single-level dot notation in the portable subset. Deeply nested or array-indexed access is provider-specific.
 - The portable query subset targets WHERE-clause filtering only. Projections (SELECT specific fields), aggregations (COUNT, SUM, etc.), and joins are outside the current scope.
 - `field_exists` maps to `IS_DEFINED` on Cosmos DB, `IS NOT MISSING` on DynamoDB PartiQL, and `IS NOT NULL` on Spanner. This is a semantic approximation: on Spanner, a column always exists in the schema, so the check tests for non-null values.
-- Queries MUST support partition-key-scoped execution. When a partition key value is specified on a query request, the SDK MUST use each provider's native efficient mechanism to scope the query to that partition only (e.g., Cosmos DB `setPartitionKey()` on query options, DynamoDB PartiQL WHERE condition on the partition key column). Queries without a partition key scope may still result in cross-partition scans. Applications SHOULD use `Key.of(partitionKey, sortKey)` to co-locate related documents and then scope queries by partition key for efficient retrieval.
+- Queries MUST support partition-key-scoped execution. When a partition key value is specified on a query request, the SDK MUST use each provider's native efficient mechanism to scope the query to that partition only (e.g., Cosmos DB `setPartitionKey()` on query options, DynamoDB PartiQL WHERE condition on the partition key column). Queries without a partition key scope may still result in cross-partition scans. Applications SHOULD use `MulticloudDbKey.of(partitionKey, sortKey)` to co-locate related documents and then scope queries by partition key for efficient retrieval.
 - `ensureDatabase`, `ensureContainer`, and `provisionSchema` are convenience methods for development and startup scenarios. They create resources with the SDK's standard schema defaults using the provider's data-plane SDK, and are subject to the caller's runtime permissions (e.g., RBAC role assignments). They are not intended for advanced provisioning (e.g., custom throughput, indexing policies, ARM-based control-plane operations). For production provisioning with fine-grained control, developers should use provider SDKs or infrastructure-as-code tools directly. Advanced provisioning support is a future consideration outside v1 scope.
+- A Spanner client is bound to one configured `databaseId`.
+  `ensureDatabase(name)` rejects a different name, production requires the
+  configured instance to exist already, and emulator mode may create that
+  configured instance. Portable `provisionSchema` input therefore uses one
+  matching database entry when Spanner is a target.
 - The SDK does not introduce a dependency on management or ARM SDKs (e.g., `azure-resourcemanager-cosmos`). Provisioning operations (`ensureDatabase`, `ensureContainer`) use the provider's standard data-plane SDK and succeed only when the caller holds sufficient runtime permissions. When operating in RBAC/`DefaultAzureCredential` mode, `ensureDatabase` requires the caller to hold an appropriate control-plane role (e.g., Cosmos DB Operator). If the required role is not assigned, the SDK returns a clear authorization failure. Advanced provisioning requiring ARM access is a future consideration outside v1 scope.
 - **SDK versions (current)**: Azure Cosmos DB SDK 4.78.0, AWS SDK v2 2.34.0, Azure Identity 1.18.2. Minimum Java version is 17. These versions represent the latest stable releases validated against this SDK; newer versions may be adopted as long as the portable contract is preserved. Management and ARM SDK dependencies (e.g., `azure-resourcemanager-cosmos`, `azure-core-management`) are not part of the SDK's required dependency set.
 - **Dependency security**: Transitive dependency versions are managed in the root `pom.xml` `dependencyManagement` section and explicit overrides in child poms to resolve known CVEs: `jackson-core` ≥ 2.18.6 (GHSA-72hv-8253-57qq), `logback-classic`/`logback-core` ≥ 1.5.25 (CVE-2024-12798, CVE-2024-12801, CVE-2025-11226, CVE-2026-1225), `netty-codec-http` ≥ 4.2.8.Final (CVE-2025-67735). IDE CVE scanner (Mend.io) warnings that persist after overrides are documented as false positives in `.mend/mend.yml`; the actual resolved versions are confirmed safe via `mvn dependency:tree`.
@@ -1124,31 +1285,47 @@ The following operators and functions form the portable query subset, available 
 - **Operation name constants**: The `OperationNames` class in `multiclouddb-api` is the canonical source for all shared operation name strings. It is on the classpath of every provider via the `providers → multiclouddb-api` dependency chain. IDE "unused field" warnings on constants classes are suppressed via `@SuppressWarnings("unused")` because single-file IDE analysis cannot see cross-file usages.
 - **Diagnostics log format**: Success-path diagnostic log lines use the prefix `cosmos.diagnostics` or `dynamo.diagnostics` followed by key=value pairs: `op`, `db`, `col`, and provider-specific fields (`activityId`/`requestId`, `requestCharge`/`capacityUnits`, `statusCode`/`itemCount`/`hasMore`). Log lines are emitted at `DEBUG` level only and contain no secrets or document contents.
 - Properties files containing credentials or connection secrets (e.g., `*.properties` with endpoint/key values) MUST be gitignored and MUST NOT be committed to source control. Template files (`*.properties.template`) with placeholder values are provided so users can copy them, fill in their credentials, and keep the result local-only.
-- Cleanup scripts for removing provider resources (containers, tables, databases) created during sample runs are provided under `multiclouddb-samples/scripts/` for each supported provider, in both Bash and PowerShell variants.
+- **SUPERSEDED / NOT SHIPPED**: The planned cleanup scripts under
+  `multiclouddb-samples/scripts/` were not delivered. The shipped repository has
+  no `multiclouddb-samples` module or cleanup-script contract; this statement is
+  retained only to record the superseded scope.
 - Sample application output banners use fixed-width ASCII box-drawing characters (printable ASCII only, no Unicode box-drawing code points) to ensure consistent rendering across all terminal environments and operating systems.
 - **Row-level TTL scope**: The SDK supports row-level (document-level) TTL only. Cell-level TTL (per-field expiration) as found in Cassandra is not supported because the native TTL engines in Cosmos DB and DynamoDB operate at the row/item level. Applications migrating from Cassandra cell-level TTL should evaluate whether row-level TTL is sufficient for their use case.
 - **TTL precision**: TTL expiration is approximate. Providers may enforce TTL with varying granularity (e.g., Cosmos DB checks TTL in the background periodically, DynamoDB typically deletes within 48 hours of expiration). The SDK does not guarantee exact-second expiration precision.
-- **Write timestamp source**: Write timestamps are sourced from the provider's system metadata (e.g., Cosmos DB `_ts`, DynamoDB stream record timestamps). The SDK does not maintain its own write timestamps. Precision and availability may vary by provider.
-- **Uniform document size limit**: The SDK enforces a single maximum document size of 400 KB across all providers, driven by DynamoDB's 400 KB item size limit as the lowest common denominator. Cosmos DB natively supports up to 2 MB (or 10 MB for eligible accounts) and Spanner supports up to 10 MB, but the SDK enforces the 400 KB ceiling to guarantee cross-provider portability. Applications needing to store larger documents should use provider-specific escape hatches or external storage patterns.
+- **Write timestamp source**: `DocumentMetadata.lastModified` is populated only
+  when the read path exposes a provider timestamp. The current mapping is
+  Cosmos DB `_ts`; DynamoDB and Spanner return null. The SDK does not maintain
+  its own write timestamps, and `WRITE_TIMESTAMP` advertises only this field.
+- **Uniform write-input envelope**: The SDK enforces separate 390 KiB serialized
+  and structural bounds across all providers, plus portable value-shape, field-name, nesting, and complete-write
+  reserved-name constraints. Cosmos DB and Spanner support larger native items, but the shared
+  envelope guarantees inputs remain DynamoDB-safe. State-dependent
+  partial-update results above either base bound are outside this release's
+  portable contract and may succeed or fail under provider-native limits.
 - **Uniform quota limits**: The SDK documents and surfaces provider quota constraints (e.g., logical partition size limits, throughput caps) in a uniform way. While exact quota values may differ by provider, the SDK ensures that quota-related failures are reported through the standard error model with consistent categorization.
 - **Multi-tenancy patterns**: The SDK does not enforce tenant isolation. Multi-tenant applications can use partition key schemes to scope data by tenant (e.g., including an organization code in the partition key value) and use the existing `partitionKey` query scope (FR-039) to restrict queries to a single tenant's data. For stronger isolation (per-tenant encryption, noisy-neighbor protection), applications should use collection-per-tenant or account-per-tenant patterns with provider fleet management features. This is a deployment architecture decision, not an SDK-level concern.
-- Every Java source file in all modules (main and test) carries the standard Microsoft MIT copyright header as its first two lines. This applies to all 117 Java files across `multiclouddb-api`, `multiclouddb-conformance`, `multiclouddb-provider-cosmos`, `multiclouddb-provider-dynamo`, `multiclouddb-provider-spanner`, and `multiclouddb-samples`. A `LICENSE` file at the repository root contains the full MIT license text. The per-file header is:
+- Every Java source file currently present in the repository's modules, in both
+  main and test source trees, carries the standard Microsoft MIT copyright
+  header as its first two lines. This requirement applies to the complete
+  current Java source set without relying on a mutable file count or module
+  snapshot. A `LICENSE` file at the repository root contains the full MIT
+  license text. The per-file header is:
   ```
   // Copyright (c) Microsoft Corporation. All rights reserved.
   // Licensed under the MIT License.
   ```
 - **Change feed scope**: The portable change feed abstraction covers consumption of item-level changes only. Change feed configuration (e.g., enabling DynamoDB Streams on a table, defining Spanner Change Streams) is a provisioning concern outside the portable contract. Applications should ensure change feed is enabled on their provider resources before using the SDK's change feed consumer.
 - **Change feed delete detection**: Delete event availability varies by provider and mode. Cosmos DB's "all versions and deletes" mode surfaces deletes; DynamoDB Streams always includes deletes; Spanner Change Streams include deletes. The SDK gates delete detection as a separate capability. Applications relying on delete events should verify the capability before use.
-- **Bulk operation semantics**: Bulk operations are throughput-optimized, not transactional. Individual items within a bulk request may succeed or fail independently. The SDK does not guarantee atomicity across items in a bulk request. Applications requiring atomic multi-item writes should use provider-specific transactional batch mechanisms via provider extensions.
+- **Bulk operation semantics**: Bulk operations are throughput-optimized, not transactional. Individual items within a bulk request may succeed or fail independently. The SDK does not guarantee atomicity across items in a bulk request. Applications requiring atomic multi-item writes must integrate with a provider's native SDK separately; the Multicloud DB SDK exposes no provider-extension or native-client API.
 - **Bulk operation limits**: Provider-level batch size limits vary (e.g., DynamoDB limits `BatchWriteItem` to 25 items, `BatchGetItem` to 100 keys). The SDK automatically partitions larger requests into multiple provider-level batches. Applications should be aware that very large bulk requests may result in multiple provider round-trips.
-- **Read consistency mapping**: The preferred portable model is `EVENTUAL` / `LOCAL_QUORUM` / `GLOBAL_STRONG`; legacy `STRONG` aliases `GLOBAL_STRONG`. Native mappings must meet or exceed the selected minimum. Cosmos DB Session, Bounded Staleness, and Consistent Prefix remain provider-specific extensions and do not implement `LOCAL_QUORUM`. Spanner's `EVENTUAL` mapping uses a provider-configured stale-read bound (default: 15 seconds).
+- **Read consistency mapping**: The preferred portable model is `EVENTUAL` / `LOCAL_QUORUM` / `GLOBAL_STRONG`; legacy `STRONG` aliases `GLOBAL_STRONG`. Native mappings must meet or exceed the selected minimum. Cosmos DB Session, Bounded Staleness, and Consistent Prefix remain provider-specific configuration choices and do not implement `LOCAL_QUORUM`. Spanner's `EVENTUAL` mapping uses a provider-configured stale-read bound (default: 15 seconds).
 - **Consistency default behavior**: When no consistency override is specified, each provider uses its own default: Cosmos DB uses the account-level consistency setting, DynamoDB defaults to eventually consistent reads, and Spanner defaults to strong reads. The SDK does not normalize these defaults to preserve existing provider behavior for applications that do not opt into consistency overrides.
-- **Large object offloading scope**: The large object offloading facility targets opaque binary payloads (serialized objects, protobufs, compressed archives, images) that exceed the 400 KB uniform document size limit. It is not a general-purpose file storage API. Payloads are stored as single objects in external storage; multi-part upload is used for payloads exceeding provider-specific thresholds (e.g., 5 MB for S3/Azure Blob). Maximum supported payload size is configurable (default 16 MB).
+- **Large object offloading scope**: The large object offloading facility targets opaque binary payloads (serialized objects, protobufs, compressed archives, images) that exceed the 390 KiB uniform document size limit. It is not a general-purpose file storage API. Payloads are stored as single objects in external storage; multi-part upload is used for payloads exceeding provider-specific thresholds (e.g., 5 MB for S3/Azure Blob). Maximum supported payload size is configurable (default 16 MB).
 - **Large object storage backend pairing**: Each database provider is paired with a natural object storage backend: Cosmos DB → Azure Blob Storage, DynamoDB → Amazon S3, Spanner → Google Cloud Storage. Cross-pairing (e.g., Cosmos DB with S3) is technically possible but not a v1 priority.
 - **Large object consistency**: The SDK provides best-effort consistency between the database record and the external storage object. The write order is: (1) write to external storage, (2) persist reference in database. On failure between steps, orphaned objects may exist temporarily. A maintenance/garbage-collection mechanism is provided for cleanup. Strong transactional guarantees across database + object storage are not feasible and are outside scope.
 - **Large object lifecycle**: Deleting a database record triggers deletion of the associated external storage object. If external storage deletion fails, the SDK logs a warning and the object becomes an orphan detectable via the maintenance mechanism. Applications requiring strict lifecycle coupling should implement additional monitoring.
-- **Document chunking scope**: Document chunking targets structured JSON documents that exceed 400 KB but are logically single entities (e.g., large configuration objects, aggregated reports). It is not designed for arbitrarily large streaming data. Maximum chunked document size is configurable (default 10 MB).
-- **Document chunking query limitations**: Only fields present in the root chunk (the first chunk, containing document metadata and leading fields) are queryable. Applications requiring full-text search across oversized documents should use dedicated search indexes outside the SDK. The root chunk size is the same as the uniform limit (400 KB), so documents must have queryable fields that fit within this size.
+- **Document chunking scope**: Document chunking targets structured JSON documents that exceed 390 KiB but are logically single entities (e.g., large configuration objects, aggregated reports). It is not designed for arbitrarily large streaming data. Maximum chunked document size is configurable (default 10 MB).
+- **Document chunking query limitations**: Only fields present in the root chunk (the first chunk, containing document metadata and leading fields) are queryable. Applications requiring full-text search across oversized documents should use dedicated search indexes outside the SDK. The root chunk size is the same as the uniform limit (390 KiB), so documents must have queryable fields that fit within this size.
 - **Document chunking and change feed interaction**: Chunked documents appear as multiple items in the change feed (one event per chunk). The SDK does not currently reassemble change feed events for chunked documents into logical document change events. Applications consuming change feed on chunked collections should be aware of per-chunk events.
 - **Composite partition key scope**: The SDK supports composite partition keys of 2–5 components. Keys with more than 5 components are rejected at configuration time. This aligns with Cosmos DB's hierarchical partition key limit (3 levels) and provides headroom for Spanner (which supports larger composite keys natively).
 - **Composite key encoding**: Composite key support is additive to the existing key API: applications continue to create keys with `MulticloudDbKey.of(...)`, and when multiple partition-key components are needed they supply a composite partition-key value object such as `CompositePartitionKey.of("tenantId", "acme", "entityType", "order")` as the partition-key argument. For providers requiring a single partition key value (DynamoDB), composite components are encoded using a reversible URL-encoding scheme with a pipe (`|`) separator between encoded components. This ensures deterministic encoding/decoding and supports arbitrary character values in components. Example: `MulticloudDbKey.of(CompositePartitionKey.of("tenantId", "acme", "entityType", "order"), sortKey)` → partition key value `acme|order` (or `acme%7Cbar|order` if a component contains the separator).
@@ -1163,7 +1340,11 @@ The following operators and functions form the portable query subset, available 
 - **Provider target set — opt-in to reduced set**: Customers who intentionally target a subset (e.g., only Cosmos DB and DynamoDB) must explicitly declare this via static configuration. This opt-in acknowledges that certain features may not be portable to the excluded provider.
 - **Provider target set — compile-time enforcement**: Compile-time validation is the primary enforcement mechanism for application developers. CI-time enforcement (the 2-of-3 gate) applies to SDK releases, not to application builds.
 - **Provider target set — existing features**: The 2-of-3 portability gate applies to new features going forward. Existing features that were released before this policy was enacted are grandfathered and not subject to retroactive enforcement unless they undergo significant modification.
-- **Provider target set — provider-specific extensions**: Features explicitly declared as provider-specific extensions (e.g., Cosmos DB stored procedures or direct use of DAX-specific APIs beyond the portable cache contract) are exempt from target-set validation. The portable read-through-cache abstraction may use DAX internally and remains subject to `READ_THROUGH_CACHE` capability validation.
+- **Provider target set — provider-specific behavior**: Documented
+  provider-specific configuration may be exempt from target-set validation
+  because it is outside the portable contract. This does not create a
+  native-client or provider-extension API. Portable abstractions that use a
+  provider service internally remain subject to their capability validation.
 - **Request cost metrics — availability**: Cost metrics are best-effort. Not all providers expose cost information for all operation types (e.g., Spanner may not expose per-operation cost for administrative operations). The SDK documents which operations expose cost metrics per provider.
 - **Request cost metrics — DynamoDB ReturnConsumedCapacity**: To receive cost metrics from DynamoDB, the SDK automatically adds `ReturnConsumedCapacity=TOTAL` to requests when cost metrics are enabled. This adds negligible overhead but applications should be aware it is included in the request.
 - **Local quorum consistency — portable minimum**: `LOCAL_QUORUM` means latest committed in the serving region at read start. Cosmos DB `LATEST_COMMITTED` and DynamoDB strong reads satisfy that minimum; Spanner strong reads exceed it with global external consistency. Session and bounded-staleness reads are weaker and cannot be substituted.
@@ -1233,10 +1414,10 @@ This checklist is used to accept the feature as “done” at the spec level.
 
 ### Document TTL and Write Metadata
 
-- [ ] A document created with a TTL value is automatically removed after the specified duration on providers that support row-level TTL.
-- [ ] Reading a document with TTL returns the approximate remaining TTL in the document metadata.
-- [ ] Reading a document returns the write timestamp in the document metadata on providers that support it.
-- [ ] Setting TTL on a provider that does not support row-level TTL raises a clear, capability-gated error.
+- [ ] A document written with TTL becomes eligible for expiration after the requested duration and is removed within the provider's documented enforcement window when row-level TTL is supported.
+- [ ] With `includeMetadata=true`, DynamoDB returns `ttlExpiry` when present; Cosmos DB returns `lastModified` and `version`; Spanner returns an empty nullable envelope.
+- [ ] A provider advertising `WRITE_TIMESTAMP` populates `lastModified` when metadata is requested.
+- [ ] Setting TTL on a provider that does not support row-level TTL stores the document without expiry, and `ROW_LEVEL_TTL` lets callers gate expiry-dependent writes.
 - [ ] Documents without TTL set do not expire and return absent/no-expiration TTL metadata.
 - [ ] Document metadata retrieval is opt-in and does not affect applications that do not request it.
 
@@ -1244,7 +1425,16 @@ This checklist is used to accept the feature as “done” at the spec level.
 
 - [ ] A document within the SDK's uniform size limit is accepted and persisted on every supported provider.
 - [ ] A document exceeding the SDK's uniform size limit is rejected with a clear, consistent error on every provider, even if the provider's native limit is larger.
-- [ ] The SDK's uniform document size limit and quota limits are exposed programmatically for application pre-validation.
+- [ ] Complete create/upsert documents reject top-level `id`, `partitionKey`,
+  `sortKey`, `ttl`, `ttlExpiry`, and `data` case-insensitively, plus every
+  underscore-prefixed top-level name, before provider I/O.
+- [ ] Shared preflight enforces both 399,360-byte write bounds, the 50,000-byte
+  nested/partial-update field-name limit, 128-character complete-document
+  top-level-name limit, 31-container nesting limit, and 10-field partial-update
+  limit without exposing compile-time Java constants.
+- [ ] Every built-in effective capability set contains 18 rows; Cosmos DB and
+  DynamoDB explicitly declare 18, while Spanner declares 17 and receives only
+  the core `PARTIAL_UPDATE` unsupported API default.
 - [ ] When a provider-specific quota limit is reached, the SDK surfaces a provider-neutral error with clear categorization and actionable guidance.
 - [ ] Quota-related errors are consistent in format across all providers.
 
@@ -1281,11 +1471,18 @@ This checklist is used to accept the feature as “done” at the spec level.
 
 ### Resource Provisioning
 
-- [ ] `ensureDatabase` creates a database/namespace if it does not exist, or succeeds silently if it already exists, on all supported providers.
+- [ ] `ensureDatabase` creates a database/namespace if it does not exist, or
+  succeeds silently if it already exists, when the requested name is valid for
+  the selected client; Spanner requires its configured `databaseId`.
 - [ ] `ensureContainer` creates a collection/container/table with the SDK's standard schema if it does not exist, or succeeds silently if it already exists, on all supported providers.
-- [ ] Provisioning requires no provider-specific code in the application; the same calls work for Cosmos DB, DynamoDB, and Spanner.
+- [ ] Provisioning requires no provider SDK calls in the application; the same
+  methods work for Cosmos DB, DynamoDB, and Spanner when the schema respects
+  each client's addressing constraints (one configured database for Spanner).
 - [ ] Providers where a concept does not apply (e.g., DynamoDB has no explicit database) handle the call as a no-op without error.
-- [ ] `provisionSchema` bulk-provisions multiple databases and containers in parallel via a single call, equivalent to individual `ensureDatabase`/`ensureContainer` calls.
+- [ ] `provisionSchema` bulk-provisions provider-compatible database/container
+  entries in parallel via a single call, equivalent to individual
+  `ensureDatabase`/`ensureContainer` calls; Spanner accepts only its configured
+  database entry.
 
 ### Cloud Authentication
 
@@ -1308,16 +1505,19 @@ This checklist is used to accept the feature as “done” at the spec level.
 - [ ] Transitive CVE dependencies (`jackson-core`, `logback-core`, `netty-codec-http`) are pinned to patched versions in both `<dependencies>` and `<dependencyManagement>` of each provider pom. Confirmed safe via `mvn dependency:tree`.
 - [ ] A `.mend/mend.yml` suppression config documents false-positive CVE findings from the IDE Mend.io scanner, with justification for each suppression.
 - [ ] Properties template files (`*.properties.template`) are provided for each sample scenario, enabling users to copy and fill in credentials locally. Actual properties files containing credentials are gitignored and never committed.
-- [ ] Cleanup scripts (`cleanup-cosmos.sh`, `cleanup-cosmos.ps1`, `cleanup-dynamo.sh`, `cleanup-dynamo.ps1`) exist under `multiclouddb-samples/scripts/` and successfully remove all provider resources created by sample runs.
+- [~] **SUPERSEDED / NOT SHIPPED**: Cleanup scripts
+  (`cleanup-cosmos.sh`, `cleanup-cosmos.ps1`, `cleanup-dynamo.sh`,
+  `cleanup-dynamo.ps1`) under `multiclouddb-samples/scripts/` are not shipped;
+  the repository has no such module or acceptance surface.
 - [ ] Every Java source file (main and test) in all modules carries the standard Microsoft copyright header as the first two lines: `// Copyright (c) Microsoft Corporation. All rights reserved.` followed by `// Licensed under the MIT License.`
 - [ ] A `LICENSE` file exists at the repository root containing the full MIT license text with `Copyright (c) Microsoft Corporation. All rights reserved.`
 
 ### Transparent Large Object (BLOB) Offloading
 
-- [ ] A binary payload exceeding 400 KB is transparently offloaded to external object storage and a reference is stored in the database document, without application code awareness.
+- [ ] A binary payload exceeding 390 KiB is transparently offloaded to external object storage and a reference is stored in the database document, without application code awareness.
 - [ ] Reading a document with an offloaded large object transparently retrieves the payload from external storage and returns the fully materialized document.
 - [ ] Deleting a document with an offloaded large object also removes (or schedules removal of) the external storage object.
-- [ ] Payloads at or below 400 KB on opted-in fields are stored inline without offloading overhead.
+- [ ] Payloads at or below 390 KiB on opted-in fields are stored inline without offloading overhead.
 - [ ] External storage backend configuration (Azure Blob / S3 / GCS) works across all providers by changing configuration only.
 - [ ] Large object offloading is capability-gated and raises a clear error when external storage is unavailable or misconfigured.
 - [ ] Orphaned objects resulting from partial failures are detectable and cleanable via a maintenance mechanism.
@@ -1325,10 +1525,10 @@ This checklist is used to accept the feature as “done” at the spec level.
 
 ### Transparent Document Chunking
 
-- [ ] A structured document exceeding 400 KB is transparently split into multiple linked chunks stored in the same collection, without application awareness.
+- [ ] A structured document exceeding 390 KiB is transparently split into multiple linked chunks stored in the same collection, without application awareness.
 - [ ] Reading a chunked document transparently reassembles all chunks and returns the complete document.
 - [ ] Deleting a chunked document removes all associated chunks (atomically where provider supports transactional batch).
-- [ ] Documents within 400 KB are stored as single items without chunking overhead when chunking is enabled.
+- [ ] Documents within 390 KiB are stored as single items without chunking overhead when chunking is enabled.
 - [ ] Only root chunk fields are queryable; queries return correctly reassembled documents.
 - [ ] Chunk writes use compression to minimize chunk count and storage overhead.
 - [ ] Document chunking is capability-gated and raises a clear error on providers lacking required batch semantics.
@@ -1373,7 +1573,9 @@ This checklist is used to accept the feature as “done” at the spec level.
 - [ ] The compile-time error message identifies the unsupported feature and the provider(s) lacking support.
 - [ ] Declaring a target set of [Cosmos DB, DynamoDB] allows use of features supported on those 2 providers without error.
 - [ ] Using a feature not supported on a provider in the declared target set produces a compile-time error.
-- [ ] Features marked as provider-specific extensions are only accessible via the escape hatch, regardless of target set.
+- [ ] Provider-specific behavior outside the portable contract is enabled only
+  through explicit SDK configuration; no native-client or provider-extension
+  API exists, regardless of target set.
 - [ ] A machine-readable capability manifest maps features to provider support status.
 - [ ] A CI gate validates that every portable feature has conformance test coverage for at least 2 of 3 providers (release gate).
 - [ ] Regressions in provider conformance tests block release until resolved.

@@ -49,10 +49,4 @@ class CosmosSortKeyOrderingTest extends SortKeyOrderingConformanceTest {
     protected ResourceAddress getAddress() {
         return new ResourceAddress(DATABASE, CONTAINER);
     }
-
-    @Override
-    protected String sortKeyFieldName() {
-        // Cosmos DB stores the sort key as the document "id" field
-        return "id";
-    }
 }

@@ -12,6 +12,76 @@ Select a provider and supply its connection and auth properties.
 | `multiclouddb.provider` | Provider ID | `cosmos`, `dynamo`, `spanner` |
 | `multiclouddb.feature.*` | Feature flags | Provider-specific opt-ins |
 
+## Partial Update and Operation Options
+
+Partial update has no provider-specific configuration switch. Cosmos DB and
+DynamoDB declare `Capability.PARTIAL_UPDATE`, and `update()` uses shallow
+top-level set/replace semantics for those providers. The Spanner
+provider omits this capability, so API normalization supplies the unsupported default
+and the shared client rejects a valid update before provider I/O.
+
+`OperationOptions.ttlSeconds()` applies only to `create()` and `upsert()`, and
+is honored only when the selected provider advertises
+`Capability.ROW_LEVEL_TTL`. Cosmos DB and DynamoDB advertise that capability.
+Unsupported providers, including the current Spanner provider, ignore the value
+and store the document without expiry. Callers that require expiry must check
+`ROW_LEVEL_TTL` before writing.
+
+Supplying any non-null `ttlSeconds` to `update()` returns non-retryable
+`INVALID_REQUEST` before provider I/O on every provider.
+
+The portable 10-field limit, 31-level replacement-value nesting limit, and
+390 KiB serialized/structural input limits are not configurable or exposed as
+compile-time Java constants. Runtime discovery and customer configuration are
+tracked in [#116](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/116).
+
+Native result-item ceilings are also not configurable:
+
+| Provider | Partial-update envelope | Observed TTL behavior (outside portable contract) |
+|----------|-------------------------|--------------------------------------------------|
+| Cosmos DB | One direct patch for up to 10 fields; resulting document subject to the Cosmos DB native ceiling after the attempted update | Not preserved: `patchItem` advances `_ts` and restarts the TTL countdown |
+| DynamoDB | One `UpdateItem` for up to 10 fields; resulting item subject to the DynamoDB native ceiling after the attempted update | Preserved: `UpdateItem` leaves `ttlExpiry` unchanged |
+| Spanner | Omits `PARTIAL_UPDATE`; the API supplies the unsupported default | Not reached |
+
+Shared write preflight rejects binary values, cyclic graphs, non-collection
+iterables, and over-limit field names. Partial-update and nested names are capped
+at 50,000 UTF-8 bytes. Complete-document top-level names are capped at 128
+Unicode characters and must be unique ignoring case. The 31-level count starts
+at level 1 when a supplied top-level value is itself a map or list. Structural
+footprint includes UTF-8 field names and native map/list overhead. Shared
+violations return non-retryable `INVALID_REQUEST` before the capability gate or
+provider I/O, and providers receive the detached bounded snapshot rather than
+caller-owned nested values.
+
+Cosmos and Dynamo report `Capability.PARTIAL_UPDATE=true`. Case-distinct
+non-reserved field names are part of the core partial-update contract: `foo` and `Foo` remain
+separate even in one atomic request. Update fields matching `id`, `partitionKey`,
+`sortKey`, `ttl`, `ttlExpiry`, or `data` case-insensitively, and names beginning
+with `_`, fail before I/O. Complete create/upsert documents apply the same
+top-level provider-owned-name rule. Provider-native limits are reported through
+structured error reasons and limit values. When a provider omits
+`PARTIAL_UPDATE`, the API supplies an unsupported default; a valid Spanner
+update is rejected by the shared core gate before any Spanner I/O.
+
+Portable partial-update behavior is guaranteed only when both the resulting
+logical document's serialized JSON and portable structural footprint are at or
+below 390 KiB. A state-dependent result above either bound is outside this
+release's portable contract and may succeed or fail under native provider
+limits. No read/merge preflight is performed; a native result-size rejection is
+non-retryable `UNSUPPORTED_CAPABILITY`, reason-coded, and follows at most one
+write attempt.
+
+TTL timing is outside this release's portable partial-update contract.
+DynamoDB `UpdateItem` happens to leave `ttlExpiry` unchanged, while Cosmos DB
+`patchItem` advances `_ts` and restarts relative TTL. Until this behavior is
+normalized, callers requiring a fixed absolute expiry must not call `update()`
+on TTL-bearing items.
+
+`CapabilitySet` supplies an unsupported default only for an omitted
+`PARTIAL_UPDATE` declaration. Every built-in provider exposes 18 effective rows:
+Cosmos DB and DynamoDB explicitly declare 18, while Spanner declares 17 plus
+that one default. Unrelated omitted names remain absent.
+
 ---
 
 ## Azure Cosmos DB
@@ -92,7 +162,7 @@ instance. Writes are unaffected — Cosmos DB write durability is independent of
 
 > **Note:** Any non-aggregate query without an explicit `ORDER BY` has
 > `ORDER BY c.id ASC` appended automatically, including single-partition queries
-> (see [Compatibility — Result-set ordering](compatibility.md#result-set-ordering)).
+> (see [Compatibility — Default Sort-Key Ordering](compatibility.md#default-sort-key-ordering)).
 > Aggregate and `GROUP BY` queries are excluded from this default ordering behavior.
 > Selecting EVENTUAL consistency reduces per-item read cost but does not eliminate
 > the sort-merge RU overhead introduced by this default ordering.
@@ -251,8 +321,7 @@ The SDK can provision databases and containers/tables automatically:
 ```java
 // Define your schema: database name → list of collection/table names
 Map<String, List<String>> schema = Map.of(
-    "admin-db",    List.of("tenants"),
-    "acme-risk-db", List.of("portfolios", "positions", "risk_metrics")
+    "app-db", List.of("tenants", "portfolios", "positions", "risk_metrics")
 );
 
 // Single call - SDK handles parallel creation internally
@@ -261,9 +330,14 @@ client.provisionSchema(schema);
 
 | Provider | Database Phase | Container/Table Phase |
 |----------|---------------|----------------------|
-| **Cosmos DB** | Creates databases in parallel | Creates containers in parallel |
+| **Cosmos DB** | Uses data-plane database creation; the caller needs creation permission | Creates containers in parallel via the data-plane SDK |
 | **DynamoDB** | No-op (no native database concept) | Creates tables in parallel, waits for ACTIVE |
-| **Spanner** | No-op (database set at client construction) | Creates tables in parallel |
+| **Spanner** | Creates the configured database; emulator mode also creates the configured instance if absent, while production requires the instance to pre-exist | Creates tables in parallel |
+
+For cross-provider provisioning, the schema map must use the Spanner client's
+configured `databaseId` as its single database entry. Cosmos DB and DynamoDB
+can represent multiple logical database entries; one Spanner client cannot
+provision databases other than its configured database.
 
 See the [Developer Guide](guide.md#provisioning-resources-with-provisionschema)
 for the full provisioning reference.

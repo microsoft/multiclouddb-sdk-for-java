@@ -4,6 +4,7 @@
 package com.multiclouddb.provider.cosmos;
 
 import com.azure.cosmos.ConsistencyLevel;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -168,6 +169,24 @@ class CosmosConstantsTest {
         assertEquals("partitionKey", CosmosConstants.FIELD_PARTITION_KEY);
     }
 
+    @Test
+    @DisplayName("portable result copies omit every Cosmos-owned field")
+    void portableResultOmitsCosmosOwnedFields() {
+        ObjectNode raw = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+        raw.put(CosmosConstants.FIELD_ID, "item");
+        raw.put(CosmosConstants.FIELD_PARTITION_KEY, "partition");
+        raw.put(CosmosConstants.FIELD_TTL, 60);
+        raw.put(CosmosConstants.SYS_TIMESTAMP, 1_700_000_000L);
+        raw.put(CosmosConstants.SYS_ETAG, "etag");
+        raw.put("title", "portable");
+
+        ObjectNode portable = CosmosProviderClient.toPortableDocument(raw);
+
+        assertEquals("portable", portable.get("title").asText());
+        CosmosConstants.SYSTEM_FIELDS.forEach(
+                field -> assertFalse(portable.has(field), field + " must be stripped"));
+        assertTrue(raw.has(CosmosConstants.FIELD_TTL), "the SDK response must not be mutated");
+    }
     @Test
     @DisplayName("PARTITION_KEY_PATH is /partitionKey")
     void partitionKeyPath() {

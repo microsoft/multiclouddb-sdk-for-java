@@ -13,8 +13,6 @@ import com.google.cloud.spanner.Type;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.HashSet;
 
 /**
  * Maps Spanner {@link ResultSet} rows to Jackson {@link JsonNode} documents.
@@ -60,12 +58,13 @@ public final class SpannerRowMapper {
         // Single pre-scan: locate the data column (once) and parse its metadata.
         int dataColumnIndex = -1;
         for (int i = 0; i < columnCount; i++) {
-            if (SpannerConstants.FIELD_DATA.equals(type.getStructFields().get(i).getName())) {
+            if (SpannerConstants.FIELD_DATA.equalsIgnoreCase(
+                    type.getStructFields().get(i).getName())) {
                 dataColumnIndex = i;
                 break;
             }
         }
-        Set<String> writtenFields = parseFieldMetadata(rs, dataColumnIndex);
+        List<String> writtenFields = parseFieldMetadata(rs, dataColumnIndex);
 
         for (int i = 0; i < columnCount; i++) {
             if (i == dataColumnIndex) continue; // internal metadata column
@@ -73,6 +72,7 @@ public final class SpannerRowMapper {
             String colName = type.getStructFields().get(i).getName();
             Type colType = type.getStructFields().get(i).getType();
 
+            String outputName = resolveOutputFieldName(writtenFields, colName);
             if (rs.isNull(i)) {
                 // Surface null columns when either:
                 //   - we have FIELD_DATA metadata and the column is listed in it
@@ -81,17 +81,18 @@ public final class SpannerRowMapper {
                 //     rows): keep the historical "no metadata => no filtering"
                 //     behaviour and emit every null column so existing callers don't
                 //     silently lose null fields on the upgrade.
-                if (writtenFields == null || writtenFields.contains(colName)) {
-                    node.putNull(colName);
+                if (outputName != null) {
+                    node.putNull(outputName);
                 }
                 continue;
             }
 
-            // For non-null values, include if no metadata or if field is in metadata.
-            if (writtenFields != null
-                    && !writtenFields.contains(colName)
-                    && !SpannerConstants.FIELD_PARTITION_KEY.equals(colName)
-                    && !SpannerConstants.FIELD_SORT_KEY.equals(colName)) {
+            // Primary-key columns are provider identity and are retained by this raw
+            // mapper for compatibility; the portable client removes them centrally.
+            if (outputName == null && isPrimaryKeyColumn(colName)) {
+                outputName = colName;
+            }
+            if (outputName == null) {
                 continue;
             }
 
@@ -106,34 +107,34 @@ public final class SpannerRowMapper {
                     if (s != null && s.startsWith(SpannerConstants.JSON_VALUE_MARKER)) {
                         String payload = s.substring(SpannerConstants.JSON_VALUE_MARKER.length());
                         try {
-                            node.set(colName, MAPPER.readTree(payload));
+                            node.set(outputName, MAPPER.readTree(payload));
                         } catch (Exception e) {
                             // Marker present but payload corrupted — return raw string for diagnosis.
-                            node.put(colName, s);
+                            node.put(outputName, s);
                         }
                     } else if (s != null && s.length() >= 2
                             && s.charAt(0) == '\u0001'
                             && s.charAt(1) == '\u0001') {
                         // Escape pair: user string that itself starts with U+0001.
-                        node.put(colName, s.substring(1));
+                        node.put(outputName, s.substring(1));
                     } else {
-                        node.put(colName, s);
+                        node.put(outputName, s);
                     }
                 }
-                case INT64 -> node.put(colName, rs.getLong(i));
-                case FLOAT64 -> node.put(colName, rs.getDouble(i));
-                case BOOL -> node.put(colName, rs.getBoolean(i));
-                case BYTES -> node.put(colName, rs.getBytes(i).toBase64());
-                case TIMESTAMP -> node.put(colName, rs.getTimestamp(i).toString());
-                case DATE -> node.put(colName, rs.getDate(i).toString());
+                case INT64 -> node.put(outputName, rs.getLong(i));
+                case FLOAT64 -> node.put(outputName, rs.getDouble(i));
+                case BOOL -> node.put(outputName, rs.getBoolean(i));
+                case BYTES -> node.put(outputName, rs.getBytes(i).toBase64());
+                case TIMESTAMP -> node.put(outputName, rs.getTimestamp(i).toString());
+                case DATE -> node.put(outputName, rs.getDate(i).toString());
                 case JSON -> {
                     try {
-                        node.set(colName, MAPPER.readTree(rs.getJson(i)));
+                        node.set(outputName, MAPPER.readTree(rs.getJson(i)));
                     } catch (Exception e) {
-                        node.put(colName, rs.getJson(i));
+                        node.put(outputName, rs.getJson(i));
                     }
                 }
-                default -> node.put(colName, rs.getString(i));
+                default -> node.put(outputName, rs.getString(i));
             }
         }
 
@@ -173,18 +174,40 @@ public final class SpannerRowMapper {
      * @param rs              the result set positioned on a row
      * @param dataColumnIndex the column index of the {@code data} column, or
      *                        {@code -1} if the table has no data column
-     * @return set of field names that were explicitly written, or {@code null}
+     * @return field names that were explicitly written, or {@code null}
      *         if no metadata is available (legacy row or data column absent)
      */
-    private static Set<String> parseFieldMetadata(ResultSet rs, int dataColumnIndex) {
+    private static List<String> parseFieldMetadata(ResultSet rs, int dataColumnIndex) {
         if (dataColumnIndex < 0 || rs.isNull(dataColumnIndex)) return null;
         String dataValue = rs.getString(dataColumnIndex);
         if (dataValue == null || !dataValue.startsWith("[")) return null;
         try {
-            List<String> fields = MAPPER.readValue(dataValue, STRING_LIST_TYPE);
-            return new HashSet<>(fields);
+            return MAPPER.readValue(dataValue, STRING_LIST_TYPE);
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private static boolean isPrimaryKeyColumn(String columnName) {
+        return SpannerConstants.FIELD_PARTITION_KEY.equalsIgnoreCase(columnName)
+                || SpannerConstants.FIELD_SORT_KEY.equalsIgnoreCase(columnName);
+    }
+
+    private static String resolveOutputFieldName(
+            List<String> writtenFields, String columnName) {
+        if (writtenFields == null) {
+            return columnName;
+        }
+        for (String field : writtenFields) {
+            if (field != null && field.equals(columnName)) {
+                return field;
+            }
+        }
+        for (String field : writtenFields) {
+            if (field != null && field.equalsIgnoreCase(columnName)) {
+                return field;
+            }
+        }
+        return null;
     }
 }

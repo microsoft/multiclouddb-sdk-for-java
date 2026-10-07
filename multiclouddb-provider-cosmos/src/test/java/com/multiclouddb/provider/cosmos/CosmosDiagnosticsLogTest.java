@@ -382,4 +382,3 @@ class CosmosDiagnosticsLogTest {
                 "Query WARN threshold must be lower than query ERROR threshold");
     }
 }
-

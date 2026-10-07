@@ -93,10 +93,12 @@ MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
 // Create client via ServiceLoader discovery
 try (MulticloudDbClient client = MulticloudDbClientFactory.create(config)) {
 
-// CRUD - same code for every provider
+// Portable point operations - same code for every provider
 Map<String, Object> doc = Map.of(
         "title", "Buy groceries",
-        "completed", false
+        "completed", false,
+        "status", "active",
+        "category", "shopping"
 );
 
 ResourceAddress todos = new ResourceAddress("mydb", "todos");
@@ -105,7 +107,6 @@ MulticloudDbKey key = MulticloudDbKey.of("todo-1", "todo-1");
 client.upsert(todos, key, doc);                  // Create or replace
 DocumentResult result = client.read(todos, key); // Point read
 JsonNode document = result.document();           // The document payload
-client.delete(todos, key);                       // Delete
 }
 ```
 
@@ -113,18 +114,25 @@ client.delete(todos, key);                       // Delete
 
 ## 4. Query with Portable Expressions
 
-Write a WHERE-clause filter once - the SDK translates it for each provider:
+Write a WHERE-clause filter once - the SDK translates it for each provider.
+The snippet assumes a class-level SLF4J logger such as
+`private static final Logger LOG = LoggerFactory.getLogger(YourApplication.class)`:
 
 ```java
-QueryRequest query = QueryRequest.builder()
-        .expression("status = @status AND category = @cat")
-        .parameters(Map.of("status", "active", "cat", "shopping"))
-        .maxPageSize(25)
-        .build();
+try (MulticloudDbClient client = MulticloudDbClientFactory.create(config)) {
+    ResourceAddress todos = new ResourceAddress("mydb", "todos");
+    MulticloudDbKey key = MulticloudDbKey.of("todo-1", "todo-1");
+    QueryRequest query = QueryRequest.builder()
+            .expression("status = @status AND category = @cat")
+            .parameters(Map.of("status", "active", "cat", "shopping"))
+            .maxPageSize(25)
+            .build();
 
-QueryPage page = client.query(todos, query);
-for (Map<String, Object> item : page.items()) {
-    System.out.println(item);
+    QueryPage page = client.query(todos, query);
+    for (Map<String, Object> item : page.items()) {
+        LOG.info("Query item: {}", item);
+    }
+    client.delete(todos, key); // Cleanup after the query
 }
 ```
 

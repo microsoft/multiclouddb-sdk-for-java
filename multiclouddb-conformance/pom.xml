@@ -48,6 +48,11 @@
             <artifactId>junit-jupiter</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
             <scope>test</scope>
@@ -70,6 +75,7 @@
                     <systemPropertyVariables>
                         <cosmos.endpoint>https://127.0.0.1:8081</cosmos.endpoint>
                         <cosmos.key>C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==</cosmos.key>
+                        <net.bytebuddy.experimental>true</net.bytebuddy.experimental>
                     </systemPropertyVariables>
                     <forkedProcessExitTimeoutInSeconds>30</forkedProcessExitTimeoutInSeconds>
                 </configuration>

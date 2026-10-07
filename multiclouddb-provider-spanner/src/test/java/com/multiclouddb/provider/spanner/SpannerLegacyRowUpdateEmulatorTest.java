@@ -11,20 +11,20 @@ import com.google.cloud.spanner.InstanceAdminClient;
 import com.google.cloud.spanner.InstanceConfigId;
 import com.google.cloud.spanner.InstanceId;
 import com.google.cloud.spanner.InstanceInfo;
+import com.google.cloud.spanner.KeySet;
 import com.google.cloud.spanner.Mutation;
 import com.google.cloud.spanner.Spanner;
 import com.google.cloud.spanner.SpannerException;
 import com.google.cloud.spanner.SpannerOptions;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.multiclouddb.api.DocumentResult;
-import com.multiclouddb.api.MulticloudDbClient;
 import com.multiclouddb.api.MulticloudDbClientConfig;
-import com.multiclouddb.api.MulticloudDbClientFactory;
 import com.multiclouddb.api.MulticloudDbKey;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.ResourceAddress;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -42,7 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Round-4 regression: a row that pre-dates this SDK's {@code FIELD_DATA}
  * metadata column (or whose {@code FIELD_DATA} is {@code NULL} for any other
  * reason — e.g. inserted by a sibling system writing directly to Spanner) must
- * not lose its pre-existing columns when the SDK performs a partial
+ * not lose its pre-existing columns when the provider performs a partial
  * {@code update()}.
  *
  * <p>The earlier behaviour stamped {@code FIELD_DATA} with only the keys
@@ -57,13 +57,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * in the "no metadata => no filtering" reader-fallback regime — so the legacy
  * columns remain visible.
  *
- * <p>This test runs only under the {@code -Pemulator-spanner} CI profile
+ * <p>This is intentionally a provider-direct regression: the current portable
+ * client rejects Spanner {@code update()} through its capability gate, while this
+ * test preserves coverage for the existing provider implementation.
+ * It runs only under the {@code -Pemulator-spanner} CI profile
  * because it needs a real Spanner instance (the {@code readWriteTransaction}
  * + raw-DML inserts cannot be exercised against the in-process unit harness).
  * It is tagged with both {@code spanner} and {@code emulator} so {@code -Punit}
  * (which excludes those tags) skips it.
  */
-@DisplayName("Spanner — Legacy-row update() preserves pre-existing columns (round-4 regression)")
+@DisplayName("Spanner - Provider-direct legacy-row update preserves columns")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @Tag("spanner")
 @Tag("emulator")
@@ -75,7 +78,7 @@ class SpannerLegacyRowUpdateEmulatorTest {
     private static final String DATABASE_ID = "legacyupdatetestdb";
     private static final String TABLE = "legacyupdatetests";
 
-    private MulticloudDbClient client;
+    private SpannerProviderClient client;
     private Spanner rawSpanner;
     private DatabaseClient rawDbClient;
     private final ResourceAddress address = new ResourceAddress(DATABASE_ID, TABLE);
@@ -115,13 +118,18 @@ class SpannerLegacyRowUpdateEmulatorTest {
 
         rawDbClient = rawSpanner.getDatabaseClient(DatabaseId.of(PROJECT_ID, INSTANCE_ID, DATABASE_ID));
 
-        client = MulticloudDbClientFactory.create(MulticloudDbClientConfig.builder()
+        client = new SpannerProviderClient(MulticloudDbClientConfig.builder()
                 .provider(ProviderId.SPANNER)
                 .connection("projectId", PROJECT_ID)
                 .connection("instanceId", INSTANCE_ID)
                 .connection("databaseId", DATABASE_ID)
                 .connection("emulatorHost", EMULATOR_HOST)
                 .build());
+    }
+
+    @BeforeEach
+    void clearTestRows() {
+        rawDbClient.write(List.of(Mutation.delete(TABLE, KeySet.all())));
     }
 
     @AfterAll
@@ -158,14 +166,14 @@ class SpannerLegacyRowUpdateEmulatorTest {
                 .set("status").to("active")
                 .set("priority").to(5L));
 
-        // 2) Run a partial SDK update() that names only the email field.
+        // 2) Run a provider-direct partial update that names only the email field.
         client.update(address, MulticloudDbKey.of(pk, sk), Map.of("email", "ada@new"), null);
 
-        // 3) Read back via the SDK. The untouched columns (name, status,
+        // 3) Read back through the provider. The untouched columns (name, status,
         //    priority) MUST still be visible. With the round-4 bug, only
         //    `email` would survive because the FIELD_DATA stamp would have
         //    narrowed the visible set to just that one key. With the fix in
-        //    place, the SDK leaves FIELD_DATA NULL on legacy rows and the
+        //    place, the provider leaves FIELD_DATA NULL on legacy rows and the
         //    reader's "no metadata => project every column" fallback returns
         //    all columns.
         DocumentResult result = client.read(address, MulticloudDbKey.of(pk, sk), null);
@@ -222,7 +230,7 @@ class SpannerLegacyRowUpdateEmulatorTest {
     }
 
     @Test
-    @DisplayName("SDK-written row (FIELD_DATA stamped): partial update() merges field set without dropping prior keys")
+    @DisplayName("provider-written row: partial update merges the field set")
     void sdkWrittenRowMergesFieldSet() {
         String pk = "u3";
         String sk = "u3";

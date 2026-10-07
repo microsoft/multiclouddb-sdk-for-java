@@ -3,6 +3,7 @@
 
 package com.multiclouddb.api.internal;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.multiclouddb.api.Capability;
 import com.multiclouddb.api.CapabilitySet;
 import com.multiclouddb.api.DocumentResult;
@@ -39,9 +40,14 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.AbstractMap;
+import java.util.AbstractSet;
+import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletionException;
 
 /**
@@ -86,8 +92,9 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
         checkOpen(OperationNames.CREATE);
         Instant start = Instant.now();
         try {
-            DocumentSizeValidator.validate(document, OperationNames.CREATE);
-            providerClient.create(address, key, document, options);
+            Map<String, Object> validatedDocument = DocumentSizeValidator
+                    .validateAndSnapshotDocument(document, OperationNames.CREATE);
+            providerClient.create(address, key, validatedDocument, options);
             LOG.debug("create completed: address={}, key={}, duration={}ms",
                     address, key, Duration.between(start, Instant.now()).toMillis());
         } catch (MulticloudDbException e) {
@@ -103,9 +110,10 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
         Instant start = Instant.now();
         try {
             DocumentResult result = providerClient.read(address, key, options);
+            DocumentResult portableResult = normalizeReadResult(result);
             LOG.debug("read completed: address={}, key={}, found={}, duration={}ms",
-                    address, key, result != null, Duration.between(start, Instant.now()).toMillis());
-            return result;
+                    address, key, portableResult != null, Duration.between(start, Instant.now()).toMillis());
+            return portableResult;
         } catch (MulticloudDbException e) {
             throw enrichException(e, "read", start);
         } catch (Exception e) {
@@ -114,12 +122,29 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
     }
 
     @Override
-    public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> fields, OperationOptions options) {
         checkOpen(OperationNames.UPDATE);
         Instant start = Instant.now();
         try {
-            DocumentSizeValidator.validate(document, OperationNames.UPDATE);
-            providerClient.update(address, key, document, options);
+            // Portable partial-update preflight, shared by all providers, runs in a fixed
+            // order and performs zero provider I/O on failure:
+            //   1) field-map / 10-field bound / name-size / reserved / underscore
+            //      validation and rejection of a non-null update TTL (PartialUpdateValidator),
+            //   2) the portable value-shape, 390 KiB serialized-size, and structural-envelope checks, then
+            //   3) the internal core PARTIAL_UPDATE capability gate.
+            PartialUpdateValidator.validate(fields, options, OperationNames.UPDATE);
+            Map<String, Object> validatedFields = DocumentSizeValidator
+                    .validateAndSnapshotPartialUpdate(fields, OperationNames.UPDATE);
+            PartialUpdateValidator.validate(
+                    validatedFields, options, OperationNames.UPDATE);
+            // Core release gate: Cosmos DB and DynamoDB advertise partial_update;
+            // Providers that omit the new capability default to unsupported, so older
+            // Spanner provider versions fail here locally and non-retryably with
+            // operation=update and providerDetails.capability=partial_update.
+            // Supported calls delegate exactly once.
+            checkCapability(Capability.PARTIAL_UPDATE, OperationNames.UPDATE,
+                    "Partial update (partial_update) is not supported by provider " + config.provider().id());
+            providerClient.update(address, key, validatedFields, options);
             LOG.debug("update completed: address={}, key={}, duration={}ms",
                     address, key, Duration.between(start, Instant.now()).toMillis());
         } catch (MulticloudDbException e) {
@@ -134,8 +159,9 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
         checkOpen(OperationNames.UPSERT);
         Instant start = Instant.now();
         try {
-            DocumentSizeValidator.validate(document, OperationNames.UPSERT);
-            providerClient.upsert(address, key, document, options);
+            Map<String, Object> validatedDocument = DocumentSizeValidator
+                    .validateAndSnapshotDocument(document, OperationNames.UPSERT);
+            providerClient.upsert(address, key, validatedDocument, options);
             LOG.debug("upsert completed: address={}, key={}, duration={}ms",
                     address, key, Duration.between(start, Instant.now()).toMillis());
         } catch (MulticloudDbException e) {
@@ -197,6 +223,7 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
                 page = providerClient.query(address, query, options);
             }
 
+            page = normalizeQueryPage(page);
             LOG.debug("query completed: address={}, items={}, hasMore={}, duration={}ms",
                     address, page.items().size(), page.continuationToken() != null,
                     Duration.between(start, Instant.now()).toMillis());
@@ -215,6 +242,90 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
             throw enrichException(e, "query", start);
         } catch (Exception e) {
             throw wrapUnexpected(e, "query", start);
+        }
+    }
+
+    private static DocumentResult normalizeReadResult(DocumentResult result) {
+        if (result == null) {
+            return null;
+        }
+
+        ObjectNode document = result.document().objectNode();
+        result.document().fields().forEachRemaining(entry -> {
+            if (isPortableResultField(entry.getKey())) {
+                document.set(entry.getKey(), entry.getValue());
+            }
+        });
+        return new DocumentResult(document, result.metadata());
+    }
+
+    private static QueryPage normalizeQueryPage(QueryPage page) {
+        List<Map<String, Object>> sourceItems = page.items();
+        List<Map<String, Object>> portableItems = null;
+        for (int index = 0; index < sourceItems.size(); index++) {
+            Map<String, Object> item = sourceItems.get(index);
+            int visibleFieldCount = portableFieldCount(item);
+            boolean requiresFiltering = visibleFieldCount != item.size();
+
+            if (portableItems == null && requiresFiltering) {
+                portableItems = new ArrayList<>(sourceItems.size());
+                portableItems.addAll(sourceItems.subList(0, index));
+            }
+            if (portableItems != null) {
+                portableItems.add(requiresFiltering
+                        ? new PortableItemMapView(item, visibleFieldCount)
+                        : item);
+            }
+        }
+
+        if (portableItems == null) {
+            return page;
+        }
+        return new QueryPage(
+                portableItems, page.continuationToken(), page.diagnostics());
+    }
+
+    private static int portableFieldCount(Map<String, Object> item) {
+        int count = 0;
+        for (String name : item.keySet()) {
+            if (isPortableResultField(name)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static boolean isPortableResultField(String name) {
+        return name == null || !PartialUpdateValidator.isReservedProviderField(name);
+    }
+
+    /** Transient filtering view consumed immediately by {@link QueryPage}'s copy. */
+    private static final class PortableItemMapView extends AbstractMap<String, Object> {
+        private final Map<String, Object> item;
+        private final int size;
+        private final Set<Entry<String, Object>> entries;
+
+        private PortableItemMapView(Map<String, Object> item, int size) {
+            this.item = item;
+            this.size = size;
+            this.entries = new AbstractSet<>() {
+                @Override
+                public Iterator<Entry<String, Object>> iterator() {
+                    return PortableItemMapView.this.item.entrySet().stream()
+                            .filter(entry -> isPortableResultField(entry.getKey()))
+                            .iterator();
+                }
+
+                @Override
+                public int size() {
+                    return PortableItemMapView.this.size;
+                }
+            };
+        }
+
+        @Override
+        public Set<Entry<String, Object>> entrySet() {
+            return entries;
         }
     }
 

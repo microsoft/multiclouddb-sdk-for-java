@@ -1,31 +1,109 @@
 # Portable API Surface
 
-The Multicloud DB SDK's portable API surface covers capabilities that work
-identically across all three providers. The features listed below require no
-runtime capability checks - they are guaranteed to work on Azure Cosmos DB,
-Amazon DynamoDB, and Google Cloud Spanner. Some providers offer additional
-capabilities (e.g., `CROSS_PARTITION_QUERY`, `ORDER_BY`, `LIKE`); use
-`client.capabilities()` to discover what the current provider supports.
+The Multicloud DB SDK exposes provider-neutral operations and capability-gated
+features. Use `client.capabilities()` before optional operations; unsupported
+calls fail locally with `UNSUPPORTED_CAPABILITY`.
 
 ---
 
-## What Works Everywhere
+## Portable Common Contract
 
-Every capability listed below is fully supported on **all** providers. There are
-no asterisks, no provider-specific caveats, and no runtime checks required.
+Create, read, upsert, delete, and query form the common every-provider contract.
+Shallow partial `update()` is a separate, capability-gated operation; it is not
+part of that common contract.
 
-### CRUD Operations
+### Point Operations
 
 | Operation | Description |
 |-----------|-------------|
 | **Create** | Insert a new document (fails if the key already exists) |
 | **Read** | Point-read by partition key + sort key |
-| **Update** | Replace an existing document (fails if not found) |
-| **Upsert** | Create or replace - always succeeds |
+| **Upsert** | Create or fully replace; creates the item when it is missing |
 | **Delete** | Remove by key (idempotent — silent on missing; use `read()` to detect a missing key, since `read()` returns `null` on every provider) |
 
-### Query - Portable Expression DSL
+Portable query and paging behavior is described in
+[Query - Portable Expression DSL](#query---portable-expression-dsl).
 
+### Capability-Gated Partial Update
+
+Callers must check `Capability.PARTIAL_UPDATE` before using `update()`. Cosmos DB
+and DynamoDB advertise it in this release; the current Spanner provider does
+not, and a valid Spanner call is rejected by the shared client before provider
+I/O. For advertising providers, `update()` never creates a missing item. It
+replaces supplied top-level values atomically, preserves omitted fields, and
+treats map/list values as complete top-level replacements. Non-null update TTL
+and maps above 10 fields are rejected before provider I/O with `INVALID_REQUEST`.
+The same shared preflight limits every replacement value to 31 nested map/list
+containers (top-level replacement container = level 1), rejects binary values, cyclic graphs, and non-collection iterables,
+caps every field name at 50,000 UTF-8 bytes, and independently caps both
+serialized input and its native-style structural footprint at 390 KiB.
+The 50,000-byte UTF-8 limit is intentionally no larger than the AWS SDK's
+50,000-character DynamoDB response-parser limit; measuring bytes is the stricter
+portable rule for multibyte names and guarantees the parser's character ceiling
+is not exceeded. Violations use stable reason and actual/maximum limit details
+with `provider=null`.
+
+Non-reserved update names are literal and case-sensitive. `foo` and `Foo` remain
+separate fields even when both occur in one atomic update. Names matching `id`,
+`partitionKey`, `sortKey`, `ttl`, `ttlExpiry`, or `data`
+case-insensitively, and names beginning with `_`, fail shared preflight before
+provider I/O.
+
+Each built-in provider exposes 18 effective capability rows: Cosmos DB and
+DynamoDB explicitly declare all 18, while Spanner declares 17 and
+`CapabilitySet` supplies the unsupported default only for the omitted core
+`PARTIAL_UPDATE` capability. Unrelated omitted capability names remain absent.
+
+| Provider | `PARTIAL_UPDATE` | Native mechanism / request count | Portable contract and native boundary |
+|----------|:----------------:|----------------------------------|---------------------------------------|
+| Cosmos DB | ✅ | One `patchItem` for up to 10 fields | Portable only when serialized JSON and structural footprint are each <= 390 KiB; larger state-dependent results are outside the contract and remain subject to the 2 MiB native item limit |
+| DynamoDB | ✅ | One conditional aliased `UpdateItem SET` for up to 10 fields | Portable only when serialized JSON and structural footprint are each <= 390 KiB; larger state-dependent results are outside the contract and remain subject to the 400 KiB native item limit |
+| Spanner | ❌ (API default) | No provider call; rejected by the shared capability gate | Zero Spanner I/O |
+
+The base capability covers results whose serialized JSON and portable structural
+footprint are each at or below 390 KiB. Complete create/upsert documents share the
+same structural, nesting, name, and binary-value preflight. Their top-level names
+must be unique ignoring case and contain at most 128 Unicode characters; nested
+names retain the 50,000-byte UTF-8 limit. Shared preflight also rejects a null
+complete document, top-level names matching `id`, `partitionKey`, `sortKey`,
+`ttl`, `ttlExpiry`, or `data` case-insensitively, and top-level names beginning
+with `_`. Values must be serializable with the SDK-owned Jackson configuration;
+caller-registered modules are not consulted. One bounded serialization creates
+the detached normalized provider input, including POJO values. Binary values
+hidden inside POJOs are rejected. The shared layer keeps all six serialized,
+structural, name, nesting, and partial-update limits internal rather than
+exposing compile-time Java constants.
+The structural preflight covers only incoming replacements; it does not read and
+merge existing state. A result above either 390 KiB bound is outside this
+release's portable contract and may succeed or fail under native provider
+limits. Native size rejections remain non-retryable
+`UNSUPPORTED_CAPABILITY`, use the structured errors below, and follow at most
+one attempted atomic write.
+
+TTL timing is outside this release's portable partial-update contract.
+DynamoDB `UpdateItem` happens to leave `ttlExpiry` unchanged, while Cosmos DB
+`patchItem` advances `_ts` and restarts relative TTL. Until this behavior is
+normalized, callers requiring a fixed absolute expiry must not call `update()`
+on TTL-bearing items.
+
+Follow-up normalization is tracked in [#113](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/113) for absolute TTL expiry and [#114](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/114) for state-dependent resulting size.
+
+A valid Spanner `update()` call returns non-retryable `UNSUPPORTED_CAPABILITY`
+with `capability=partial_update`. Shared invalid-request validation still runs
+first and remains provider-neutral.
+
+For full replacement, use `upsert()` with the complete document. It creates a
+missing item; read-then-upsert is not an atomic update-only replacement and can
+recreate an item deleted or expired between the calls. This release has no exact
+portable atomic full-document replace-if-present equivalent.
+
+Read and query results omit adapter-injected storage fields. Cosmos strips
+`id`, `partitionKey`, `ttl`, and its underscore-prefixed system metadata;
+DynamoDB strips `partitionKey`, `sortKey`, and `ttlExpiry`; Spanner strips
+`partitionKey`, `sortKey`, and its internal `data` metadata column. Read metadata
+remains available through `DocumentMetadata` when requested.
+
+### Query - Portable Expression DSL
 Write a WHERE-clause filter once. The SDK translates it to the native query
 language of whichever provider is configured - Cosmos SQL, DynamoDB PartiQL,
 or Spanner GoogleSQL.
@@ -61,7 +139,7 @@ QueryPage page = client.query(address, query);
 
 | Feature | Description |
 |---------|-------------|
-| **Schema provisioning** | `provisionSchema()` creates databases, containers, and tables portably |
+| **Schema provisioning** | `provisionSchema()` creates provider-compatible standard-schema databases, containers, and tables |
 | **Transactions** | Multi-document transactional operations |
 | **Batch operations** | Batch read/write for throughput efficiency |
 | **Strong consistency** | Strongly-consistent reads |
@@ -84,23 +162,37 @@ The raw HTTP or gRPC status code is also available via `error.statusCode()`.
 
 | Category  | Cosmos DB  | DynamoDB  | Spanner  |
 |-----------|------------|-----------|----------|
-| `INVALID_REQUEST`  | HTTP 400  | ValidationException, HTTP 400  | INVALID_ARGUMENT, FAILED_PRECONDITION  |
+| `INVALID_REQUEST`  | HTTP 400  | ValidationException, HTTP 400, except the update result-item-size variant below  | INVALID_ARGUMENT, FAILED_PRECONDITION  |
 | `AUTHENTICATION_FAILED`  | HTTP 401  | UnrecognizedClientException, HTTP 401/403  | UNAUTHENTICATED  |
 | `AUTHORIZATION_FAILED`  | HTTP 403  | AccessDeniedException  | PERMISSION_DENIED  |
-| `NOT_FOUND`  | HTTP 404  | ResourceNotFoundException, HTTP 404  | NOT_FOUND  |
+| `NOT_FOUND`  | HTTP 404  | ResourceNotFoundException, HTTP 404, or `ConditionalCheckFailedException` from the `update()` existence guard  | NOT_FOUND  |
 | `CONFLICT` (409 - duplicate key)  | HTTP 409  | `ConditionalCheckFailedException` from `create()` - `attribute_not_exists` guard fails when the item already exists  | ALREADY_EXISTS  |
-| `CONFLICT` (412 - precondition)  | HTTP 412  | `ConditionalCheckFailedException` from `update()`/`upsert()` with a condition expression¹  | ABORTED  |
+| `CONFLICT` (412 - precondition)  | HTTP 412  | Other conditional-write precondition failures¹  | ABORTED  |
 | `THROTTLED`  | HTTP 429  | ProvisionedThroughputExceededException, ThrottlingException  | RESOURCE_EXHAUSTED  |
-| `TRANSIENT_FAILURE`  | HTTP 449, 500, 502, 503  | HTTP 500–5xx  | UNAVAILABLE  |
+| `TRANSIENT_FAILURE` | `update()` HTTP 408/410 (substatus retained), plus HTTP 449/500/502/503 | `update()` `RequestTimeout`/`RequestTimeoutException` and SDK API-call or attempt timeout, plus HTTP 500–5xx | UNAVAILABLE |
 | `PERMANENT_FAILURE`  | -  | ItemCollectionSizeLimitExceededException  | -  |
-| `UNSUPPORTED_CAPABILITY`  | HTTP 400 with AVAD-not-enabled fingerprint (`providerDetails.reason="avad_not_enabled"`)  | `InvalidArgumentException` / `ResourceNotFoundException` for streams not enabled (`reason="stream_not_enabled"`)  | UNIMPLEMENTED, plus change-stream-not-provisioned (`reason="stream_not_enabled"`)  |
+| `UNSUPPORTED_CAPABILITY`  | HTTP 400 with AVAD-not-enabled fingerprint (`providerDetails.reason="avad_not_enabled"`); update HTTP 413 (`reason="cosmos_result_item_size_limit"`, native ceiling in `maximumResultBytes`)  | `InvalidArgumentException` / `ResourceNotFoundException` for streams not enabled (`reason="stream_not_enabled"`); update result-item-size `ValidationException` (`reason="dynamodb_result_item_size_limit"`, native ceiling in `maximumResultBytes`)  | UNIMPLEMENTED, change-stream-not-provisioned (`reason="stream_not_enabled"`), valid `update()` calls are rejected by the shared pre-I/O capability gate with non-retryable `UNSUPPORTED_CAPABILITY` (`providerDetails.capability="partial_update"`) and no provider-specific `reason`  |
 | `CURSOR_EXPIRED` (change-feed) | HTTP 410 GONE (`reason="PROVIDER_TRIMMED"`)  | `TrimmedDataAccessException` (`reason="PROVIDER_TRIMMED"`), `ExpiredIteratorException` (`reason="ITERATOR_EXPIRED"`)  | `INVALID_ARGUMENT` / `OUT_OF_RANGE` / `NOT_FOUND` for partition outside retention (`reason="PROVIDER_TRIMMED"`)  |
 | `PROVIDER_ERROR`  | Other  | Other  | INTERNAL, Other  |
 
-> ¹ DynamoDB uses `ConditionalCheckFailedException` for both the 409 (duplicate-key on `create`) and 412
-> (precondition failure on conditional `update`/`upsert`) cases - both currently map to `CONFLICT`.
-> The portable API does not yet expose ETag-based conditional updates; when it does, the 412-equivalent
-> path will be split into a dedicated `PRECONDITION_FAILED` category (tracked in issue #29).
+> ¹ DynamoDB uses `ConditionalCheckFailedException` for several condition
+> failures. The SDK maps the specific `update()` existence guard to `NOT_FOUND`;
+> duplicate `create()` remains `CONFLICT`. The portable API does not yet expose
+> ETag-based conditional updates.
+
+Cosmos DB's result-item-size capability error follows one attempted
+`patchItem`. DynamoDB's follows one attempted `UpdateItem`; expression
+overflow remains a local zero-I/O rejection. No read/merge preflight is
+performed. Cosmos HTTP 413 from other operations retains the general provider
+mapping, and other Dynamo `ValidationException` messages remain
+`INVALID_REQUEST`.
+
+Change-feed HTTP 410 remains `CURSOR_EXPIRED`; the transient Cosmos 410 mapping
+above is restricted to `update()`. Supported Cosmos and DynamoDB partial updates
+normalize native timeout equivalents to retryable `TRANSIENT_FAILURE`. Retryability
+covers replay of logical field assignments, not provider-maintained metadata or TTL
+timing; another Cosmos patch advances `_ts`. Partial update has no
+transactional-batch execution path.
 
 ## Change-Feed History Retention
 

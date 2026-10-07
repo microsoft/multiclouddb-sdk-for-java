@@ -8,19 +8,25 @@ import java.time.Duration;
 /**
  * Portable operation options: timeout, TTL, and metadata controls.
  * <p>
- * All options are hints and may be honoured on a best-effort basis by provider
- * adapters. Use {@link #builder()} for the full set of options; the static
- * factory methods {@link #defaults()} and {@link #withTimeout(Duration)} are
- * backward-compatible shortcuts.
+ * Semantics are operation-specific. A create/upsert TTL is best-effort and requires
+ * {@link Capability#ROW_LEVEL_TTL}; providers without it store the document without
+ * expiry. Partial update rejects any non-null TTL before provider I/O. Metadata inclusion
+ * and timeout handling follow the contract of the operation on which they are supplied.
+ * Use {@link #builder()} for the full set of options; {@link #defaults()} and
+ * {@link #withTimeout(Duration)} are backward-compatible shortcuts.
  */
 public final class OperationOptions {
 
     private static final OperationOptions DEFAULTS = new OperationOptions(null, null, false);
 
     private final Duration timeout;
-    /** TTL in seconds for create/upsert operations; {@code null} means no TTL (FR-054). */
+    /** TTL in seconds for create/upsert operations only; {@code null} means no TTL (FR-056/FR-057). {@code update()} rejects a non-null value with INVALID_REQUEST. */
     private final Integer ttlSeconds;
-    /** When {@code true}, providers that support {@link Capability#WRITE_TIMESTAMP} return {@link DocumentMetadata} (FR-058). */
+    /**
+     * When {@code true}, reads request a {@link DocumentMetadata} envelope whose
+     * fields are independently nullable (FR-058). {@link Capability#WRITE_TIMESTAMP}
+     * describes only whether {@code lastModified} may be populated.
+     */
     private final boolean includeMetadata;
 
     private OperationOptions(Duration timeout, Integer ttlSeconds, boolean includeMetadata) {
@@ -52,17 +58,24 @@ public final class OperationOptions {
     }
 
     /**
-     * Document TTL in seconds for create/upsert operations, or {@code null} if no TTL.
-     * Providers that do not support {@link Capability#ROW_LEVEL_TTL} will ignore this field.
+     * Document TTL in seconds for {@code create()}/{@code upsert()} only, or {@code null} if
+     * no TTL. TTL is <strong>not</strong> part of partial update: {@code update()} rejects a
+     * non-null {@code ttlSeconds} with {@link MulticloudDbErrorCategory#INVALID_REQUEST}
+     * before provider I/O. To set or reset TTL, pass it to a complete {@code create()} or
+     * {@code upsert()} document. Providers that do not support {@link Capability#ROW_LEVEL_TTL}
+     * ignore this field.
      */
     public Integer ttlSeconds() {
         return ttlSeconds;
     }
 
     /**
-     * When {@code true}, the provider will attempt to populate {@link DocumentResult#metadata()}
-     * on read responses. Providers that do not support {@link Capability#WRITE_TIMESTAMP} will
-     * return {@code null} metadata regardless.
+     * When {@code false}, {@link DocumentResult#metadata()} is {@code null}. When
+     * {@code true}, reads request a metadata envelope and callers inspect
+     * {@link DocumentMetadata#lastModified()}, {@link DocumentMetadata#ttlExpiry()}, and
+     * {@link DocumentMetadata#version()} independently because any field may be {@code null}.
+     * {@link Capability#WRITE_TIMESTAMP} indicates only whether {@code lastModified} may be
+     * populated; it does not gate the envelope or the other metadata fields.
      */
     public boolean includeMetadata() {
         return includeMetadata;
@@ -88,7 +101,8 @@ public final class OperationOptions {
         }
 
         /**
-         * Sets a document TTL for create/upsert operations.
+         * Sets a document TTL for {@code create()}/{@code upsert()} operations only.
+         * A non-null TTL is rejected by {@code update()} in shared preflight.
          *
          * @param ttlSeconds time-to-live in seconds (must be >= 1)
          * @return this builder
@@ -102,9 +116,10 @@ public final class OperationOptions {
         }
 
         /**
-         * Requests write-metadata (last modified timestamp, TTL expiry, version) on read.
-         * Providers that do not support {@link Capability#WRITE_TIMESTAMP} return {@code null}
-         * metadata regardless.
+         * Requests a metadata envelope on reads. When requested, each of last-modified
+         * timestamp, TTL expiry, and version may independently be {@code null}.
+         * {@link Capability#WRITE_TIMESTAMP} describes only last-modified availability and
+         * does not gate the envelope.
          *
          * @param includeMetadata whether to request metadata
          * @return this builder
@@ -119,4 +134,3 @@ public final class OperationOptions {
         }
     }
 }
-

@@ -12,11 +12,11 @@ import java.time.Instant;
  * Fields that the provider cannot supply are returned as {@code null}.
  *
  * <ul>
- *   <li>{@code lastModified} — commit/update timestamp set by the provider (FR-059).</li>
+ *   <li>{@code lastModified} — commit/update timestamp set by the provider (FR-058).</li>
  *   <li>{@code ttlExpiry} — the absolute time at which the document will be deleted,
- *       or {@code null} if no TTL is set (FR-055).</li>
+ *       or {@code null} if no TTL is set (FR-058).</li>
  *   <li>{@code version} — provider-native ETag/version string, or {@code null}
- *       if not available (FR-060).</li>
+ *       if not available (FR-058).</li>
  * </ul>
  */
 public final class DocumentMetadata {

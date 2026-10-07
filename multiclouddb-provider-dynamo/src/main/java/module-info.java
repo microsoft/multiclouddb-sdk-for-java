@@ -11,9 +11,11 @@ module com.multiclouddb.provider.dynamo {
     requires software.amazon.awssdk.services.dynamodb;
     requires software.amazon.awssdk.core;
     requires software.amazon.awssdk.auth;
+    requires software.amazon.awssdk.identity.spi;
     requires software.amazon.awssdk.regions;
     requires software.amazon.awssdk.awscore;
     requires software.amazon.awssdk.http;
+    requires software.amazon.awssdk.utils;
     requires com.fasterxml.jackson.databind;
     requires org.slf4j;
 

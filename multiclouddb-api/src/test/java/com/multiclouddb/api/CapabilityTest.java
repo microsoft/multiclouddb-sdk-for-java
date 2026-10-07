@@ -6,9 +6,47 @@ package com.multiclouddb.api;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class CapabilityTest {
+
+    @Test
+    @DisplayName("Missing partial-update capability defaults to unsupported")
+    void missingPartialUpdateDefaultsToUnsupported() {
+        CapabilitySet legacyProviderCapabilities = new CapabilitySet(
+                List.of(Capability.TRANSACTIONS_CAP));
+
+        Capability partialUpdate = legacyProviderCapabilities.get(Capability.PARTIAL_UPDATE);
+        assertNotNull(partialUpdate);
+        assertFalse(partialUpdate.supported());
+        assertFalse(legacyProviderCapabilities.isSupported(Capability.PARTIAL_UPDATE));
+        assertTrue(partialUpdate.notes().contains("backward compatibility"));
+    }
+
+    @Test
+    @DisplayName("Normalization adds only the core partial-update default")
+    void normalizationDoesNotSynthesizeUnrelatedKnownCapabilities() {
+        CapabilitySet legacyProviderCapabilities = new CapabilitySet(
+                List.of(Capability.TRANSACTIONS_CAP));
+
+        assertEquals(2, legacyProviderCapabilities.all().size());
+        assertNull(legacyProviderCapabilities.get(Capability.CROSS_PARTITION_QUERY),
+                "An omitted known capability without an API default must remain absent");
+        assertFalse(legacyProviderCapabilities.isSupported(Capability.CROSS_PARTITION_QUERY));
+    }
+
+    @Test
+    @DisplayName("Explicit partial-update support overrides the API default")
+    void explicitPartialUpdateSupportOverridesDefault() {
+        CapabilitySet capabilities = new CapabilitySet(
+                List.of(Capability.PARTIAL_UPDATE_CAP));
+
+        assertTrue(capabilities.isSupported(Capability.PARTIAL_UPDATE));
+        assertSame(Capability.PARTIAL_UPDATE_CAP,
+                capabilities.get(Capability.PARTIAL_UPDATE));
+    }
 
     @Test
     @DisplayName("Well-known supported singletons are the same instance via of() and the constant")
@@ -82,16 +120,18 @@ class CapabilityTest {
     }
 
     @Test
-    @DisplayName("All 13 well-known singletons appear in registeredValues()")
+    @DisplayName("Partial-update singletons appear in registeredValues()")
     void registeredValuesContainsWellKnownSingletons() {
         var registered = Capability.registeredValues();
         assertTrue(registered.contains(Capability.TRANSACTIONS_CAP));
         assertTrue(registered.contains(Capability.TRANSACTIONS_UNSUPPORTED));
         assertTrue(registered.contains(Capability.CROSS_PARTITION_QUERY_CAP));
         assertTrue(registered.contains(Capability.CROSS_PARTITION_QUERY_UNSUPPORTED));
-        // 13 well-known names × 2 (supported + unsupported) = at least 26
-        assertTrue(registered.size() >= 26,
-                "expected at least 26 entries (13 × 2), got " + registered.size());
+        assertTrue(registered.contains(Capability.PARTIAL_UPDATE_CAP));
+        assertTrue(registered.contains(Capability.PARTIAL_UPDATE_UNSUPPORTED));
+        // 15 pre-built names x supported/unsupported.
+        assertTrue(registered.size() >= 30,
+                "expected at least 30 entries (15 x 2), got " + registered.size());
     }
 
     @Test
@@ -103,4 +143,3 @@ class CapabilityTest {
         assertTrue(s.contains("detail"));
     }
 }
-

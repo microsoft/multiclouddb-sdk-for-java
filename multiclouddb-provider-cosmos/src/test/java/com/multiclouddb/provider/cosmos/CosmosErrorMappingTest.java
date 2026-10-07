@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -27,8 +28,11 @@ class CosmosErrorMappingTest {
             "401, AUTHENTICATION_FAILED",
             "403, AUTHORIZATION_FAILED",
             "404, NOT_FOUND",
+            "408, PROVIDER_ERROR",
             "409, CONFLICT",
+            "410, PROVIDER_ERROR",
             "412, CONFLICT",
+            "413, PROVIDER_ERROR",
             "429, THROTTLED",
             "449, TRANSIENT_FAILURE",
             "500, TRANSIENT_FAILURE",
@@ -55,7 +59,10 @@ class CosmosErrorMappingTest {
             "400, false",
             "401, false",
             "404, false",
+            "408, false",
             "409, false",
+            "410, false",
+            "413, false",
             "429, true",
             "449, true",
             "500, true",
@@ -68,6 +75,21 @@ class CosmosErrorMappingTest {
         MulticloudDbException result = CosmosErrorMapper.map(cosmosEx, OperationNames.READ);
 
         assertEquals(expectedRetryable, result.error().retryable());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {408, 410})
+    @DisplayName("Update routing timeout failures are retryable transient failures")
+    void updateRoutingFailuresAreTransient(int statusCode) {
+        CosmosException cosmosEx = mockCosmosException(statusCode, 1002);
+
+        MulticloudDbException result =
+                CosmosErrorMapper.map(cosmosEx, OperationNames.UPDATE);
+
+        assertEquals(MulticloudDbErrorCategory.TRANSIENT_FAILURE,
+                result.error().category());
+        assertTrue(result.error().retryable());
+        assertEquals("1002", result.error().providerDetails().get("subStatusCode"));
     }
 
     @ParameterizedTest(name = "HTTP {0} subStatus {1} -> subStatusCode in providerDetails")
@@ -118,6 +140,25 @@ class CosmosErrorMappingTest {
         CosmosException cosmosEx = mockCosmosException(500, 0);
         MulticloudDbException result = CosmosErrorMapper.map(cosmosEx, OperationNames.CREATE);
 
+        assertSame(cosmosEx, result.getCause());
+    }
+
+    @Test
+    @DisplayName("Update HTTP 413 is a structured native-limit error")
+    void updateEntityTooLargeIsUnsupportedCapability() {
+        CosmosException cosmosEx = mockCosmosException(413, 0);
+
+        MulticloudDbException result =
+                CosmosErrorMapper.map(cosmosEx, OperationNames.UPDATE);
+
+        assertEquals(MulticloudDbErrorCategory.UNSUPPORTED_CAPABILITY,
+                result.error().category());
+        assertFalse(result.error().retryable());
+        assertFalse(result.error().providerDetails().containsKey("capability"));
+        assertEquals("cosmos_result_item_size_limit",
+                result.error().providerDetails().get("reason"));
+        assertEquals("2097152",
+                result.error().providerDetails().get("maximumResultBytes"));
         assertSame(cosmosEx, result.getCause());
     }
 

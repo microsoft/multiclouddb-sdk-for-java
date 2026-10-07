@@ -27,12 +27,11 @@ public final class QueryPage {
 
     public QueryPage(List<Map<String, Object>> items, String continuationToken,
                      OperationDiagnostics diagnostics) {
-        // Defensive deep copy using a null-tolerant copy at both levels:
-        // Map.copyOf() and List.copyOf() reject null entries, but schemaless
-        // stores (Cosmos / Dynamo) and the Spanner provider round-trip
-        // explicit null field values. Use LinkedHashMap (preserves iteration
-        // order and tolerates null values) wrapped in unmodifiableMap, then
-        // collect to an unmodifiableList.
+        // Defensive copy at the list and top-level map layers. Nested values
+        // remain shared by reference. Map.copyOf() and List.copyOf() reject null
+        // entries, but schemaless stores round-trip explicit null field values.
+        // Preserve iteration order and nulls with LinkedHashMap, then wrap both
+        // collection layers as unmodifiable.
         this.items = items != null
                 ? items.stream()
                         .map(m -> Collections.unmodifiableMap(new java.util.LinkedHashMap<>(m)))
@@ -48,8 +47,10 @@ public final class QueryPage {
      * Items in this page, each represented as an <em>unmodifiable</em> map of
      * field name to value.
      * <p>
-     * Both the list and every document map are unmodifiable; mutations throw
-     * {@link UnsupportedOperationException}.
+     * The default client removes adapter-injected identity, TTL, and system-metadata
+     * fields from each document after provider mapping. Both the list and every
+     * top-level map are unmodifiable; mutations throw
+     * {@link UnsupportedOperationException}. Nested values remain shared by reference.
      */
     public List<Map<String, Object>> items() {
         return items;

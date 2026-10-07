@@ -5,8 +5,11 @@ maintained in a **separate repository**:
 
 :material-github: **[microsoft/multiclouddb-sdk-for-java-samples](https://github.com/microsoft/multiclouddb-sdk-for-java-samples)**
 
-Each sample runs against **Azure Cosmos DB**, **Amazon DynamoDB**, or
-**Google Cloud Spanner** — switch providers by changing a single properties file.
+Each sample can target **Azure Cosmos DB**, **Amazon DynamoDB**, or
+**Google Cloud Spanner** by changing a properties file. The portable base
+operations remain configuration-switchable. Sample code that calls partial
+`update()` must first check `Capability.PARTIAL_UPDATE`: Cosmos DB and DynamoDB
+support it, while the current Spanner provider rejects it before provider I/O.
 
 ---
 
@@ -16,10 +19,11 @@ Each sample runs against **Azure Cosmos DB**, **Amazon DynamoDB**, or
 
 <div class="card" markdown>
 
-### :material-code-tags:{ .card-icon } Portable CRUD + Query
+### :material-code-tags:{ .card-icon } Portable Point Operations + Query
 
-A minimal end-to-end sample showing CRUD operations and the portable query DSL
-against any provider.
+A minimal end-to-end sample showing create/read/upsert/delete and the portable
+query DSL against any provider, with partial update exercised only when the
+selected provider advertises it.
 
 [View guide →](https://github.com/microsoft/multiclouddb-sdk-for-java-samples#portable-crud--query-sample){ .md-button }
 
@@ -29,8 +33,9 @@ against any provider.
 
 ### :material-checkbox-marked-outline:{ .card-icon } TODO App
 
-A simple CRUD web application with a browser-based UI for creating, reading,
-updating, and deleting TODO items.
+A web application with a browser-based UI for creating, reading, and deleting
+TODO items. Completion updates are enabled only when the selected provider
+advertises `PARTIAL_UPDATE`.
 
 **Port:** `8080`
 
@@ -72,15 +77,19 @@ Then see the individual guides above for per-sample instructions.
 
 ## What the Samples Demonstrate
 
-| Feature | Portable CRUD + Query | TODO App | Risk Platform |
+| Feature | Portable Point Operations + Query | TODO App | Risk Platform |
 |---------|:---------------------:|:--------:|:-------------:|
-| Basic CRUD operations | ✅ | ✅ | ✅ |
+| Base create/read/upsert/delete operations | ✅ | ✅ | ✅ |
+| Capability check before partial update | ✅ | ✅ | — |
 | Portable query DSL | ✅ | ✅ | ✅ |
 | Partition-scoped queries | — | — | ✅ |
 | Database-per-tenant isolation | — | — | ✅ |
 | Auto-provisioning (`provisionSchema`) | — | — | ✅ |
-| Provider portability (zero code changes) | ✅ | ✅ | ✅ |
+| Base-provider switching (configuration only) | ✅ | ✅ | ✅ |
 | Embedded HTTP server + browser UI | — | ✅ | ✅ |
 | Cosmos DB support | ✅ | ✅ | ✅ |
 | DynamoDB support | ✅ | ✅ | ✅ |
 | Spanner support | ✅ | ✅ | — |
+
+Spanner support in these samples covers the portable base. The current Spanner
+provider does not advertise `PARTIAL_UPDATE`; callers skip or disable that path.

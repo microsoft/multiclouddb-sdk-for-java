@@ -157,7 +157,7 @@ public final class CosmosConstants {
     /** All system-property field names that must be stripped before returning a portable document. */
     public static final Set<String> SYSTEM_FIELDS = Set.of(
             SYS_TIMESTAMP, SYS_ETAG, SYS_RID, SYS_SELF, SYS_ATTACHMENTS,
-            FIELD_ID, FIELD_PARTITION_KEY);
+            FIELD_ID, FIELD_PARTITION_KEY, FIELD_TTL);
 
     // ── Error / validation messages ───────────────────────────────────────────
 

@@ -33,10 +33,13 @@ This document resolves key design choices for the Multicloud DB SDK and records 
 
   Neither is acceptable at this stage. The sync contract is sufficient for all currently demonstrated use cases and the conformance test suite.
 
-- **How async is handled today:** `nativeClient(Class<T>)` gives direct access to the provider's own async client — `CosmosAsyncClient`, `DynamoDbAsyncClient`, `Spanner` — without any wrapping overhead. This breaks portability by definition but gives full fidelity to the provider's native async model.
+- **How async is handled today:** The SDK exposes no native-client or portable
+  async API. Applications that require asynchronous composition wrap the
+  synchronous portable calls in their own executor or async framework.
 
 - **When to revisit:** Add a portable async surface when:
-  1. A concrete customer use case cannot be satisfied by the sync API + `nativeClient()` escape hatch, **and**
+  1. A concrete customer use case cannot be satisfied by wrapping the
+     synchronous API in an application-managed executor, **and**
   2. The sync API design is stable enough that async methods can mirror it 1:1 without rework.
   The natural choice at that point is `CompletableFuture<T>` (standard Java, no extra deps) with each adapter wrapping its own model.
 
@@ -45,7 +48,8 @@ This document resolves key design choices for the Multicloud DB SDK and records 
   - Dual sync+async from day one: doubles the public surface and test burden while the sync contract is still evolving.
 
 ## Decision 4: Portable data representation
-- Decision: Portable document payload is JSON-like: objects, arrays, strings, numbers, booleans, null.
+- Decision: Portable document payload is JSON-like: objects, arrays, strings,
+  numbers, booleans, and null.
 - Rationale: Maps well to Cosmos documents, DynamoDB items (with conversion), and Spanner rows (with mapping).
 - Alternatives considered:
   - Strongly typed models: harder to keep language-neutral across future FFI.
@@ -76,7 +80,7 @@ This document resolves key design choices for the Multicloud DB SDK and records 
 - **Rationale:** Prevents "it worked on Cosmos" surprises. Discoverable capabilities let callers make informed decisions (check before use, not fail at runtime). Exposing only the common denominator keeps the contract credible and testable.
 - **Alternatives considered:**
   - Best-effort behavior with docs only: too easy to miss and too risky.
-  - Feature flags + portability warnings from day 0: adds surface area to the public API, SPI, and all three provider adapters for zero demonstrated customer value. Re-evaluate if real evidence of need emerges.
+  - A dedicated portability-warning API from day 0: rejected because it adds public API and adapter surface for zero demonstrated customer value. Re-evaluate if real evidence of need emerges.
 
 ## Decision 8: Configuration-only portability
 - Decision: Provider selection and environment differences are configuration-only for the portable contract. Provider-specific opt-ins SHOULD be config-driven when possible.
@@ -128,7 +132,10 @@ This document resolves key design choices for the Multicloud DB SDK and records 
 
 ## Decision 14: Native expression mode
 - Decision: `QueryRequest` gains a separate `nativeExpression` field (mutually exclusive with `expression`). When `nativeExpression` is set, the expression is passed through to the provider without translation.
-- Rationale: Developers need an escape hatch for provider-specific query features (`LIKE` on Cosmos, regex on Spanner, DynamoDB-specific PartiQL). A separate field prevents accidental cross-provider execution and makes the non-portable intent explicit in code.
+- Rationale: Developers need an explicit request field for provider-specific
+  query syntax (`LIKE` on Cosmos, regex on Spanner, DynamoDB-specific PartiQL).
+  A separate field prevents accidental cross-provider execution and makes the
+  non-portable intent explicit without exposing a native client or extension API.
 - Alternatives considered:
   - A flag on the existing `expression` field (e.g., `isNative=true`): less explicit, easy to forget, and mixes portable and native expressions in the same field.
   - A separate `nativeQuery()` method on `MulticloudDbClient`: changes the client interface. Keeping it in `QueryRequest` preserves the existing client API shape.
@@ -230,7 +237,7 @@ This appendix is **non-normative**. It records Java SDK behaviors that impact th
 
 **Normalization implication**: the portable contract should:
 - expose throttling retry controls as a portable knob (max retry wait/attempts), and
-- require explicit opt-in for “retry non-idempotent writes” (and emit portability warnings when enabled).
+- require explicit opt-in for “retry non-idempotent writes,” capability introspection, and structured unsupported-capability errors.
 
 #### DynamoDB (AWS SDK v2)
 
@@ -313,7 +320,8 @@ This appendix is **non-normative**. It records Java SDK behaviors that impact th
 - **Decision**: Add `Integer ttlSeconds` field to `OperationOptions`.
   - **Cosmos DB**: Set `_ttl` field on the document JSON node before writing (Cosmos evaluates `_ttl` as seconds from document creation).
   - **DynamoDB**: Add a `ttlExpiry` attribute set to `Instant.now().plus(ttlSeconds).getEpochSecond()` (epoch seconds). Attribute name defined in `DynamoConstants`.
-  - **Spanner**: No native row-level TTL. Capability check at request time → `UNSUPPORTED_CAPABILITY` error.
+  - **Spanner**: No native row-level TTL. `ROW_LEVEL_TTL` is unsupported; create/upsert
+    ignores `ttlSeconds`, so callers requiring expiry check the capability first.
 - **Rationale**: `OperationOptions` is the established per-request options carrier. TTL is a per-request option for writes.
 - **Alternatives considered**: TTL as a separate method parameter — would break all write method signatures.
 
@@ -327,22 +335,41 @@ This appendix is **non-normative**. It records Java SDK behaviors that impact th
   - `String version` (null if unavailable — ETag on Cosmos)
   Provider mappings:
   - **Cosmos DB**: ETag → `version`; `_ts` → `lastModified`.
-  - **DynamoDB**: No per-item write timestamp at GetItem level; empty metadata shell.
+  - **DynamoDB**: `ttlExpiry` attribute → `ttlExpiry`; no per-item write
+    timestamp or version at GetItem level.
   - **Spanner**: Empty metadata shell (commit timestamp requires schema column; deferred).
 - **Decision on opt-in**: Metadata retrieval is opt-in via `OperationOptions.includeMetadata(boolean)`. Default false.
-  Read return type changes: `MulticloudDbClient.read()` returns `DocumentResult` wrapping both the `ObjectNode` payload and nullable `DocumentMetadata`.
+  `MulticloudDbClient.read()` returns `DocumentResult` wrapping the `ObjectNode`
+  payload and nullable `DocumentMetadata`. `metadata()` is null only when not
+  requested; when requested, the envelope is present and each field is
+  independently nullable.
 - **Rationale**: Opt-in avoids breaking existing callers. `DocumentResult` keeps backward compatibility by providing a `.document()` accessor.
 - **Alternatives considered**: Always return metadata — extra provider overhead, breaks existing API contracts.
 
 ---
 
-## Decision 23: Uniform document size enforcement (400 KB)
+## Decision 23: Uniform write-input envelope (390 KiB)
 
-- **Decision**: Add a `DocumentSizeValidator` utility in `multiclouddb-api/internal` that serializes `JsonNode` to UTF-8 bytes via `ObjectMapper.writeValueAsBytes()` and checks against `MAX_BYTES = 400 * 1024`. Validation occurs in `DefaultMulticloudDbClient` before delegating to the provider adapter — once, provider-agnostically.
-- **Rationale**: DynamoDB's 400 KB limit is the lowest common denominator. Enforcing at the `DefaultMulticloudDbClient` layer means no provider adapter needs to duplicate the check. Serializing to check size is deterministic and requires no provider I/O.
+- **Decision**: Keep the six enforcement defaults package-private while applying
+  the independent 390 KiB serialized and structural bounds, 50,000-byte nested
+  and partial-update field-name bound, 128-character complete-document
+  top-level-name bound, 31-container depth bound, and 10-field partial-update
+  bound uniformly. `DocumentSizeValidator` enforcement snapshots top-level maps and uses bounded
+  SDK-owned Jackson serialization while inspecting nested values. It rejects null
+  complete documents; top-level `id`, `partitionKey`, `sortKey`, `ttl`,
+  `ttlExpiry`, and `data` case-insensitively; every underscore-prefixed
+  top-level name; binary values (including values exposed while serializing a
+  POJO); overlong field names; and excessive nesting before provider I/O. Shape,
+  size, and serialization failures are non-retryable `INVALID_REQUEST`, with
+  causes preserved where applicable.
+- **Rationale**: The dual 390 KiB bounds account for dense container overhead while
+  leaving headroom below the DynamoDB native ceiling. Enforcing at the `DefaultMulticloudDbClient` layer means no provider adapter needs to duplicate the check. Serializing to check size is deterministic and requires no provider I/O.
 - **Alternatives considered**:
   - Enforce per-provider adapter: duplicates logic, inconsistent enforcement.
   - Enforce at SPI layer: coupling SPI to a specific limit.
+  - Expose primitive public constants: Java callers inline them at compile time,
+    preventing the SDK from evolving defaults safely. Runtime discovery and
+    customer configuration are deferred to [#116](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/116).
 
 ---
 
@@ -358,6 +385,31 @@ This appendix is **non-normative**. It records Java SDK behaviors that impact th
   | Capability | Cosmos | DynamoDB | Spanner |
   |---|---|---|---|
   | `ROW_LEVEL_TTL` | ✅ | ✅ | ❌ |
-  | `WRITE_TIMESTAMP` | ✅ | ❌ | ✅ |
+  | `WRITE_TIMESTAMP` | ✅ | ❌ | ❌ |
   | `ORDER_BY` | ✅ (existing) | ❌ (existing) | ✅ (existing) |
   | `RESULT_LIMIT` | ✅ | ✅ | ✅ |
+
+### Feature 002 capability addendum (review outcome)
+
+Feature 002 adds one well-known capability name:
+
+- `PARTIAL_UPDATE = "partial_update"`
+
+The proposed provider-specific result-size and TTL-preservation capabilities
+were removed during review because single-provider behavior does not establish
+a portable contract. `CapabilitySet` supplies an unsupported default only for
+omitted `PARTIAL_UPDATE` and does not synthesize unrelated well-known names.
+Built-in effective sets contain 18 rows: Cosmos DB and DynamoDB explicitly
+declare 18, while Spanner declares 17 and receives the one core default.
+
+| Capability | Cosmos | DynamoDB | Spanner |
+|---|---|---|---|
+| `PARTIAL_UPDATE` | ✅ | ✅ | ❌ API default |
+
+Portable partial-update behavior is guaranteed only when both resulting
+logical-document size measures are at or below 390 KiB. State-dependent larger
+results may succeed or fail under native provider limits. TTL timing is outside
+the contract: DynamoDB `UpdateItem` happens to leave `ttlExpiry` unchanged,
+while Cosmos DB `patchItem` advances `_ts` and restarts relative TTL. Until
+behavior is normalized, callers requiring fixed absolute expiry must not call
+`update()` on TTL-bearing items.
