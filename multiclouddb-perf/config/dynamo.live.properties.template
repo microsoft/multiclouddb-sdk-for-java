@@ -1,0 +1,26 @@
+# Copy to dynamo.live.properties (gitignored) and fill in LIVE account values.
+multiclouddb.provider=dynamo
+multiclouddb.connection.region=us-east-1
+# Dynamo's synchronous Apache client uses HTTP/1.1. Match the Cosmos Gateway pool.
+multiclouddb.connection.maxConnections=64
+# Prefer an IAM role / default credential chain over static keys where possible.
+multiclouddb.auth.accessKeyId=<access-key-id>
+multiclouddb.auth.secretAccessKey=<secret-access-key>
+multiclouddb.connection.requestTimeoutSeconds=30
+multiclouddb.database=perfdb
+multiclouddb.collection=perf
+
+# Fair-comparison controls. CLI flags override these values.
+# Keep targetOpsPerSec identical in every provider config in a comparison run.
+multiclouddb.perf.targetOpsPerSec=100
+# Both values are required together. The harness switches/updates the table to PROVISIONED.
+multiclouddb.perf.dynamoRcu=100
+multiclouddb.perf.dynamoWcu=100
+
+# Fair-comparison metadata.
+multiclouddb.region=us-east-1
+# Optional cross-cloud colocation label used by --region-policy warn|fail.
+multiclouddb.comparisonRegion=
+# Optional fallback display value; actual RCU/WCU are probed after applying the controls above.
+multiclouddb.provisionedCapacity=PAY_PER_REQUEST or PROVISIONED rcu=... wcu=...
+multiclouddb.sdkVersion=dev

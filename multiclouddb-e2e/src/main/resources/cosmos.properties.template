@@ -24,8 +24,10 @@ multiclouddb.collection=products
 # --- Azure Cosmos DB -----------------------------------------------------------
 multiclouddb.connection.endpoint=https://<your-account>.documents.azure.com:443/
 multiclouddb.connection.key=<your-primary-key>
-multiclouddb.connection.connectionMode=gateway
 multiclouddb.connection.requestTimeoutSeconds=30
+# Gateway mode and HTTP/2 are always enabled. Gateway V2 is selected automatically.
+# To opt out of Gateway V2 thin-client proxy routing:
+# multiclouddb.connection.thinClientEnabled=false
 
 # --- Alternative: Azure AD / Managed Identity (no key needed) ------------------
 # Comment out the key line above and uncomment the tenantId below.

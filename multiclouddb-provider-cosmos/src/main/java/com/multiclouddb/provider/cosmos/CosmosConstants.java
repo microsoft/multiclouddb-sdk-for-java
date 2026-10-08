@@ -31,19 +31,46 @@ public final class CosmosConstants {
     public static final String CONFIG_TENANT_ID = "tenantId";
 
 
-    /** Connection config key for the connection mode ({@code direct} or {@code gateway}). */
-    public static final String CONFIG_CONNECTION_MODE = "connectionMode";
+    /**
+     * Optional Gateway V2 thin-client routing override.
+     *
+     * <p>When absent, the Azure Cosmos DB SDK probes Gateway V2 and falls back to Gateway V1 when
+     * necessary. Set to {@code false} to opt out, or {@code true} to force the SDK opt-in.
+     */
+    public static final String CONFIG_THIN_CLIENT_ENABLED = "thinClientEnabled";
 
-    // ── Connection mode values ────────────────────────────────────────────────
+    /**
+     * Connection config key controlling whether Cosmos returns the written document
+     * body in write responses ({@code create}, {@code update}, {@code upsert}).
+     * <p>
+     * Defaults to {@code true} (the document is returned). Set to {@code false} to
+     * suppress the response payload, which reduces write latency and bandwidth.
+     * DynamoDB's {@code PutItem} returns no item by default, so {@code false} is the
+     * transport-equivalent setting for cross-provider performance comparisons.
+     * <p>
+     * The portable contract is unaffected: {@code create}/{@code update}/{@code upsert}
+     * do not return the stored document on any provider, and per-operation diagnostics
+     * (request charge, activity id, ETag, status code) are still populated.
+     */
+    public static final String CONFIG_CONTENT_RESPONSE_ON_WRITE_ENABLED = "contentResponseOnWriteEnabled";
 
-    /** Gateway connection mode — recommended for emulator and restricted networks. */
-    public static final String CONNECTION_MODE_GATEWAY = "gateway";
+    /** Gateway HTTP/1.1 fallback maximum connection-pool size. */
+    public static final String CONFIG_GATEWAY_MAX_CONNECTION_POOL_SIZE = "gatewayMaxConnectionPoolSize";
 
-    /** Direct connection mode — lower latency, recommended for production. */
-    public static final String CONNECTION_MODE_DIRECT = "direct";
+    /** Gateway HTTP/2 maximum connection-pool size. */
+    public static final String CONFIG_GATEWAY_HTTP2_MAX_CONNECTION_POOL_SIZE =
+            "gatewayHttp2MaxConnectionPoolSize";
 
-    /** Default connection mode applied when {@code connectionMode} is not configured. */
-    public static final String CONNECTION_MODE_DEFAULT = CONNECTION_MODE_GATEWAY;
+    /** Gateway HTTP/2 minimum connection-pool size. */
+    public static final String CONFIG_GATEWAY_HTTP2_MIN_CONNECTION_POOL_SIZE =
+            "gatewayHttp2MinConnectionPoolSize";
+
+    /** Maximum concurrent HTTP/2 streams per connection. */
+    public static final String CONFIG_GATEWAY_HTTP2_MAX_CONCURRENT_STREAMS =
+            "gatewayHttp2MaxConcurrentStreams";
+
+    static final String SDK_THIN_CLIENT_ENABLED_PROPERTY = "COSMOS.THINCLIENT_ENABLED";
+    static final String SDK_THIN_CLIENT_ENABLED_ENVIRONMENT_VARIABLE = "COSMOS_THINCLIENT_ENABLED";
 
     // ── Consistency ───────────────────────────────────────────────────────────
 

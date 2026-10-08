@@ -7,6 +7,53 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- Gateway pool controls: `gatewayMaxConnectionPoolSize`,
+  `gatewayHttp2MinConnectionPoolSize`, `gatewayHttp2MaxConnectionPoolSize`, and
+  `gatewayHttp2MaxConcurrentStreams`.
+- `thinClientEnabled` connection setting for explicit Gateway V2 thin-client
+  opt-in or opt-out. When unset, Gateway V2 is eligible by default and the
+  Azure Cosmos DB SDK probes connectivity before routing, with automatic
+  fallback to Gateway V1. Existing `COSMOS.THINCLIENT_ENABLED` system-property
+  or `COSMOS_THINCLIENT_ENABLED` environment-variable settings take precedence.
+- `contentResponseOnWriteEnabled` connection config key (default `true`, unchanged behaviour).
+  Set `false` to suppress the document body in `create`/`update`/`upsert` responses, trimming
+  write latency and bandwidth. Per-operation diagnostics (request charge, activity id, ETag,
+  status code) are still populated, and reads are unaffected. `false` is the transport-equivalent
+  setting when benchmarking against DynamoDB, whose `PutItem` returns no item by default.
+
+### Fixed
+
+- **Queries and change-feed reads no longer leave a Cosmos query pipeline running after the page
+  they return.** `query`, `queryWithTranslation`, and the pull-mode change-feed drain each read
+  one page and then abandoned the iterator from `CosmosPagedIterable.iterableByPage(...)`. That
+  iterator is backed by a reactive subscription which is cancelled only when it is drained, so
+  every call leaked a live pipeline that kept prefetching pages no caller could ever reach — the
+  next call rebuilds the paged result from the continuation token, so the prefetched pages are
+  unreachable by construction. Under sustained load the leaked pipelines accumulated: a
+  large-document query workload climbed from 16 ms to 165 ms mean latency across a single run
+  while server-side RU per page stayed flat at 4.83, and the post-GC live set grew from 191 MB to
+  549 MB. Reads now take the page through `streamByPage(...)` and close the stream, which cancels
+  the subscription. Results, continuation tokens, and diagnostics are unchanged; this is a
+  resource-lifetime and cost fix. DynamoDB (`lastEvaluatedKey`) and Spanner (`LIMIT`/`OFFSET`)
+  page with a single stateless request and never had the equivalent exposure, so this restores
+  cost parity across providers rather than changing the portable contract.
+- Empty-result diagnostics from `queryWithTranslation` are now stamped with
+  `OperationNames.QUERY_WITH_TRANSLATION` instead of `OperationNames.QUERY`, matching the
+  operation name already used for its non-empty pages.
+
+### Changed
+
+- Cosmos clients now always use Gateway mode with HTTP/2 enabled. Upgraded
+  `azure-cosmos` from 4.78.0 to 4.82.0 for probe-gated Gateway V2 routing.
+
+### Removed
+
+- Removed `connectionMode` and its public constants. Direct mode is no longer
+  selectable. Stale `connectionMode` and `gatewayHttp2Enabled` settings now
+  fail fast instead of being silently ignored.
+
 ## [0.1.0-beta.2] — 2026-06-17
 
 > **Requires `multiclouddb-api` 0.1.0-beta.2 or later** — this release consumes API surface (change-feed cursors, `CLIENT_CLOSED` envelope, `EXTENDED_CHANGE_FEED_HISTORY` capability) introduced in API beta.2. The dependency is pinned in the published POM.

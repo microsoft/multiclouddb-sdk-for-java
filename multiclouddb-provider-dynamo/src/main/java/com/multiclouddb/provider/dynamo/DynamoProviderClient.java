@@ -59,9 +59,11 @@ import software.amazon.awssdk.services.dynamodb.model.QueryResponse;
 import software.amazon.awssdk.services.dynamodb.model.TableStatus;
 import software.amazon.awssdk.services.dynamodb.waiters.DynamoDbWaiter;
 import software.amazon.awssdk.http.SdkHttpResponse;
+import software.amazon.awssdk.http.apache.ApacheHttpClient;
 
 import java.math.BigDecimal;
 import java.net.URI;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.Comparator;
@@ -155,6 +157,12 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                                 .putAdvancedOption(SdkAdvancedClientOption.USER_AGENT_SUFFIX,
                                         SdkUserAgent.userAgent(config))
                                 .build());
+        Integer maxConnections = positiveConnectionInt(
+                config.connection().get(DynamoConstants.CONFIG_MAX_CONNECTIONS),
+                DynamoConstants.CONFIG_MAX_CONNECTIONS);
+        if (maxConnections != null) {
+            builder.httpClientBuilder(ApacheHttpClient.builder().maxConnections(maxConnections));
+        }
 
         // Custom endpoint for DynamoDB Local
         if (endpoint != null && !endpoint.isBlank()) {
@@ -174,6 +182,21 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
         this.changeFeedReader = DynamoChangeFeedReader.create(ProviderId.DYNAMO, config);
         LOG.info("DynamoDB client created for region: {}, endpoint: {}", region,
                 endpoint != null ? endpoint : "default");
+    }
+
+    static Integer positiveConnectionInt(String raw, String key) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            int value = Integer.parseInt(raw.trim());
+            if (value <= 0) {
+                throw new IllegalArgumentException("connection." + key + " must be > 0");
+            }
+            return value;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("connection." + key + " must be an integer", e);
+        }
     }
 
     /** Package-private constructor for testing — injects a pre-configured {@link DynamoDbClient}. */
@@ -212,7 +235,14 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        createWithDiagnostics(address, key, document, options);
+    }
+
+    @Override
+    public OperationDiagnostics createWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                      Map<String, Object> document, OperationOptions options) {
         checkOpen(OperationNames.CREATE);
+        Instant start = Instant.now();
         try {
             Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
@@ -233,6 +263,8 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
             PutItemResponse response = dynamoClient.putItem(request);
             logItemDiagnostics(OperationNames.CREATE, address, response.responseMetadata().requestId(),
                     response.consumedCapacity());
+            return buildItemDiagnostics(OperationNames.CREATE, response.responseMetadata().requestId(),
+                    response.consumedCapacity(), Duration.between(start, Instant.now()), response.sdkHttpResponse());
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.CREATE);
         }
@@ -255,6 +287,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
     @Override
     public DocumentResult read(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
         checkOpen(OperationNames.READ);
+        Instant start = Instant.now();
         try {
             Map<String, AttributeValue> keyMap = new LinkedHashMap<>();
             keyMap.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
@@ -270,6 +303,9 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
             GetItemResponse response = dynamoClient.getItem(request);
             logItemDiagnostics(OperationNames.READ, address, response.responseMetadata().requestId(),
                     response.consumedCapacity());
+            OperationDiagnostics diagnostics = buildItemDiagnostics(OperationNames.READ,
+                    response.responseMetadata().requestId(), response.consumedCapacity(),
+                    Duration.between(start, Instant.now()), response.sdkHttpResponse());
             if (!response.hasItem() || response.item().isEmpty()) {
                 return null;
             }
@@ -292,7 +328,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                 }
                 metadata = metaBuilder.build();
             }
-            return new DocumentResult(doc, metadata);
+            return new DocumentResult(doc, metadata, diagnostics);
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.READ);
         }
@@ -315,7 +351,14 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        updateWithDiagnostics(address, key, document, options);
+    }
+
+    @Override
+    public OperationDiagnostics updateWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                      Map<String, Object> document, OperationOptions options) {
         checkOpen(OperationNames.UPDATE);
+        Instant start = Instant.now();
         try {
             Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
@@ -336,6 +379,8 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
             PutItemResponse response = dynamoClient.putItem(request);
             logItemDiagnostics(OperationNames.UPDATE, address, response.responseMetadata().requestId(),
                     response.consumedCapacity());
+            return buildItemDiagnostics(OperationNames.UPDATE, response.responseMetadata().requestId(),
+                    response.consumedCapacity(), Duration.between(start, Instant.now()), response.sdkHttpResponse());
         } catch (ConditionalCheckFailedException e) {
             // attribute_exists() guard failed — item does not exist; map to NOT_FOUND
             // to match the contract and the behaviour of Cosmos (HTTP 404) and Spanner (NOT_FOUND).
@@ -371,7 +416,14 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+        upsertWithDiagnostics(address, key, document, options);
+    }
+
+    @Override
+    public OperationDiagnostics upsertWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                      Map<String, Object> document, OperationOptions options) {
         checkOpen(OperationNames.UPSERT);
+        Instant start = Instant.now();
         try {
             Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
@@ -391,6 +443,8 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
             PutItemResponse response = dynamoClient.putItem(request);
             logItemDiagnostics(OperationNames.UPSERT, address, response.responseMetadata().requestId(),
                     response.consumedCapacity());
+            return buildItemDiagnostics(OperationNames.UPSERT, response.responseMetadata().requestId(),
+                    response.consumedCapacity(), Duration.between(start, Instant.now()), response.sdkHttpResponse());
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.UPSERT);
         }
@@ -412,7 +466,14 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      */
     @Override
     public void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
+        deleteWithDiagnostics(address, key, options);
+    }
+
+    @Override
+    public OperationDiagnostics deleteWithDiagnostics(ResourceAddress address, MulticloudDbKey key,
+                                                      OperationOptions options) {
         checkOpen(OperationNames.DELETE);
+        Instant start = Instant.now();
         try {
             Map<String, AttributeValue> keyMap = new LinkedHashMap<>();
             keyMap.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
@@ -428,6 +489,8 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
             DeleteItemResponse response = dynamoClient.deleteItem(request);
             logItemDiagnostics(OperationNames.DELETE, address, response.responseMetadata().requestId(),
                     response.consumedCapacity());
+            return buildItemDiagnostics(OperationNames.DELETE, response.responseMetadata().requestId(),
+                    response.consumedCapacity(), Duration.between(start, Instant.now()), response.sdkHttpResponse());
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.DELETE);
         }
@@ -578,7 +641,8 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
 
             ExecuteStatementRequest.Builder stmtBuilder = ExecuteStatementRequest.builder()
                     .statement(stmt)
-                    .limit(pageSize);
+                    .limit(pageSize)
+                    .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
 
             if (!params.isEmpty()) stmtBuilder.parameters(params);
             if (query.continuationToken() != null && !query.continuationToken().isBlank()) {
@@ -637,7 +701,8 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
 
         ExecuteStatementRequest.Builder stmtBuilder = ExecuteStatementRequest.builder()
                 .statement(statement)
-                .limit(pageSize);
+                .limit(pageSize)
+                .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
 
         if (!params.isEmpty()) stmtBuilder.parameters(params);
         if (nextToken != null && !nextToken.isBlank()) stmtBuilder.nextToken(nextToken);
@@ -1174,6 +1239,15 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
         }
     }
 
+    private OperationDiagnostics buildItemDiagnostics(String operation, String requestId,
+            ConsumedCapacity consumedCapacity, Duration duration, SdkHttpResponse httpResponse) {
+        return OperationDiagnostics.builder(ProviderId.DYNAMO, operation, duration)
+                .requestId(requestId)
+                .statusCode(httpResponse != null ? httpResponse.statusCode() : null)
+                .requestCharge(capacityCharge(operation, consumedCapacity))
+                .build();
+    }
+
     /**
      * Logs per-query/scan diagnostics at DEBUG level: AWS request ID, consumed
      * capacity units, result count, and whether more pages exist.
@@ -1215,6 +1289,27 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                     formatConsumedCapacity(consumedCapacity));
         }
         return diag;
+    }
+
+    private static double capacityCharge(String operation, ConsumedCapacity consumedCapacity) {
+        if (consumedCapacity == null) {
+            return 0.0;
+        }
+        if (OperationNames.READ.equals(operation)
+                || OperationNames.QUERY.equals(operation)
+                || OperationNames.QUERY_WITH_TRANSLATION.equals(operation)) {
+            if (consumedCapacity.readCapacityUnits() != null) {
+                return consumedCapacity.readCapacityUnits();
+            }
+        } else if (OperationNames.CREATE.equals(operation)
+                || OperationNames.UPDATE.equals(operation)
+                || OperationNames.UPSERT.equals(operation)
+                || OperationNames.DELETE.equals(operation)) {
+            if (consumedCapacity.writeCapacityUnits() != null) {
+                return consumedCapacity.writeCapacityUnits();
+            }
+        }
+        return consumedCapacity.capacityUnits() != null ? consumedCapacity.capacityUnits() : 0.0;
     }
 
     /**
