@@ -3,6 +3,9 @@
 
 package com.multiclouddb.provider.dynamo;
 
+import com.multiclouddb.api.document.Document;
+import com.multiclouddb.spi.DocumentMaps;
+
 import com.multiclouddb.api.CapabilitySet;
 import com.multiclouddb.api.DocumentMetadata;
 import com.multiclouddb.api.DocumentResult;
@@ -211,10 +214,10 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      *         item already exists, or any other mapped DynamoDB error
      */
     @Override
-    public void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void create(ResourceAddress address, MulticloudDbKey key, Document document, OperationOptions options) {
         checkOpen(OperationNames.CREATE);
         try {
-            Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
+            Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(DocumentMaps.toMap(document));
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
             item.put(DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(
                     key.sortKey() != null ? key.sortKey() : key.partitionKey()));
@@ -292,7 +295,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                 }
                 metadata = metaBuilder.build();
             }
-            return new DocumentResult(doc, metadata);
+            return new DocumentResult(NativeDocuments.document(doc), metadata);
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.READ);
         }
@@ -314,10 +317,10 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      *         item does not exist
      */
     @Override
-    public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void update(ResourceAddress address, MulticloudDbKey key, Document document, OperationOptions options) {
         checkOpen(OperationNames.UPDATE);
         try {
-            Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
+            Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(DocumentMaps.toMap(document));
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
             item.put(DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(
                     key.sortKey() != null ? key.sortKey() : key.partitionKey()));
@@ -370,10 +373,10 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      * @throws com.multiclouddb.api.MulticloudDbException on any DynamoDB error
      */
     @Override
-    public void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void upsert(ResourceAddress address, MulticloudDbKey key, Document document, OperationOptions options) {
         checkOpen(OperationNames.UPSERT);
         try {
-            Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
+            Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(DocumentMaps.toMap(document));
             item.put(DynamoConstants.ATTR_PARTITION_KEY, AttributeValue.fromS(key.partitionKey()));
             item.put(DynamoConstants.ATTR_SORT_KEY, AttributeValue.fromS(
                     key.sortKey() != null ? key.sortKey() : key.partitionKey()));

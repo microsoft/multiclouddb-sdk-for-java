@@ -3,6 +3,9 @@
 
 package com.multiclouddb.provider.spanner;
 
+import com.multiclouddb.api.document.Document;
+import com.multiclouddb.spi.DocumentMaps;
+
 import com.multiclouddb.api.CapabilitySet;
 import com.multiclouddb.api.DocumentMetadata;
 import com.multiclouddb.api.DocumentResult;
@@ -231,13 +234,14 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      * @param address  the logical database + collection; the collection maps directly to
      *                 a Spanner table name
      * @param key      the document key
-     * @param document the document payload; map entries become column values
+     * @param payload the document payload; fields become column values
      * @param options  operation options (currently unused by this provider)
      * @throws com.multiclouddb.api.MulticloudDbException on any Spanner error
      */
     @Override
-    public void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void create(ResourceAddress address, MulticloudDbKey key, Document payload, OperationOptions options) {
         checkOpen(OperationNames.CREATE);
+        Map<String, Object> document = DocumentMaps.toMap(payload);
         validateNoReservedFields(document, OperationNames.CREATE);
         try {
             String table = address.collection();
@@ -286,15 +290,16 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      *
      * @param address  the logical database + collection
      * @param key      the document key identifying the row to update
-     * @param document the document payload; fields present here become column values,
+     * @param payload the document payload; fields present here become column values,
      *                 fields absent here keep their existing values
      * @param options  operation options (currently unused by this provider)
      * @throws com.multiclouddb.api.MulticloudDbException category {@code NOT_FOUND} if
      *         the row does not exist, or any other Spanner error
      */
     @Override
-    public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void update(ResourceAddress address, MulticloudDbKey key, Document payload, OperationOptions options) {
         checkOpen(OperationNames.UPDATE);
+        Map<String, Object> document = DocumentMaps.toMap(payload);
         validateNoReservedFields(document, OperationNames.UPDATE);
         try {
             String table = address.collection();
@@ -403,13 +408,14 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      *
      * @param address  the logical database + collection
      * @param key      the document key
-     * @param document the document payload
+     * @param payload the document payload
      * @param options  operation options (currently unused by this provider)
      * @throws com.multiclouddb.api.MulticloudDbException on any Spanner error
      */
     @Override
-    public void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void upsert(ResourceAddress address, MulticloudDbKey key, Document payload, OperationOptions options) {
         checkOpen(OperationNames.UPSERT);
+        Map<String, Object> document = DocumentMaps.toMap(payload);
         validateNoReservedFields(document, OperationNames.UPSERT);
         try {
             String table = address.collection();
@@ -598,7 +604,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
                         // the table has allow_commit_timestamp=true. Return empty shell.
                         metadata = DocumentMetadata.builder().build();
                     }
-                    return new DocumentResult(item, metadata);
+                    return new DocumentResult(NativeDocuments.document(item), metadata);
                 }
                 return null;
             }

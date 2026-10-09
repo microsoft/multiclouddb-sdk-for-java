@@ -3,6 +3,8 @@
 
 package com.multiclouddb.conformance.us2;
 
+import static com.multiclouddb.conformance.Documents.document;
+
 import com.multiclouddb.api.*;
 import com.multiclouddb.api.changefeed.ChangeFeedCursor;
 import com.multiclouddb.api.changefeed.CursorExpiredException;
@@ -109,7 +111,7 @@ public abstract class ErrorNormalizationConformanceTest {
                 "norm-missing-" + System.nanoTime());
 
         MulticloudDbException ex = assertThrows(MulticloudDbException.class,
-                () -> client.update(address, key, Map.of("title", "x")),
+                () -> client.update(address, key, document(Map.of("title", "x"))),
                 "update of missing key must throw on every provider");
 
         // Structured error
@@ -136,9 +138,9 @@ public abstract class ErrorNormalizationConformanceTest {
                 "norm-conflict-" + System.nanoTime(),
                 "norm-conflict-" + System.nanoTime());
         try {
-            client.create(address, key, Map.of("title", "first"));
+            client.create(address, key, document(Map.of("title", "first")));
             MulticloudDbException ex = assertThrows(MulticloudDbException.class,
-                    () -> client.create(address, key, Map.of("title", "second")),
+                    () -> client.create(address, key, document(Map.of("title", "second"))),
                     "create of duplicate key must throw on every provider");
 
             assertNotNull(ex.error());
@@ -159,7 +161,7 @@ public abstract class ErrorNormalizationConformanceTest {
             // we pin CONFLICT here to make sure a provider cannot legitimately
             // flip its retryable hint between equivalent CONFLICT reproductions.
             MulticloudDbException ex2 = assertThrows(MulticloudDbException.class,
-                    () -> client.create(address, key, Map.of("title", "third")),
+                    () -> client.create(address, key, document(Map.of("title", "third"))),
                     "second equivalent create-duplicate must also throw");
             assertEquals(ex.error().category(), ex2.error().category(),
                     "Equivalent CONFLICT errors must always produce the same category");
@@ -185,9 +187,9 @@ public abstract class ErrorNormalizationConformanceTest {
                 "norm-stable-" + System.nanoTime());
 
         MulticloudDbException first = assertThrows(MulticloudDbException.class,
-                () -> client.update(address, key, Map.of("title", "x")));
+                () -> client.update(address, key, document(Map.of("title", "x"))));
         MulticloudDbException second = assertThrows(MulticloudDbException.class,
-                () -> client.update(address, key, Map.of("title", "x")));
+                () -> client.update(address, key, document(Map.of("title", "x"))));
 
         assertEquals(first.error().category(), second.error().category(),
                 "Equivalent errors must always produce the same category");

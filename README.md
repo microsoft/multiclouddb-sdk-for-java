@@ -121,11 +121,16 @@ mvn clean install -DskipTests
 
 ### 3. Write portable code
 
+This example targets the coordinated development Document API. Released beta
+callers must migrate and recompile; see
+[customer codecs, dependencies and migration](docs/customer-object-mapping.md).
+The API runtime is Jackson-free; native providers may still depend on Jackson.
+
 ```java
 import com.multiclouddb.api.*;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.multiclouddb.api.document.*;
+import java.util.Map;
+import java.util.Properties;
 
 // Configure - provider selected entirely by config, not code
 Properties props = new Properties();
@@ -144,17 +149,17 @@ MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
 MulticloudDbClient client = MulticloudDbClientFactory.create(config);
 
 // CRUD - same code for every provider
-ObjectMapper mapper = new ObjectMapper();
-ObjectNode doc = mapper.createObjectNode();
-doc.put("title", "Buy groceries");
-doc.put("completed", false);
+Document doc = Document.builder()
+        .put("title", new StringValue("Buy groceries"))
+        .put("completed", new BooleanValue(false))
+        .build();
 
 ResourceAddress todos = new ResourceAddress("mydb", "todos");
-Key key = Key.of("todo-1", "todo-1");   // partitionKey + sortKey
+MulticloudDbKey key = MulticloudDbKey.of("todo-1", "todo-1");
 
 client.upsert(todos, key, doc);                  // Create or replace (upsert)
 DocumentResult result = client.read(todos, key); // Point read → returns DocumentResult
-ObjectNode document = result.document();         // The document payload
+Document document = result.document();           // Immutable neutral payload
 client.delete(todos, key);                       // Delete
 
 // Query with portable expressions - automatically translated per provider
@@ -164,7 +169,7 @@ QueryRequest query = QueryRequest.builder()
         .pageSize(25)
         .build();
 QueryPage page = client.query(todos, query);
-for (JsonNode item : page.items()) {
+for (Map<String, Object> item : page.items()) {
     System.out.println(item);
 }
 // Cosmos → SELECT * FROM c WHERE (c.status = @status AND c.category = @cat)

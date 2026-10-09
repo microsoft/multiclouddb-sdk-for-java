@@ -3,6 +3,8 @@
 
 package com.multiclouddb.conformance.us1b;
 
+import static com.multiclouddb.conformance.Documents.document;
+
 import com.multiclouddb.api.*;
 import org.junit.jupiter.api.*;
 
@@ -71,7 +73,7 @@ class CosmosQueryIntegrationTest {
     private void insertDoc(String id, String title, String status, int priority, String category) {
         Map<String, Object> doc = Map.of(
                 "title", title, "status", status, "priority", priority, "category", category);
-        client.upsert(address, MulticloudDbKey.of(id, id), doc);
+        client.upsert(address, MulticloudDbKey.of(id, id), document(doc));
     }
 
     /** Convenience: extract a string field from a result-map item. */

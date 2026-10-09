@@ -13,11 +13,41 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Added:**
 
+- API-owned immutable `Document` with six JSON-like value kinds (null, boolean,
+  string, number, array and object), application-owned `DocumentCodec`, neutral
+  `TypeRef` and safe `DocumentCodecException`. Mathematical numeric equality
+  preserves source kind/scale and floating zero sign; finite numeric and nesting
+  bounds are in-memory contracts, not universal provider precision guarantees.
 - Portable change-feed API in `com.multiclouddb.api.changefeed`: `ChangeFeedCursor` (opaque, persistable via `toToken()` / `fromToken(...)` with a `now()` live-tip sentinel), `ChangeFeedPage` (events + `nextCursor` + `hasMore`/`terminal`), `ChangeEvent` (with stable `providerEventId` for dedup), `ChangeType`, and `CursorExpiredException`. Two new entry points on `MulticloudDbClient`: `listCursors(ResourceAddress)` and `readChanges(ResourceAddress, ChangeFeedCursor[, OperationOptions])`. Provider SPI methods default to `UNSUPPORTED_CAPABILITY` so existing adapters compile unchanged. The cursor wire format is opaque, version-tagged Base64URL JSON; the 24-hour portable baseline is enforced client-side on the token''s last-issued timestamp. `OperationOptions.timeout()` is not enforced on the change-feed path in this release.
 - New error category `MulticloudDbErrorCategory.CURSOR_EXPIRED` carrying a canonical `providerDetails.reason` set (`TOKEN_AGED_OUT`, `PROVIDER_TRIMMED`, `ITERATOR_EXPIRED`, `MALFORMED`, `VERSION_UNSUPPORTED`, `PROVIDER_MISMATCH`, `RESOURCE_MISMATCH`), exported as public `CursorTokenCodec.REASON_*` constants.
 - New error category `MulticloudDbErrorCategory.CLIENT_CLOSED` surfaced by a `DefaultMulticloudDbClient` post-close guard on every public entry point (replaces provider-specific `IllegalStateException` leaks). `MulticloudDbClient.close()` is now idempotent.
 - Extended change-feed retention opt-in: `ChangeFeedConfig.extendedRetention(Duration)` (validates `> 24h`), wired into `MulticloudDbClientConfig.changeFeed(...)`, plus the new `Capability.EXTENDED_CHANGE_FEED_HISTORY`. The factory''s build-time gate refuses to instantiate a client whose provider does not declare the capability, surfacing `UNSUPPORTED_CAPABILITY(reason="extended_retention_unavailable")` before any I/O. The cursor token wire format carries an optional `"e"` field stamping the opted-in retention so a persisted cursor under a 7-day opt-in can be resumed beyond 24h up to the configured window without `TOKEN_AGED_OUT`; older tokens (no `"e"`) keep the 24h floor.
 - `OperationNames.LIST_CURSORS`, `READ_CHANGES`, `PROVISION_SCHEMA` propagated through `MulticloudDbError.operation()` and `OperationDiagnostics`.
+
+**Changed:**
+
+- Breaking development migration: CRUD client/SPI bodies and point reads use
+  `Document`; `ChangeEvent.data()` is nullable `DocumentValue`, preserving
+  selected provider payloads without new image classification. Query Map/Object
+  contracts remain unchanged.
+- API compile/runtime Jackson dependency removed, not all runtime dependencies:
+  SLF4J 2.0.12, private Gson 2.11.0 and its transitive `error_prone_annotations`
+  2.27.0 remain (the annotation module is static in JPMS). Gson STRICT cursor
+  parsing and the leading-U+FEFF guard preserve the tested v1 wire, lexical,
+  coercion and retention behavior. Jackson remains a test-only oracle.
+- Structural logical-size validation retains the 399 KiB byte profile without
+  allocating document JSON. Overflow reports the observed cutoff lower bound,
+  not an exact full size.
+- Unpublished `0.1.0-beta.2-SNAPSHOT` development coordinate; no release or
+  release-workflow change. This is partial work related to
+  microsoft/multiclouddb-sdk-for-java#116; see
+  [customer mapping and migration](customer-object-mapping.md).
+
+**Removed:**
+
+- Unpublished reserved `BinaryValue`. Binary/opaque objects are not model values;
+  explicit customer Base64 text is an ordinary StringValue, with no automatic
+  model/provider decoding.
 
 **Documentation:**
 
@@ -69,6 +99,17 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- Accept neutral Document CRUD bodies and return Document point reads plus
+  nullable DocumentValue feed data. The existing Map/tree bridge, key/TTL
+  injection, selected event bodies and system-field visibility remain; Jackson
+  is now a direct provider dependency rather than inherited from API.
+- Unsupported native-to-model read/feed payloads, including BinaryNode, fail
+  with nonretryable `PROVIDER_ERROR`, the operation/provider and safe
+  `invalid_document_payload` reason, without payload/native diagnostic causes.
+  No binary-to-null/text fallback is introduced by the neutral converter.
+- Coordinated unpublished `0.1.0-beta.2-SNAPSHOT` API dependency; no release,
+  schema/envelope redesign or general provider bug fix. See
+  [mapping support and migration](customer-object-mapping.md).
 - Removed the hardcoded `ConsistencyLevel.SESSION` override from `CosmosClientBuilder`. Accounts with a default of `STRONG` or `BOUNDED_STALENESS` will now serve reads at their configured level. To restore the previous behaviour, set `multiclouddb.connection.consistencyLevel=SESSION`.
 - `BETWEEN` translation now wraps in parentheses (`(c.field BETWEEN @lo AND @hi)`) to avoid a Cosmos NoSQL parser ambiguity with trailing `AND`.
 
@@ -111,6 +152,17 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- Accept neutral Document CRUD bodies and return Document point reads plus
+  nullable DocumentValue feed data. Retain the existing Map/tree/AttributeValue
+  bridge, numeric parsing limitations, metadata and selected old/new images.
+  Jackson is now a direct provider dependency rather than inherited from API.
+- Unsupported native-to-model read/feed payloads fail with nonretryable
+  `PROVIDER_ERROR` and safe `invalid_document_payload` reason. BinaryNode is
+  rejected there; the earlier native B-attribute-to-null fallback is unchanged,
+  not binary support in the six-kind model.
+- Coordinated unpublished `0.1.0-beta.2-SNAPSHOT` API dependency; no release,
+  storage-range expansion or general provider bug fix. See
+  [mapping support and migration](customer-object-mapping.md).
 - `SORT_KEY_ASC` comparator handles numeric sort keys with type-aware comparison (Long/Integer use native compare; mixed numerics fall back to `BigDecimal`) so integers beyond `2^53` are no longer truncated.
 - `BETWEEN` translation wraps in parentheses (`(field BETWEEN ? AND ?)`) for cross-provider consistency.
 
@@ -147,6 +199,19 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- Accept neutral Document CRUD bodies and return Document point reads plus
+  nullable DocumentValue feed data, retaining FIELD_DATA, nested JSON markers,
+  current update behavior and selected old/new/legacy images. Jackson is now a
+  direct provider dependency rather than inherited from API.
+- Preserve existing INT64/FLOAT64 mappings and top-level BigDecimal/BigInteger
+  STRING fallback. Unsupported native-to-model read/feed payloads, including
+  BinaryNode, fail with nonretryable `PROVIDER_ERROR` and safe
+  `invalid_document_payload` reason. Earlier BYTES-to-Base64-text behavior is
+  unchanged. Textual feed values remain unchanged except metadata-declared
+  scalar INT64 (see Fixed below); no binary kind or numeric guarantee.
+- Unpublished `0.1.0-beta.1-SNAPSHOT` against the coordinated development API;
+  no release or schema/envelope redesign. See
+  [mapping support and migration](customer-object-mapping.md).
 - `upsert(address, key, document)` uses Spanner `INSERT_OR_UPDATE` (was `REPLACE`). `REPLACE` is internally delete-then-insert, which change streams surface as `mod_type=INSERT` — making a second upsert of the same key appear as `ChangeType.CREATE` instead of `ChangeType.UPDATE`. `INSERT_OR_UPDATE` matches Cosmos AVAD and DynamoDB Streams.
 - Spanner instance creation in `ensureDatabase` is gated to emulator mode. In production the instance is expected to pre-exist; only the database is created.
 - Complex container values (`Map`, `Collection`) round-trip through STRING columns using an unambiguous prefix marker (`U+0001` + `mcdb:json:`).
@@ -164,6 +229,13 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Fixed:**
 
+- Spanner change-feed scalar INT64 values are decoded from native string
+  transport using `column_types`, restoring NumberValue without coercing
+  numeric-looking STRINGs. Selected new/old images and FIELD_DATA filtering are
+  unchanged; invalid/overflowing declared integers fail as safe, nonretryable
+  `PROVIDER_ERROR/readChanges/invalid_document_payload`, not raw success values.
+  Missing-metadata legacy values and non-INT64 types retain their existing
+  representation; no native ARRAY decoding or write-policy change is included.
 - Default `ORDER BY` no longer fires for aggregate / `GROUP BY` queries (GoogleSQL rejects with `column not aggregated`). It also no longer duplicates primary-key columns when the caller already sorts by them, and `ORDER BY` detection ignores string literals (so `WHERE comment = ''please ORDER BY date''` is no longer a false positive).
 - Legacy / pre-`FIELD_DATA` rows preserve every column on read and `update()`. When `FIELD_DATA` is absent or malformed, the reader applies the historical "no metadata => no filtering" rule; `update()` deliberately leaves `FIELD_DATA` alone so the reader''s fallback continues to project all legacy columns. A subsequent `upsert()` or `create()` promotes the row into the metadata regime.
 - `ensureDatabase()` / `ensureContainer()` no longer leak raw `RuntimeException` on non-Spanner failures. `InterruptedException` → `TRANSIENT_FAILURE`; non-Spanner causes inside the admin `ExecutionException` → `PROVIDER_ERROR`.
@@ -189,3 +261,37 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - Portable expression translation to GoogleSQL
 - Native GoogleSQL passthrough
 - Schema provisioning (DDL-based table creation)
+
+---
+
+## multiclouddb-serializer-jackson
+
+### [Unreleased]
+
+**Added:**
+
+- Optional `JacksonDocumentCodec` implements the API-owned `DocumentCodec` with
+  default/caller-configured ObjectMapper snapshot factories, explicit
+  encode/decode and common Class/TypeRef support. Customers may instead implement
+  the neutral contract without Jackson; no client registration or POJO overload.
+- Direct serializer-token collection into immutable Document, without a JSON
+  bytes roundtrip or Map-target deserialization. Decode uses owned tokens and
+  the captured typed reader, preserving custom deserializers and coercion.
+- Safe phase/reason errors, explicit snapshot-copy failure, object-root/duplicate
+  validation and sticky collector failures. byte[]/ByteBuffer and binary/embedded
+  output are unsupported; explicit customer Base64 string mapping remains valid.
+- Actual client/provider native-mock create/upsert/read coverage for custom
+  naming/date/generic mapping and a separate non-Jackson codec; not live
+  persistence or universal numeric-storage guarantees.
+
+**Changed:**
+
+- Replaces the unpublished JacksonObjectCodec Map/ObjectNode boundary with
+  Document; TypeRef and codec errors belong to API. Short decode tokens are
+  retained; Byte becomes Integer at Jackson's token boundary without rewriting
+  the model or overriding configured typed-reader coercion.
+- Unpublished `0.1.0-SNAPSHOT` depends on the coordinated API; the adapter is
+  optional for applications and not a provider dependency. Query Map/Object
+  contracts, existing provider/schema limits and update semantics remain.
+  No query/change-feed convenience decode, direct native mapping, release or
+  release-workflow change; full issue-116 completion remains deferred.

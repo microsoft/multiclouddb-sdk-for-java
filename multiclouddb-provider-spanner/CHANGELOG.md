@@ -7,6 +7,28 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Document mapping (development)
+
+- The model is restricted to six JSON-like kinds. BinaryNode payloads reaching
+  the neutral read/feed converter fail with the safe PROVIDER_ERROR below.
+  The existing row-mapper BYTES-to-Base64-string path remains unchanged.
+  Textual feed values remain unchanged except metadata-declared scalar INT64
+  (see Fixed below); neither path introduces binary support in Document.
+- Accept neutral Document CRUD payloads and return Document point reads plus
+  nullable DocumentValue change-feed data. Retain FIELD_DATA, nested JSON markers,
+  current update behavior and selected old/new/legacy event payloads.
+- Retained numeric kinds preserve existing INT64/FLOAT64 mapping and the
+  top-level BigDecimal/BigInteger STRING fallback; no new decimal rejection,
+  rounding, schema migration or precision guarantee. Jackson is now a direct
+  dependency rather than inherited through API.
+- Native-to-model read/feed rejection is a nonretryable `PROVIDER_ERROR` with
+  operation/provider and fixed `invalid_document_payload` reason, without native
+  diagnostic causes. External rows/events with nonfinite numbers or excessive
+  model depth can fail this way; selected event payloads and FIELD_DATA filtering
+  are regression-tested. Existing native fallbacks are not changed.
+- Development coordinate `0.1.0-beta.1-SNAPSHOT` against the coordinated API;
+  no release is declared. See [mapping support and migration](../docs/customer-object-mapping.md).
+
 ### Added
 
 - Change-feed reader backed by Spanner change streams via the `READ_<stream>` TVF (single-use read-only transaction; 5-second bounded window per call). `listCursors` bootstraps the partition tree by calling the TVF with a `NULL` partition token and anchors each cursor''s bookmark at `max(now, childStart)` so `now()` cursors honour their live-tip contract on the emulator. `readChanges` drains a bounded window, absorbs `child_partitions_record` rows (splits/merges), rotates the partition list across partitions, and surfaces `isTerminal()=true` when a cursor''s sole partition closes without children. Each `data_change_record.mod` becomes one `ChangeEvent` with a stable `providerEventId` (`<server_transaction_id>:<commit_ts>:<record_sequence>:<mod_index>`). `INVALID_ARGUMENT` / `NOT_FOUND` / `OUT_OF_RANGE` on the TVF (most commonly a partition token outside the stream''s retention window) is mapped to `CursorExpiredException(reason=PROVIDER_TRIMMED)`.
@@ -33,6 +55,13 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Change-feed scalar INT64 columns now use native `column_types` metadata to
+  decode string-encoded signed 64-bit integers before neutral model conversion.
+  Selected new/old images and FIELD_DATA filtering are preserved. Invalid or
+  overflowing declared integers fail safely as `PROVIDER_ERROR/readChanges`
+  (`invalid_document_payload`), outside the legacy raw-JSON fallback.
+  Numeric-looking STRING, missing-metadata legacy values and non-INT64 types
+  remain unchanged; this does not add native ARRAY decoding or change writes.
 - **Default `ORDER BY` no longer fires for aggregate / `GROUP BY` queries.** The provider previously appended `ORDER BY partitionKey, sortKey` to every SELECT, which GoogleSQL rejects on aggregates with `column not aggregated`. The default is now suppressed when the SQL contains an aggregate function or `GROUP BY`; caller-supplied `ORDER BY` is honoured verbatim. The default also no longer duplicates primary-key columns when the caller already sorts by them — only the missing key is appended as a tiebreaker — and `ORDER BY` detection ignores string literals so `WHERE comment = ''please ORDER BY date''` is no longer a false positive.
 - **Legacy / pre-`FIELD_DATA` rows preserve every column on read and `update()`.** When `FIELD_DATA` is absent or malformed, `SpannerRowMapper` applies the historical "no metadata => no filtering" rule including nulls; `update()` deliberately leaves `FIELD_DATA` alone so the reader''s fallback continues to project all legacy columns. A subsequent `upsert()` or `create()` promotes the row into the metadata regime by writing a complete `FIELD_DATA` stamp.
 - `ensureDatabase()` / `ensureContainer()` no longer leak raw `RuntimeException` on non-Spanner failures. `InterruptedException` surfaces as `MulticloudDbException(TRANSIENT_FAILURE, retryable=true)` (with the interrupt flag restored); non-Spanner causes inside the admin `ExecutionException` surface as `MulticloudDbException(PROVIDER_ERROR)` preserving the original cause.

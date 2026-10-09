@@ -7,6 +7,42 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- API-owned immutable `Document` and closed six-kind null/boolean/string/number/
+  array/object value model, neutral application-owned `DocumentCodec`, `TypeRef`
+  and safe `DocumentCodecException`. Mathematical number equality retains source
+  kind/scale and floating zero sign; finite floating decimal views follow runtime
+  round-trip text. Initial precision/scale/depth bounds are documented separately
+  from provider storage support.
+
+### Changed
+
+- Breaking development migration: CRUD client/SPI bodies and point-read payloads
+  use `Document`; `ChangeEvent.data()` uses nullable `DocumentValue` without new
+  image classification or changed provider image selection. Query Map/Object
+  contracts are unchanged.
+- API compile/runtime dependencies no longer include Jackson, but are not empty:
+  SLF4J 2.0.12 and private Gson 2.11.0 remain, plus Gson's transitive
+  `error_prone_annotations` 2.27.0 metadata dependency (static in JPMS).
+  Cursor JSON uses Gson's official `Strictness.STRICT` with public lexical
+  rejection and v1 wire/coercion/retention compatibility fixtures.
+  A leading U+FEFF is rejected like the legacy String reader; U+FEFF inside
+  string values remains valid and unchanged.
+  Logical write-size validation preserves the 399 KiB byte profile without
+  allocating serialized document JSON. Overflow reports an observed
+  byte-count lower bound at the early cutoff, not an exact full document size.
+  Jackson remains a test-only compatibility oracle.
+- Development coordinate is `0.1.0-beta.2-SNAPSHOT`; no release is declared.
+  See [customer mapping and migration](../docs/customer-object-mapping.md).
+  This is partial work related to microsoft/multiclouddb-sdk-for-java#116.
+
+### Removed
+
+- Removed the unpublished reserved `BinaryValue`: binary/opaque objects are not
+  model values. Explicit customer Base64 text is an ordinary StringValue, with
+  no automatic model/provider decoding.
+
 ## [0.1.0-beta.2] — 2026-06-17
 
 ### Added

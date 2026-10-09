@@ -3,7 +3,7 @@
 
 package com.multiclouddb.api;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.multiclouddb.api.document.Document;
 
 import java.util.Objects;
 
@@ -14,7 +14,7 @@ import java.util.Objects;
  * Usage:
  * <pre>{@code
  * DocumentResult result = client.read(address, key);
- * ObjectNode doc = result.document();
+ * Document doc = result.document();
  * DocumentMetadata meta = result.metadata(); // may be null if includeMetadata=false
  * }</pre>
  *
@@ -22,16 +22,16 @@ import java.util.Objects;
  */
 public final class DocumentResult {
 
-    private final ObjectNode document;
+    private final Document document;
     private final DocumentMetadata metadata;
 
-    public DocumentResult(ObjectNode document, DocumentMetadata metadata) {
+    public DocumentResult(Document document, DocumentMetadata metadata) {
         this.document = Objects.requireNonNull(document, "document must not be null");
         this.metadata = metadata;
     }
 
     /** Convenience constructor for results without metadata. */
-    public DocumentResult(ObjectNode document) {
+    public DocumentResult(Document document) {
         this(document, null);
     }
 
@@ -40,7 +40,7 @@ public final class DocumentResult {
      *
      * @return non-null document
      */
-    public ObjectNode document() {
+    public Document document() {
         return document;
     }
 

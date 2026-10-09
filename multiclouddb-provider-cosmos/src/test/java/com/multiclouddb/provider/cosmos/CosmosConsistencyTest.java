@@ -3,6 +3,8 @@
 
 package com.multiclouddb.provider.cosmos;
 
+import static com.multiclouddb.provider.cosmos.DocumentTestData.document;
+
 import com.azure.core.credential.TokenCredential;
 import com.azure.cosmos.ConsistencyLevel;
 import com.azure.cosmos.CosmosClient;
@@ -601,7 +603,7 @@ class CosmosConsistencyTest {
             CosmosProviderClient providerClient = new CosmosProviderClient(config);
             ResourceAddress address = new ResourceAddress("testdb", "testcol");
             MulticloudDbKey key = MulticloudDbKey.of("partition1");
-            providerClient.create(address, key, Map.of("name", "alice"), null);
+            providerClient.create(address, key, document(Map.of("name", "alice")), null);
 
             ArgumentCaptor<CosmosItemRequestOptions> captor =
                     ArgumentCaptor.forClass(CosmosItemRequestOptions.class);
@@ -641,7 +643,7 @@ class CosmosConsistencyTest {
             CosmosProviderClient providerClient = new CosmosProviderClient(config);
             ResourceAddress address = new ResourceAddress("testdb", "testcol");
             MulticloudDbKey key = MulticloudDbKey.of("partition1");
-            providerClient.update(address, key, Map.of("name", "bob"), null);
+            providerClient.update(address, key, document(Map.of("name", "bob")), null);
 
             ArgumentCaptor<CosmosItemRequestOptions> captor =
                     ArgumentCaptor.forClass(CosmosItemRequestOptions.class);
@@ -681,7 +683,7 @@ class CosmosConsistencyTest {
             CosmosProviderClient providerClient = new CosmosProviderClient(config);
             ResourceAddress address = new ResourceAddress("testdb", "testcol");
             MulticloudDbKey key = MulticloudDbKey.of("partition1");
-            providerClient.upsert(address, key, Map.of("name", "carol"), null);
+            providerClient.upsert(address, key, document(Map.of("name", "carol")), null);
 
             ArgumentCaptor<CosmosItemRequestOptions> captor =
                     ArgumentCaptor.forClass(CosmosItemRequestOptions.class);

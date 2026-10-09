@@ -6,6 +6,13 @@ and architecture overview, see the [Getting Started](getting-started.md) guide. 
 portable API surface and error mapping reference, see
 [Compatibility](compatibility.md).
 
+The immutable Document model has six JSON-like value kinds: null, boolean,
+string, number, array and object, with an object root. Binary/embedded objects
+are not model values. Applications may explicitly map bytes to ordinary text;
+the model does not infer or decode Base64. See the
+[customer mapping support table](customer-object-mapping.md#existing-provider-mapping-and-runtime-compatibility)
+for the existing per-provider schema and numeric limitations.
+
 ---
 
 ## Table of Contents
@@ -497,6 +504,12 @@ but the default SPI implementation works correctly for all providers.
 
 ## CRUD Semantics
 
+These examples describe the coordinated development Document API and use
+`import com.multiclouddb.api.document.*;`. Released beta callers must migrate
+and recompile; see [customer codecs and migration](customer-object-mapping.md).
+Query Map/Object contracts and existing provider-specific update behavior are
+not changed by this increment.
+
 ### create - Insert Only
 
 `create()` inserts a new document. If a document with the same key already
@@ -506,9 +519,10 @@ insert-only semantics with duplicate detection.
 ```java
 ResourceAddress addr = new ResourceAddress("mydb", "orders");
 MulticloudDbKey key = MulticloudDbKey.of("customer-456", "order-123");
-Map<String, Object> doc = new LinkedHashMap<>();
-doc.put("total", 99.95);
-doc.put("status", "pending");
+Document doc = Document.builder()
+        .put("total", NumberValue.of(99.95))
+        .put("status", new StringValue("pending"))
+        .build();
 
 client.create(addr, key, doc);   // Fails if document already exists
 ```
@@ -525,12 +539,12 @@ client.create(addr, key, doc);   // Fails if document already exists
 ### read - Point Read
 
 `read()` performs a single-document read using the full key. Returns a
-`DocumentResult` wrapping the document as an `ObjectNode`, or `null` if not found.
+`DocumentResult` wrapping an immutable neutral `Document`, or `null` if not found.
 
 ```java
 DocumentResult result = client.read(addr, MulticloudDbKey.of("customer-456", "order-123"));
 if (result != null) {
-    String status = result.document().path("status").asText();
+    String status = ((StringValue) result.document().get("status").orElseThrow()).value();
 }
 ```
 
@@ -552,9 +566,10 @@ the operation **fails** with a not-found error. Use this when you need strict
 update-only semantics.
 
 ```java
-Map<String, Object> updated = new LinkedHashMap<>();
-updated.put("total", 109.95);
-updated.put("status", "shipped");
+Document updated = Document.builder()
+        .put("total", NumberValue.of(109.95))
+        .put("status", new StringValue("shipped"))
+        .build();
 
 client.update(addr, MulticloudDbKey.of("customer-456", "order-123"), updated);   // Fails if not exists
 ```
@@ -576,9 +591,10 @@ the same key. It is an insert-or-update in all providers.
 ```java
 ResourceAddress addr = new ResourceAddress("mydb", "orders");
 MulticloudDbKey key = MulticloudDbKey.of("customer-456", "order-123");
-Map<String, Object> doc = new LinkedHashMap<>();
-doc.put("total", 99.95);
-doc.put("status", "pending");
+Document doc = Document.builder()
+        .put("total", NumberValue.of(99.95))
+        .put("status", new StringValue("pending"))
+        .build();
 
 client.upsert(addr, key, doc);   // Creates or replaces the document
 ```
@@ -629,9 +645,10 @@ fields into the document** automatically. You don't need to manually set `"id"`
 or `"partitionKey"` in your JSON - the provider handles this:
 
 ```java
-Map<String, Object> doc = new LinkedHashMap<>();
-doc.put("name", "Alpha Fund");
-doc.put("type", "EQUITY");
+Document doc = Document.builder()
+        .put("name", new StringValue("Alpha Fund"))
+        .put("type", new StringValue("EQUITY"))
+        .build();
 
 // No need to set "id" or "partitionKey" in doc - injected by provider
 client.upsert(addr, MulticloudDbKey.of("acme", "port-1"), doc);

@@ -493,7 +493,7 @@ final class CosmosChangeFeedReader {
         String eventId = textOrEmpty(body.get("_etag"));
         if (eventId.isBlank()) eventId = id + "@" + tsSeconds;
 
-        return new ChangeEvent(key, type, commitTs, body, eventId);
+        return new ChangeEvent(key, type, commitTs, NativeDocuments.changeData(body), eventId);
     }
 
     private static boolean isEmptyOrMissing(JsonNode node) {

@@ -3,6 +3,8 @@
 
 package com.multiclouddb.provider.spanner;
 
+import static com.multiclouddb.provider.spanner.DocumentTestData.document;
+
 import com.multiclouddb.api.MulticloudDbClientConfig;
 import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.MulticloudDbException;
@@ -92,7 +94,7 @@ class SpannerReservedFieldTest {
         doc.put("data", "user-payload");
         doc.put("other", "ok");
         assertReservedFieldRejected(assertThrows(MulticloudDbException.class,
-                () -> client.create(ADDR, KEY, doc, null)));
+                () -> client.create(ADDR, KEY, document(doc), null)));
     }
 
     @Test
@@ -101,7 +103,7 @@ class SpannerReservedFieldTest {
         Map<String, Object> doc = new HashMap<>();
         doc.put("data", "user-payload");
         assertReservedFieldRejected(assertThrows(MulticloudDbException.class,
-                () -> client.update(ADDR, KEY, doc, null)));
+                () -> client.update(ADDR, KEY, document(doc), null)));
     }
 
     @Test
@@ -111,7 +113,7 @@ class SpannerReservedFieldTest {
         doc.put("data", "user-payload");
         doc.put("status", "active");
         assertReservedFieldRejected(assertThrows(MulticloudDbException.class,
-                () -> client.upsert(ADDR, KEY, doc, null)));
+                () -> client.upsert(ADDR, KEY, document(doc), null)));
     }
     // ---- Case-insensitive coverage (regression for round-4 review: Spanner
     // column names are case-insensitive, so 'Data' / 'DATA' / 'dAtA' all
@@ -127,7 +129,7 @@ class SpannerReservedFieldTest {
         doc.put("Data", "user-payload");
         doc.put("other", "ok");
         assertReservedFieldRejected(assertThrows(MulticloudDbException.class,
-                () -> client.create(ADDR, KEY, doc, null)), "Data");
+                () -> client.create(ADDR, KEY, document(doc), null)), "Data");
     }
 
     @Test
@@ -136,7 +138,7 @@ class SpannerReservedFieldTest {
         Map<String, Object> doc = new HashMap<>();
         doc.put("DATA", "user-payload");
         assertReservedFieldRejected(assertThrows(MulticloudDbException.class,
-                () -> client.update(ADDR, KEY, doc, null)), "DATA");
+                () -> client.update(ADDR, KEY, document(doc), null)), "DATA");
     }
 
     @Test
@@ -146,6 +148,6 @@ class SpannerReservedFieldTest {
         doc.put("dAtA", "user-payload");
         doc.put("status", "active");
         assertReservedFieldRejected(assertThrows(MulticloudDbException.class,
-                () -> client.upsert(ADDR, KEY, doc, null)), "dAtA");
+                () -> client.upsert(ADDR, KEY, document(doc), null)), "dAtA");
     }
 }

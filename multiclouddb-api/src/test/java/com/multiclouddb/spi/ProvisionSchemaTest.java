@@ -34,10 +34,10 @@ class ProvisionSchemaTest {
             ThrowingRunnable onEnsureContainer) {
 
         return new MulticloudDbProviderClient() {
-            @Override public void create(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) {}
+            @Override public void create(ResourceAddress a, MulticloudDbKey k, com.multiclouddb.api.document.Document d, OperationOptions o) {}
             @Override public DocumentResult read(ResourceAddress a, MulticloudDbKey k, OperationOptions o) { return null; }
-            @Override public void update(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) {}
-            @Override public void upsert(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) {}
+            @Override public void update(ResourceAddress a, MulticloudDbKey k, com.multiclouddb.api.document.Document d, OperationOptions o) {}
+            @Override public void upsert(ResourceAddress a, MulticloudDbKey k, com.multiclouddb.api.document.Document d, OperationOptions o) {}
             @Override public void delete(ResourceAddress a, MulticloudDbKey k, OperationOptions o) {}
             @Override public QueryPage query(ResourceAddress a, QueryRequest q, OperationOptions o) { return null; }
             @Override public CapabilitySet capabilities() { return null; }
@@ -193,10 +193,10 @@ class ProvisionSchemaTest {
         //
         // For this test, verify that a two-level chain thrown directly retains category.
         MulticloudDbProviderClient client = new MulticloudDbProviderClient() {
-            @Override public void create(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) {}
+            @Override public void create(ResourceAddress a, MulticloudDbKey k, com.multiclouddb.api.document.Document d, OperationOptions o) {}
             @Override public DocumentResult read(ResourceAddress a, MulticloudDbKey k, OperationOptions o) { return null; }
-            @Override public void update(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) {}
-            @Override public void upsert(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) {}
+            @Override public void update(ResourceAddress a, MulticloudDbKey k, com.multiclouddb.api.document.Document d, OperationOptions o) {}
+            @Override public void upsert(ResourceAddress a, MulticloudDbKey k, com.multiclouddb.api.document.Document d, OperationOptions o) {}
             @Override public void delete(ResourceAddress a, MulticloudDbKey k, OperationOptions o) {}
             @Override public QueryPage query(ResourceAddress a, QueryRequest q, OperationOptions o) { return null; }
             @Override public CapabilitySet capabilities() { return null; }

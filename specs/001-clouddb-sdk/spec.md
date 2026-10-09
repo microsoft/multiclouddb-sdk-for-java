@@ -239,6 +239,12 @@ As an application developer, I can specify a read consistency level (e.g., stron
 
 ### User Story 11 - Transparent Large Object (BLOB) Offloading (Priority: P2)
 
+**Current implementation scope**: This is a deferred requirement, not implemented
+by the current customer-serialization increment. Its Document model contains
+only null, boolean, string, number, array and object; there is no binary kind or
+automatic BLOB offloading. Explicit application text mapping remains ordinary
+string data. The future acceptance scenarios below are retained as requirements.
+
 As an application developer, I can store and retrieve binary payloads (serialized objects, protocol buffers, compressed archives) that exceed the SDK's uniform document size limit, and the SDK transparently offloads the oversized payload to provider-appropriate external object storage while maintaining a reference in the database document — so that my application code treats these as normal document fields without awareness of the offloading mechanism. Large object handling is enabled by SDK configuration that selects eligible document field paths; no code-level annotations or hooks are required.
 
 **Why this priority**: Applications migrating from Cassandra commonly store large serialized objects inline (e.g., protobuf-encoded aggregated positions, pre-composed cached objects up to 3–4 MB). The SDK's 400 KB uniform document size limit would reject these payloads outright, blocking migration. Transparent offloading enables these workloads without requiring application-level chunking or external storage management code.

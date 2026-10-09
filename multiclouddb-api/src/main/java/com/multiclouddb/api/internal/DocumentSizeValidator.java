@@ -3,15 +3,10 @@
 
 package com.multiclouddb.api.internal;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.multiclouddb.api.document.Document;
 import com.multiclouddb.api.MulticloudDbError;
 import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.MulticloudDbException;
-import com.multiclouddb.api.OperationNames;
-
-import java.util.Map;
 
 /**
  * Validates document payload sizes against the uniform maximum defined by FR-061.
@@ -36,8 +31,6 @@ public final class DocumentSizeValidator {
     /** Maximum document size in bytes — DynamoDB hard limit minus 1 KB safety margin. */
     public static final int MAX_BYTES = 400 * 1024 - 1024; // 399 KB
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-
     private DocumentSizeValidator() {
     }
 
@@ -50,39 +43,21 @@ public final class DocumentSizeValidator {
      * @throws MulticloudDbException with category {@link MulticloudDbErrorCategory#INVALID_REQUEST}
      *                               if the document exceeds the size limit
      */
-    public static void validate(JsonNode document, String operation) {
+    public static void validate(Document document, String operation) {
         if (document == null) {
             return;
         }
         try {
-            byte[] bytes = MAPPER.writeValueAsBytes(document);
-            if (bytes.length > MAX_BYTES) {
-                throw new MulticloudDbException(new MulticloudDbError(
-                        MulticloudDbErrorCategory.INVALID_REQUEST,
-                        "Document size " + bytes.length + " bytes exceeds the maximum of "
-                                + MAX_BYTES + " bytes (399 KB). Reduce the document size to "
-                                + "maintain portability across all providers.",
-                        null,
-                        operation,
-                        false,
-                        null));
-            }
-        } catch (JsonProcessingException e) {
-            throw new MulticloudDbException(new MulticloudDbError(
-                    MulticloudDbErrorCategory.INVALID_REQUEST,
-                    "Document could not be serialised for size check: " + e.getMessage(),
-                    null,
-                    operation,
-                    false,
-                    null));
+            DocumentJsonSize.measure(document, MAX_BYTES);
+        } catch (DocumentJsonSize.SizeExceeded failure) {
+            throw invalid("Document logical JSON size is at least " + failure.observedBytes
+                    + " bytes (measurement stopped at the limit; not the full size)."
+                    + " Maximum logical JSON size is " + MAX_BYTES + " bytes (399 KB).", operation);
         }
     }
 
-    /** Overload accepting {@code Map<String, Object>} documents. */
-    public static void validate(Map<String, Object> document, String operation) {
-        if (document == null) {
-            return;
-        }
-        validate((JsonNode) MAPPER.valueToTree(document), operation);
+    private static MulticloudDbException invalid(String message, String operation) {
+        return new MulticloudDbException(new MulticloudDbError(
+                MulticloudDbErrorCategory.INVALID_REQUEST, message, null, operation, false, null));
     }
 }

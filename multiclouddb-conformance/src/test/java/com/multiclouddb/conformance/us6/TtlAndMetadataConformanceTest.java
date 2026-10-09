@@ -3,6 +3,8 @@
 
 package com.multiclouddb.conformance.us6;
 
+import static com.multiclouddb.conformance.Documents.document;
+
 import com.multiclouddb.api.*;
 import com.multiclouddb.conformance.ConformanceHarness;
 import org.junit.jupiter.api.*;
@@ -62,7 +64,7 @@ public abstract class TtlAndMetadataConformanceTest {
 
         OperationOptions opts = OperationOptions.builder().ttlSeconds(3600).build();
         assertDoesNotThrow(
-                () -> client.create(getAddress(), key, doc, opts),
+                () -> client.create(getAddress(), key, document(doc), opts),
                 "create() with ttlSeconds=3600 must not throw");
     }
 
@@ -77,7 +79,7 @@ public abstract class TtlAndMetadataConformanceTest {
 
         OperationOptions opts = OperationOptions.builder().ttlSeconds(3600).build();
         assertDoesNotThrow(
-                () -> client.upsert(getAddress(), key, doc, opts),
+                () -> client.upsert(getAddress(), key, document(doc), opts),
                 "upsert() with ttlSeconds=3600 must not throw");
     }
 
@@ -91,12 +93,12 @@ public abstract class TtlAndMetadataConformanceTest {
         Map<String, Object> seed = Map.of("name", "ttl-update-seed");
 
         // Create first so update() has something to replace
-        client.create(getAddress(), key, seed, OperationOptions.defaults());
+        client.create(getAddress(), key, document(seed), OperationOptions.defaults());
 
         Map<String, Object> updated = Map.of("name", "ttl-update-test");
         OperationOptions opts = OperationOptions.builder().ttlSeconds(7200).build();
         assertDoesNotThrow(
-                () -> client.update(getAddress(), key, updated, opts),
+                () -> client.update(getAddress(), key, document(updated), opts),
                 "update() with ttlSeconds=7200 must not throw");
     }
 
@@ -108,7 +110,7 @@ public abstract class TtlAndMetadataConformanceTest {
     void readWithMetadataReturnsMetadata() {
         MulticloudDbKey key = ConformanceHarness.uniqueKey("meta-test");
         Map<String, Object> doc = Map.of("value", 42);
-        client.upsert(getAddress(), key, doc, OperationOptions.defaults());
+        client.upsert(getAddress(), key, document(doc), OperationOptions.defaults());
 
         OperationOptions readOpts = OperationOptions.builder().includeMetadata(true).build();
         DocumentResult result = client.read(getAddress(), key, readOpts);
@@ -126,7 +128,7 @@ public abstract class TtlAndMetadataConformanceTest {
     void metadataVersionIsPopulated() {
         MulticloudDbKey key = ConformanceHarness.uniqueKey("version-test");
         Map<String, Object> doc = Map.of("value", 99);
-        client.upsert(getAddress(), key, doc, OperationOptions.defaults());
+        client.upsert(getAddress(), key, document(doc), OperationOptions.defaults());
 
         OperationOptions readOpts = OperationOptions.builder().includeMetadata(true).build();
         DocumentResult result = client.read(getAddress(), key, readOpts);
@@ -148,7 +150,7 @@ public abstract class TtlAndMetadataConformanceTest {
 
         MulticloudDbKey key = ConformanceHarness.uniqueKey("lastmod-test");
         Map<String, Object> doc = Map.of("value", 7);
-        client.upsert(getAddress(), key, doc, OperationOptions.defaults());
+        client.upsert(getAddress(), key, document(doc), OperationOptions.defaults());
 
         OperationOptions readOpts = OperationOptions.builder().includeMetadata(true).build();
         DocumentResult result = client.read(getAddress(), key, readOpts);
@@ -167,7 +169,7 @@ public abstract class TtlAndMetadataConformanceTest {
     void readWithoutMetadataFlagReturnsNullMetadata() {
         MulticloudDbKey key = ConformanceHarness.uniqueKey("no-meta-test");
         Map<String, Object> doc = Map.of("value", 1);
-        client.upsert(getAddress(), key, doc, OperationOptions.defaults());
+        client.upsert(getAddress(), key, document(doc), OperationOptions.defaults());
 
         // Default options — includeMetadata is false
         DocumentResult result = client.read(getAddress(), key, OperationOptions.defaults());

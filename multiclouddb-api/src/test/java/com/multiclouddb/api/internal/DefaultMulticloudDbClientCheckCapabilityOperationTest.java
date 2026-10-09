@@ -58,10 +58,10 @@ class DefaultMulticloudDbClientCheckCapabilityOperationTest {
         @Override public ProviderId providerId() { return pid; }
         @Override public CapabilitySet capabilities() { return caps; }
 
-        @Override public void create(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) { throw new UnsupportedOperationException(); }
+        @Override public void create(ResourceAddress a, MulticloudDbKey k, com.multiclouddb.api.document.Document d, OperationOptions o) { throw new UnsupportedOperationException(); }
         @Override public DocumentResult read(ResourceAddress a, MulticloudDbKey k, OperationOptions o) { throw new UnsupportedOperationException(); }
-        @Override public void update(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) { throw new UnsupportedOperationException(); }
-        @Override public void upsert(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) { throw new UnsupportedOperationException(); }
+        @Override public void update(ResourceAddress a, MulticloudDbKey k, com.multiclouddb.api.document.Document d, OperationOptions o) { throw new UnsupportedOperationException(); }
+        @Override public void upsert(ResourceAddress a, MulticloudDbKey k, com.multiclouddb.api.document.Document d, OperationOptions o) { throw new UnsupportedOperationException(); }
         @Override public void delete(ResourceAddress a, MulticloudDbKey k, OperationOptions o) { throw new UnsupportedOperationException(); }
         @Override public QueryPage query(ResourceAddress a, QueryRequest q, OperationOptions o) { throw new UnsupportedOperationException(); }
         @Override public void close() { }

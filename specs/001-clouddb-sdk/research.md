@@ -330,16 +330,16 @@ This appendix is **non-normative**. It records Java SDK behaviors that impact th
   - **DynamoDB**: No per-item write timestamp at GetItem level; empty metadata shell.
   - **Spanner**: Empty metadata shell (commit timestamp requires schema column; deferred).
 - **Decision on opt-in**: Metadata retrieval is opt-in via `OperationOptions.includeMetadata(boolean)`. Default false.
-  Read return type changes: `MulticloudDbClient.read()` returns `DocumentResult` wrapping both the `ObjectNode` payload and nullable `DocumentMetadata`.
-- **Rationale**: Opt-in avoids breaking existing callers. `DocumentResult` keeps backward compatibility by providing a `.document()` accessor.
+  `MulticloudDbClient.read()` returns `DocumentResult` wrapping an immutable neutral `Document` payload and nullable `DocumentMetadata`.
+- **Rationale**: Metadata remains opt-in and separate from document data. The current development migration of `.document()` from `ObjectNode` to `Document` is a coordinated breaking API change, not source/binary compatibility with earlier callers.
 - **Alternatives considered**: Always return metadata — extra provider overhead, breaks existing API contracts.
 
 ---
 
 ## Decision 23: Uniform document size enforcement (400 KB)
 
-- **Decision**: Add a `DocumentSizeValidator` utility in `multiclouddb-api/internal` that serializes `JsonNode` to UTF-8 bytes via `ObjectMapper.writeValueAsBytes()` and checks against `MAX_BYTES = 400 * 1024`. Validation occurs in `DefaultMulticloudDbClient` before delegating to the provider adapter — once, provider-agnostically.
-- **Rationale**: DynamoDB's 400 KB limit is the lowest common denominator. Enforcing at the `DefaultMulticloudDbClient` layer means no provider adapter needs to duplicate the check. Serializing to check size is deterministic and requires no provider I/O.
+- **Decision**: `DocumentSizeValidator` in `multiclouddb-api/internal` uses a structural `Document` counter preserving the legacy logical JSON byte profile, without Jackson or serialized-byte allocation. The effective limit is `MAX_BYTES = 400 * 1024 - 1024` (399 KiB). Validation occurs in `DefaultMulticloudDbClient` before provider delegation. The current six-kind model has no binary values; binary serializer output fails at the codec boundary. Size overflow stops traversal and reports the observed count as a lower bound, not the full size.
+- **Rationale**: DynamoDB's item limit motivated the portable logical profile and safety margin, but logical JSON bytes are not native physical storage size. A single bounded counter avoids provider I/O and duplicated validation. The API runtime uses Gson 2.11.0 for cursor JSON plus SLF4J 2.0.12 and Gson's transitive annotation metadata dependency, not Jackson for size validation or AST serialization.
 - **Alternatives considered**:
   - Enforce per-provider adapter: duplicates logic, inconsistent enforcement.
   - Enforce at SPI layer: coupling SPI to a specific limit.

@@ -599,7 +599,7 @@ final class DynamoChangeFeedReader {
                 : null;
         JsonNode data = imageAttrs != null ? DynamoItemMapper.attributeMapToJsonNode(imageAttrs) : null;
 
-        return new ChangeEvent(key, type, commitTs, data, eventId);
+        return new ChangeEvent(key, type, commitTs, NativeDocuments.changeData(data), eventId);
     }
 
     private static String attrToString(AttributeValue v) {

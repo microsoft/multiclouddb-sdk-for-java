@@ -33,15 +33,19 @@ dependencies {
 
 ### Example (illustrative)
 
+Current development examples use `com.multiclouddb.api.document.*`; the
+previous released beta Map/ObjectNode boundary requires migration.
+
 ```java
 MulticloudDbClient client = MulticloudDbClientFactory.create(config);
 
 ResourceAddress resource = new ResourceAddress("db", "collection");
-Key key = Key.of("partitionKey-123", "sortKey-456");
-JsonNode doc = objectMapper.createObjectNode().put("id", "123").put("name", "Ada");
+MulticloudDbKey key = MulticloudDbKey.of("partitionKey-123", "sortKey-456");
+Document doc = Document.builder()
+        .put("id", new StringValue("123")).put("name", new StringValue("Ada")).build();
 
 client.upsert(resource, key, doc);
-JsonNode got = client.read(resource, key);  // returns null if not found
+DocumentResult got = client.read(resource, key);  // null if not found
 client.delete(resource, key);
 
 // Portable query expression — works on all providers without changes
@@ -293,7 +297,7 @@ OperationOptions optionsWithMeta = OperationOptions.builder()
     .build();
 
 DocumentResult result = client.read(address, key, optionsWithMeta);
-ObjectNode doc = result.document();
+Document doc = result.document();
 DocumentMetadata meta = result.metadata();
 if (meta != null) {
     if (meta.lastModified() != null) System.out.println("Last written: " + meta.lastModified());
@@ -306,7 +310,7 @@ if (meta != null) {
 ```java
 // Existing callers: pass OperationOptions.defaults() — no metadata overhead
 DocumentResult result = client.read(address, key, OperationOptions.defaults());
-ObjectNode doc = result.document();  // same as before
+Document doc = result.document();  // neutral immutable payload
 ```
 
 ---
@@ -317,7 +321,7 @@ The SDK enforces a **400 KB** maximum document size across all providers (driven
 
 ```java
 // Oversized documents are rejected before any I/O
-ObjectNode largeDoc = buildLargeDocument();  // >400 KB
+Document largeDoc = buildLargeDocument();  // >399 KiB logical JSON size
 try {
     client.create(address, key, largeDoc, OperationOptions.defaults());
 } catch (MulticloudDbException e) {

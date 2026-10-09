@@ -37,6 +37,7 @@
 
     <modules>
         <module>multiclouddb-api</module>
+        <module>multiclouddb-serializer-jackson</module>
         <module>multiclouddb-provider-cosmos</module>
         <module>multiclouddb-provider-dynamo</module>
         <module>multiclouddb-provider-spanner</module>
@@ -51,13 +52,15 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- Publishable module versions (independent release cadence) -->
-        <multiclouddb-api.version>0.1.0-beta.2</multiclouddb-api.version>
-        <multiclouddb-provider-cosmos.version>0.1.0-beta.2</multiclouddb-provider-cosmos.version>
-        <multiclouddb-provider-dynamo.version>0.1.0-beta.2</multiclouddb-provider-dynamo.version>
-        <multiclouddb-provider-spanner.version>0.1.0-beta.1</multiclouddb-provider-spanner.version>
+        <multiclouddb-api.version>0.1.0-beta.2-SNAPSHOT</multiclouddb-api.version>
+        <multiclouddb-serializer-jackson.version>0.1.0-SNAPSHOT</multiclouddb-serializer-jackson.version>
+        <multiclouddb-provider-cosmos.version>0.1.0-beta.2-SNAPSHOT</multiclouddb-provider-cosmos.version>
+        <multiclouddb-provider-dynamo.version>0.1.0-beta.2-SNAPSHOT</multiclouddb-provider-dynamo.version>
+        <multiclouddb-provider-spanner.version>0.1.0-beta.1-SNAPSHOT</multiclouddb-provider-spanner.version>
 
         <!-- Dependency versions -->
         <jackson.version>2.22.3</jackson.version>
+        <gson.version>2.11.0</gson.version>
         <slf4j.version>2.0.12</slf4j.version>
         <azure-cosmos.version>4.78.0</azure-cosmos.version>
         <azure-core.version>1.57.1</azure-core.version>
@@ -101,7 +104,18 @@
                 <version>${multiclouddb-provider-spanner.version}</version>
             </dependency>
 
+            <dependency>
+                <groupId>com.microsoft.multiclouddb</groupId>
+                <artifactId>multiclouddb-serializer-jackson</artifactId>
+                <version>${multiclouddb-serializer-jackson.version}</version>
+            </dependency>
+
             <!-- Jackson -->
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-core</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.fasterxml.jackson.core</groupId>
                 <artifactId>jackson-databind</artifactId>
@@ -109,6 +123,11 @@
             </dependency>
 
             <!-- Logging -->
+            <dependency>
+                <groupId>com.google.code.gson</groupId>
+                <artifactId>gson</artifactId>
+                <version>${gson.version}</version>
+            </dependency>
             <dependency>
                 <groupId>org.slf4j</groupId>
                 <artifactId>slf4j-api</artifactId>

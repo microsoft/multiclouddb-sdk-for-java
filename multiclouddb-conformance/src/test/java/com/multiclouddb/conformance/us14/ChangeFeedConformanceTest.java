@@ -3,6 +3,8 @@
 
 package com.multiclouddb.conformance.us14;
 
+import static com.multiclouddb.conformance.Documents.document;
+
 import com.multiclouddb.api.MulticloudDbClient;
 import com.multiclouddb.api.MulticloudDbKey;
 import com.multiclouddb.api.ResourceAddress;
@@ -15,6 +17,8 @@ import com.multiclouddb.api.changefeed.internal.CursorAnchor;
 import com.multiclouddb.api.changefeed.internal.CursorToken;
 import com.multiclouddb.api.changefeed.internal.CursorTokenCodec;
 import com.multiclouddb.api.changefeed.internal.PartitionPosition;
+import com.multiclouddb.api.document.NumberValue;
+import com.multiclouddb.api.document.ObjectValue;
 import com.multiclouddb.conformance.ConformanceHarness;
 import org.junit.jupiter.api.*;
 
@@ -141,12 +145,17 @@ public abstract class ChangeFeedConformanceTest {
         ChangeFeedCursor[] cursors = client.listCursors(getAddress()).toArray(new ChangeFeedCursor[0]);
         MulticloudDbKey key = ConformanceHarness.uniqueKey("cf-create");
         try {
-            client.upsert(getAddress(), key, Map.of("v", 1));
+            client.upsert(getAddress(), key, document(Map.of("v", 1)));
             ChangeEvent ev = waitForEventByKey(cursors, key, propagationTimeout());
             assertNotNull(ev, "expected CREATE event for key " + key + " within "
                     + propagationTimeout().toMillis() + "ms");
             assertEquals(ChangeType.CREATE, ev.type(),
                     "first event for a fresh key must be CREATE");
+            ObjectValue data = assertInstanceOf(ObjectValue.class, ev.data(),
+                    "the fresh-key CREATE must carry the selected object payload");
+            NumberValue value = assertInstanceOf(NumberValue.class, data.fields().get("v"),
+                    "the selected CREATE payload must retain the written numeric field");
+            assertEquals(NumberValue.of(1), value, "CREATE payload must preserve the written value");
         } finally {
             ConformanceHarness.safeDelete(client, getAddress(), key);
         }
@@ -158,10 +167,10 @@ public abstract class ChangeFeedConformanceTest {
     @DisplayName("FR-cf-004: UPDATE event surfaces after upsert of an existing key")
     void updateEventSurfacesAfterUpsert() throws Exception {
         MulticloudDbKey key = ConformanceHarness.uniqueKey("cf-update");
-        client.upsert(getAddress(), key, Map.of("v", 1));
+        client.upsert(getAddress(), key, document(Map.of("v", 1)));
         ChangeFeedCursor[] cursors = client.listCursors(getAddress()).toArray(new ChangeFeedCursor[0]);
         try {
-            client.upsert(getAddress(), key, Map.of("v", 2));
+            client.upsert(getAddress(), key, document(Map.of("v", 2)));
             ChangeEvent ev = waitForEventByKey(cursors, key, propagationTimeout());
             assertNotNull(ev, "expected UPDATE event for key " + key);
             assertEquals(ChangeType.UPDATE, ev.type(),
@@ -180,7 +189,7 @@ public abstract class ChangeFeedConformanceTest {
                 "Provider configuration under test does not surface DELETE events "
                         + "(e.g., Cosmos LatestVersion mode)");
         MulticloudDbKey key = ConformanceHarness.uniqueKey("cf-delete");
-        client.upsert(getAddress(), key, Map.of("v", 1));
+        client.upsert(getAddress(), key, document(Map.of("v", 1)));
         ChangeFeedCursor[] cursors = client.listCursors(getAddress()).toArray(new ChangeFeedCursor[0]);
         client.delete(getAddress(), key);
         ChangeEvent ev = waitForEventByKey(cursors, key, propagationTimeout());
@@ -196,7 +205,7 @@ public abstract class ChangeFeedConformanceTest {
     void nowCursorIgnoresPriorEvents() throws Exception {
         // Generate some "noise" before now()
         MulticloudDbKey noiseKey = ConformanceHarness.uniqueKey("cf-noise");
-        client.upsert(getAddress(), noiseKey, Map.of("v", 1));
+        client.upsert(getAddress(), noiseKey, document(Map.of("v", 1)));
         Thread.sleep(propagationTimeout().toMillis() / 3);
 
         // Mint cursor exactly at the live tip
@@ -208,7 +217,7 @@ public abstract class ChangeFeedConformanceTest {
         // Now write a key — only this key should appear from liveTip onward
         MulticloudDbKey newKey = ConformanceHarness.uniqueKey("cf-after-now");
         try {
-            client.upsert(getAddress(), newKey, Map.of("v", 1));
+            client.upsert(getAddress(), newKey, document(Map.of("v", 1)));
             // Collect every event seen between mint and the matching newKey
             // event so the noiseKey assertion below has real material to check.
             // The earlier `assertNotEquals(noiseKey, ev.key())` could never
@@ -237,7 +246,7 @@ public abstract class ChangeFeedConformanceTest {
         MulticloudDbKey first = ConformanceHarness.uniqueKey("cf-resume-1");
         MulticloudDbKey second = ConformanceHarness.uniqueKey("cf-resume-2");
         try {
-            client.upsert(getAddress(), first, Map.of("v", 1));
+            client.upsert(getAddress(), first, document(Map.of("v", 1)));
             ChangeEvent firstEvent = waitForEventByKey(cursors, first, propagationTimeout());
             assertNotNull(firstEvent);
 
@@ -249,7 +258,7 @@ public abstract class ChangeFeedConformanceTest {
             String[] wires = new String[resumeCursors.length];
             for (int i = 0; i < wires.length; i++) wires[i] = resumeCursors[i].toToken();
 
-            client.upsert(getAddress(), second, Map.of("v", 1));
+            client.upsert(getAddress(), second, document(Map.of("v", 1)));
 
             // Restore and read
             ChangeFeedCursor[] restored = new ChangeFeedCursor[wires.length];

@@ -3,6 +3,8 @@
 
 package com.multiclouddb.conformance.us1b;
 
+import static com.multiclouddb.conformance.Documents.document;
+
 import com.multiclouddb.api.MulticloudDbClient;
 import com.multiclouddb.api.MulticloudDbClientConfig;
 import com.multiclouddb.api.MulticloudDbClientFactory;
@@ -114,8 +116,7 @@ class SpannerQueryIntegrationTest {
     }
 
     private void insertDoc(String id, String title, String status, int priority, String category) {
-        client.upsert(address, com.multiclouddb.api.MulticloudDbKey.of(id, id),
-                Map.of("title", title, "status", status, "priority", priority, "category", category));
+        client.upsert(address, com.multiclouddb.api.MulticloudDbKey.of(id, id), document(Map.of("title", title, "status", status, "priority", priority, "category", category)));
     }
 
     private static String str(Map<String, Object> item, String field) {

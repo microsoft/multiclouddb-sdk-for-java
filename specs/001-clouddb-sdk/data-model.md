@@ -52,6 +52,19 @@ Fields:
 Constraints:
 - must be serializable to a JSON-like representation
 
+**Customer document mapping increment (partial issue 116):** the API now owns
+immutable object-root Document, a closed six-kind DocumentValue algebra (null,
+boolean, string, number, array and object; no binary/embedded values) and an explicit
+application-owned DocumentCodec. The optional JacksonDocumentCodec implements
+that common contract. CRUD uses Document; point reads return Document; nullable
+change-feed payloads use DocumentValue. Query Map/Object contracts remain
+unchanged. API compile/runtime dependencies no longer include Jackson; providers
+retain their internal mappings, reserved fields and storage limitations.
+The initial finite numeric view retains source kinds/scale, mathematical
+equality, precision <=1024 and scale [-1024,+1024], with 128-container depth.
+These are in-memory bounds, not provider round-trip guarantees. See
+[usage and file/method/test traceability](../../docs/customer-object-mapping.md).
+
 ### Query
 Portable query request.
 
@@ -222,10 +235,11 @@ Provider availability:
 Location: `multiclouddb-api/src/main/java/com/multiclouddb/api/DocumentResult.java`
 
 Fields:
-- `document: ObjectNode` (required — the document payload)
+- `document: Document` (required - immutable object-root payload)
 - `metadata: DocumentMetadata` — null when `OperationOptions.includeMetadata()` is false (the default)
 
-**API impact**: `MulticloudDbClient.read()` return type changed from `JsonNode` to `DocumentResult`. Existing callers use `.document()` to get the payload.
+**API impact**: `MulticloudDbClient.read()` returns `DocumentResult` (or null for
+absence); `.document()` now returns the neutral Document rather than ObjectNode.
 
 ### OperationOptions (modified)
 
@@ -254,10 +268,10 @@ New constants added to `Capability`:
 Location: `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DocumentSizeValidator.java`
 
 Static utility:
-- `MAX_BYTES = 400 * 1024` (400 KB — DynamoDB hard limit, lowest common denominator)
-- `validate(JsonNode document, String operation)` — throws `MulticloudDbException(INVALID_REQUEST)` when serialized UTF-8 size exceeds limit
+- `MAX_BYTES = 400 * 1024 - 1024` (399 KiB logical JSON size, including the existing safety margin)
+- `validate(Document document, String operation)` - rejects oversize input with `MulticloudDbException(INVALID_REQUEST)`; counts the existing byte profile without allocating document JSON. Binary is not a model value and cannot reach this counter.
 
-Applied in `DefaultMulticloudDbClient.create()` and `upsert()` before provider delegation.
+Applied in `DefaultMulticloudDbClient.create()`, `update()` and `upsert()` before provider delegation.
 
 ### Provider Schema Changes
 

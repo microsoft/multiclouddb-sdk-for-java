@@ -60,10 +60,10 @@ public final class FakeCapabilityGateAdapter implements MulticloudDbProviderAdap
             this.capabilities = new CapabilitySet(List.of(cap));
         }
 
-        @Override public void create(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) {}
+        @Override public void create(ResourceAddress a, MulticloudDbKey k, com.multiclouddb.api.document.Document d, OperationOptions o) {}
         @Override public DocumentResult read(ResourceAddress a, MulticloudDbKey k, OperationOptions o) { return null; }
-        @Override public void update(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) {}
-        @Override public void upsert(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) {}
+        @Override public void update(ResourceAddress a, MulticloudDbKey k, com.multiclouddb.api.document.Document d, OperationOptions o) {}
+        @Override public void upsert(ResourceAddress a, MulticloudDbKey k, com.multiclouddb.api.document.Document d, OperationOptions o) {}
         @Override public void delete(ResourceAddress a, MulticloudDbKey k, OperationOptions o) {}
         @Override public QueryPage query(ResourceAddress a, QueryRequest q, OperationOptions o) { return null; }
         @Override public CapabilitySet capabilities() { return capabilities; }

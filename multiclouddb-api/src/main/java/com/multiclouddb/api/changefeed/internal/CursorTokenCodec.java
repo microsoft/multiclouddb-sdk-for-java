@@ -3,17 +3,16 @@
 
 package com.multiclouddb.api.changefeed.internal;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.multiclouddb.api.MulticloudDbError;
 import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.ResourceAddress;
 import com.multiclouddb.api.changefeed.CursorExpiredException;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -111,7 +110,6 @@ public final class CursorTokenCodec {
      */
     public static final long MAX_TOKEN_AGE_MILLIS = 24L * 60L * 60L * 1000L;
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Base64.Encoder B64_ENC = Base64.getUrlEncoder().withoutPadding();
     private static final Base64.Decoder B64_DEC = Base64.getUrlDecoder();
 
@@ -121,19 +119,19 @@ public final class CursorTokenCodec {
     /**
      * Encode the given token to its Base64URL JSON wire form.
      *
-     * @throws IllegalStateException if Jackson serialization fails (should not occur
+     * @throws IllegalStateException if JSON serialization fails (should not occur
      *                               with the well-formed types accepted by
      *                               {@link CursorToken})
      */
     public static String encode(CursorToken token) {
-        ObjectNode node = MAPPER.createObjectNode();
-        node.put("v", CursorToken.VERSION);
-        node.put("p", token.providerId().id());
+        JsonObject node = new JsonObject();
+        node.addProperty("v", CursorToken.VERSION);
+        node.addProperty("p", token.providerId().id());
         if (token.resource() != null) {
-            node.put("r", token.resource().database() + "/" + token.resource().collection());
+            node.addProperty("r", token.resource().database() + "/" + token.resource().collection());
         }
-        node.put("i", token.issuedAtEpochMillis());
-        node.put("a", token.anchor().name());
+        node.addProperty("i", token.issuedAtEpochMillis());
+        node.addProperty("a", token.anchor().name());
 
         // Encode the effective age cap ONLY when it exceeds the baseline. A
         // token minted at the 24h baseline omits "e" so the wire form stays
@@ -145,24 +143,24 @@ public final class CursorTokenCodec {
         // window here so a persisted token can outlive 24h client-side up to
         // the server-side retention.
         if (token.effectiveRetentionMillis() > MAX_TOKEN_AGE_MILLIS) {
-            node.put("e", token.effectiveRetentionMillis());
+            node.addProperty("e", token.effectiveRetentionMillis());
         }
 
-        ArrayNode arr = MAPPER.createArrayNode();
+        JsonArray arr = new JsonArray();
         for (PartitionPosition pos : token.partitions()) {
-            ObjectNode p = MAPPER.createObjectNode();
-            p.put("id", pos.partitionId());
+            JsonObject p = new JsonObject();
+            p.addProperty("id", pos.partitionId());
             if (pos.continuation() != null) {
-                p.put("c", pos.continuation());
+                p.addProperty("c", pos.continuation());
             }
             arr.add(p);
         }
-        node.set("s", arr);
+        node.add("s", arr);
 
         try {
-            byte[] json = MAPPER.writeValueAsBytes(node);
+            byte[] json = CursorJson.write(node).getBytes(StandardCharsets.UTF_8);
             return B64_ENC.encodeToString(json);
-        } catch (JsonProcessingException e) {
+        } catch (IOException e) {
             throw new IllegalStateException("Failed to encode change-feed cursor token", e);
         }
     }
@@ -196,17 +194,18 @@ public final class CursorTokenCodec {
             throw expired(REASON_MALFORMED, "token is not valid Base64URL", null);
         }
 
-        JsonNode root;
+        JsonElement parsed;
         try {
-            root = MAPPER.readTree(new String(raw, StandardCharsets.UTF_8));
-        } catch (Exception e) {
+            parsed = CursorJson.read(new String(raw, StandardCharsets.UTF_8));
+        } catch (IOException | IllegalStateException | NumberFormatException e) {
             throw expired(REASON_MALFORMED, "token payload is not valid JSON", null);
         }
-        if (root == null || !root.isObject()) {
+        if (parsed == null || !parsed.isJsonObject()) {
             throw expired(REASON_MALFORMED, "token payload is not a JSON object", null);
         }
 
-        int version = root.path("v").asInt(-1);
+        JsonObject root = parsed.getAsJsonObject();
+        int version = CursorJson.asInt(CursorJson.get(root, "v"), -1);
         if (version < 0) {
             throw expired(REASON_MALFORMED, "token missing required field 'v'", null);
         }
@@ -218,7 +217,7 @@ public final class CursorTokenCodec {
         }
 
         String providerId = textRequired(root, "p");
-        long issuedAt = root.path("i").asLong(Long.MIN_VALUE);
+        long issuedAt = CursorJson.asLong(CursorJson.get(root, "i"), Long.MIN_VALUE);
         if (issuedAt == Long.MIN_VALUE) {
             throw expired(REASON_MALFORMED, "token missing required field 'i'", null);
         }
@@ -231,8 +230,8 @@ public final class CursorTokenCodec {
         }
 
         ResourceAddress resource = null;
-        if (root.has("r") && !root.get("r").isNull()) {
-            String r = root.get("r").asText();
+        if (root.has("r") && !root.get("r").isJsonNull()) {
+            String r = CursorJson.text(root.get("r"), "null");
             int slash = r.indexOf('/');
             if (slash <= 0 || slash == r.length() - 1) {
                 throw expired(REASON_MALFORMED,
@@ -254,13 +253,13 @@ public final class CursorTokenCodec {
         // baseline floor so a malformed/tiny value cannot silently shorten
         // the portable guarantee.
         long effectiveRetentionMillis = MAX_TOKEN_AGE_MILLIS;
-        if (root.has("e") && !root.get("e").isNull()) {
-            JsonNode eNode = root.get("e");
-            if (!eNode.isNumber() || !eNode.canConvertToLong()) {
+        if (root.has("e") && !root.get("e").isJsonNull()) {
+            JsonElement eNode = root.get("e");
+            if (!CursorJson.canConvertToLong(eNode)) {
                 throw expired(REASON_MALFORMED,
                         "token effective-retention 'e' is not a long: " + eNode, null);
             }
-            long encoded = eNode.asLong();
+            long encoded = CursorJson.asLong(eNode, 0);
             if (encoded <= 0) {
                 throw expired(REASON_MALFORMED,
                         "token effective-retention 'e' must be > 0; was " + encoded, null);
@@ -269,19 +268,20 @@ public final class CursorTokenCodec {
         }
 
         List<PartitionPosition> partitions = new ArrayList<>();
-        JsonNode arr = root.path("s");
-        if (!arr.isArray()) {
+        JsonElement arr = CursorJson.get(root, "s");
+        if (!arr.isJsonArray()) {
             throw expired(REASON_MALFORMED, "token missing or non-array partitions 's'", null);
         }
-        for (JsonNode p : arr) {
-            if (!p.isObject()) {
+        for (JsonElement element : arr.getAsJsonArray()) {
+            if (!element.isJsonObject()) {
                 throw expired(REASON_MALFORMED, "partition entry is not a JSON object", null);
             }
-            String partId = p.path("id").asText(null);
+            JsonObject p = element.getAsJsonObject();
+            String partId = CursorJson.text(CursorJson.get(p, "id"), null);
             if (partId == null || partId.isBlank()) {
                 throw expired(REASON_MALFORMED, "partition entry missing 'id'", null);
             }
-            String cont = p.has("c") && !p.get("c").isNull() ? p.get("c").asText(null) : null;
+            String cont = CursorJson.text(CursorJson.get(p, "c"), null);
             try {
                 partitions.add(new PartitionPosition(partId, cont));
             } catch (IllegalArgumentException e) {
@@ -362,12 +362,12 @@ public final class CursorTokenCodec {
         }
     }
 
-    private static String textRequired(JsonNode root, String field) {
-        JsonNode n = root.path(field);
-        if (n.isMissingNode() || n.isNull() || !n.isTextual() || n.asText().isBlank()) {
+    private static String textRequired(JsonObject root, String field) {
+        JsonElement n = CursorJson.get(root, field);
+        if (!CursorJson.isText(n) || n.getAsString().isBlank()) {
             throw expired(REASON_MALFORMED, "token missing required field '" + field + "'", null);
         }
-        return n.asText();
+        return n.getAsString();
     }
 
     /**

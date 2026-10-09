@@ -3,6 +3,8 @@
 
 package com.multiclouddb.provider.dynamo;
 
+import static com.multiclouddb.provider.dynamo.DocumentTestData.document;
+
 import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.MulticloudDbException;
 import com.multiclouddb.api.MulticloudDbKey;
@@ -74,7 +76,7 @@ class DynamoPostCloseTest {
     @DisplayName("create() after close() throws CLIENT_CLOSED")
     void createAfterClose() {
         assertClientClosed(assertThrows(MulticloudDbException.class,
-                () -> client.create(ADDR, KEY, Map.of("k", "v"), null)),
+                () -> client.create(ADDR, KEY, document(Map.of("k", "v")), null)),
                 OperationNames.CREATE);
     }
 
@@ -90,7 +92,7 @@ class DynamoPostCloseTest {
     @DisplayName("update() after close() throws CLIENT_CLOSED")
     void updateAfterClose() {
         assertClientClosed(assertThrows(MulticloudDbException.class,
-                () -> client.update(ADDR, KEY, Map.of("k", "v"), null)),
+                () -> client.update(ADDR, KEY, document(Map.of("k", "v")), null)),
                 OperationNames.UPDATE);
     }
 
@@ -98,7 +100,7 @@ class DynamoPostCloseTest {
     @DisplayName("upsert() after close() throws CLIENT_CLOSED")
     void upsertAfterClose() {
         assertClientClosed(assertThrows(MulticloudDbException.class,
-                () -> client.upsert(ADDR, KEY, Map.of("k", "v"), null)),
+                () -> client.upsert(ADDR, KEY, document(Map.of("k", "v")), null)),
                 OperationNames.UPSERT);
     }
 

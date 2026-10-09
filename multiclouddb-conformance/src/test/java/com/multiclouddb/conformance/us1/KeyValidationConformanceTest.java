@@ -3,6 +3,8 @@
 
 package com.multiclouddb.conformance.us1;
 
+import static com.multiclouddb.conformance.Documents.document;
+
 import com.multiclouddb.api.*;
 import org.junit.jupiter.api.*;
 
@@ -40,7 +42,7 @@ public abstract class KeyValidationConformanceTest {
     @DisplayName("upsert with null key throws exception")
     void upsertNullKey() {
         assertThrows(NullPointerException.class,
-                () -> client.upsert(getAddress(), null, java.util.Map.of("title", "test")));
+                () -> client.upsert(getAddress(), null, document(java.util.Map.of("title", "test"))));
     }
 
     @Test
@@ -79,7 +81,7 @@ public abstract class KeyValidationConformanceTest {
     @DisplayName("valid key with partition and sort key succeeds")
     void validKeyWithPartitionAndSortKey() {
         MulticloudDbKey key = MulticloudDbKey.of("partition-1", "valid-key-test");
-        assertDoesNotThrow(() -> client.upsert(getAddress(), key, java.util.Map.of("title", "valid")));
+        assertDoesNotThrow(() -> client.upsert(getAddress(), key, document(java.util.Map.of("title", "valid"))));
         try { client.delete(getAddress(), key); } catch (Exception ignored) {}
     }
 
@@ -87,7 +89,7 @@ public abstract class KeyValidationConformanceTest {
     @DisplayName("valid key without sort key succeeds")
     void validKeyWithoutSortKey() {
         MulticloudDbKey key = MulticloudDbKey.of("valid-key-no-part");
-        assertDoesNotThrow(() -> client.upsert(getAddress(), key, java.util.Map.of("title", "valid")));
+        assertDoesNotThrow(() -> client.upsert(getAddress(), key, document(java.util.Map.of("title", "valid"))));
         try { client.delete(getAddress(), MulticloudDbKey.of("valid-key-no-part", "valid-key-no-part")); } catch (Exception ignored) {}
     }
 }

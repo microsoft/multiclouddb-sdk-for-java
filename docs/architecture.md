@@ -31,8 +31,29 @@ multiclouddb-api  ← must be released first if API changed
     └── multiclouddb-provider-spanner  ← independent of other providers
 ```
 
-Providers depend on a released version of `multiclouddb-api`. They are
-independent of each other and can be released separately.
+Released providers depend on a released `multiclouddb-api`. The current breaking
+Document increment builds against coordinated development SNAPSHOT versions;
+these are not newly published releases.
+
+### Optional customer object mapping
+
+The API owns immutable `Document`/`DocumentValue` with six value kinds (null,
+boolean, string, number, array and object; no binary), application-owned
+`DocumentCodec`, neutral `TypeRef` and safe codec errors. CRUD and point reads use
+Document; nullable change-feed payloads use DocumentValue. Query Map/Object
+contracts remain unchanged. The API runtime depends on SLF4J 2.0.12 and private
+Gson 2.11.0 cursor handling, not Jackson (including transitive or shaded Jackson).
+Gson also brings `error_prone_annotations` 2.27.0 into the Maven runtime closure;
+Gson's JPMS requirement for that annotation module is static.
+
+The optional `multiclouddb-serializer-jackson` module implements that contract
+with `JacksonDocumentCodec`, snapshots a customer ObjectMapper and depends on API
+and Jackson. Providers do not depend on this codec module, but still explicitly
+depend on Jackson for their existing internal native mappings. There is no
+automatic client registration or POJO overload. See
+[customer object mapping](customer-object-mapping.md) for usage, configuration,
+provider limitations and file/method/test traceability. Uniform query/image
+contracts and direct native mapping remain later issue-116 work.
 
 ---
 

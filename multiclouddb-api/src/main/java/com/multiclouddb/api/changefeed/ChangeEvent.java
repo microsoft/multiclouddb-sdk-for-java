@@ -3,7 +3,7 @@
 
 package com.multiclouddb.api.changefeed;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.multiclouddb.api.document.DocumentValue;
 import com.multiclouddb.api.MulticloudDbKey;
 
 import java.time.Instant;
@@ -34,7 +34,7 @@ public final class ChangeEvent {
     private final MulticloudDbKey key;
     private final ChangeType type;
     private final Instant commitTimestamp;
-    private final JsonNode data;
+    private final DocumentValue data;
     private final String providerEventId;
 
     /**
@@ -44,9 +44,9 @@ public final class ChangeEvent {
      * @param type            the {@link ChangeType} (never {@code null})
      * @param commitTimestamp the provider's authoritative ordering timestamp
      *                        (never {@code null})
-     * @param data            the new item state if the provider supplied a full image,
-     *                        otherwise {@code null}. For DELETE events this is
-     *                        typically {@code null}.
+     * @param data            the provider-selected payload, possibly partial or a
+     *                        before-image; {@code null} if no payload was supplied.
+     *                        Explicit document null is a NullValue, not Java null.
      * @param providerEventId a stable provider-side identifier for this event,
      *                        suitable for deduplication; never {@code null}.
      * @throws NullPointerException if any non-nullable argument is {@code null}
@@ -54,7 +54,7 @@ public final class ChangeEvent {
     public ChangeEvent(MulticloudDbKey key,
                        ChangeType type,
                        Instant commitTimestamp,
-                       JsonNode data,
+                       DocumentValue data,
                        String providerEventId) {
         this.key = Objects.requireNonNull(key, "key");
         this.type = Objects.requireNonNull(type, "type");
@@ -82,11 +82,11 @@ public final class ChangeEvent {
     }
 
     /**
-     * New item state, when the provider supplied a full image.
-     * {@code null} when the provider does not include a post-image (e.g. DELETE
-     * events) or when configuration suppresses images.
+     * Provider-selected immutable payload, or Java {@code null} for no payload.
+     * This is not a completeness or post-image guarantee. Image selection and
+     * metadata visibility retain the provider's existing behavior.
      */
-    public JsonNode data() {
+    public DocumentValue data() {
         return data;
     }
 

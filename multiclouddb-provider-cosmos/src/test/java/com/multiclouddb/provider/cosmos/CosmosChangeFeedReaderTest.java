@@ -11,6 +11,8 @@ import com.azure.cosmos.util.CosmosPagedIterable;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.multiclouddb.api.MulticloudDbException;
+import com.multiclouddb.api.MulticloudDbErrorCategory;
+import com.multiclouddb.api.document.*;
 import com.multiclouddb.api.MulticloudDbKey;
 import com.multiclouddb.api.changefeed.ChangeEvent;
 import com.multiclouddb.api.changefeed.ChangeType;
@@ -348,6 +350,7 @@ class CosmosChangeFeedReaderTest {
         assertEquals(MulticloudDbKey.of("cf-delete-abc", "cf-delete-abc"), ev.key(),
                 "key (pk+sk) must be recovered from metadata.id and metadata.partitionKey");
         assertNotNull(ev.data(), "data must never be null even for tombstones");
+        assertEquals(ObjectValue.of(Map.of()), ev.data());
     }
 
     @Test
@@ -439,6 +442,70 @@ class CosmosChangeFeedReaderTest {
         // synthesised id@ts fallback.
         assertEquals("\"etag-prev\"", ev.providerEventId(),
                 "providerEventId must come from the `previous` body's _etag when available");
+        ObjectValue data = (ObjectValue) ev.data();
+        assertEquals(NumberValue.of(1), data.get("v").orElseThrow());
+        assertEquals(new StringValue("cf-delete-prev"), data.get("id").orElseThrow());
+    }
+
+    @Test
+    void selectedPayloadsReachTheFinalNeutralEventWithoutInventingImageSemantics() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        var envelope = mapper.createObjectNode();
+        envelope.putObject("metadata").put("operationType", "replace").put("id", "record")
+                .put("partitionKey", "tenant");
+        envelope.set("current", mapper.readTree("{\"nested\":[null,{\"n\":2}]}"));
+        envelope.set("previous", mapper.readTree("{\"old\":true}"));
+        ObjectValue expected = ObjectValue.of(Map.of("nested", ArrayValue.of(List.of(
+                NullValue.INSTANCE, ObjectValue.of(Map.of("n", NumberValue.of(2)))))));
+        assertEquals(expected, readEnvelope(envelope).data());
+        envelope.withObject("/metadata").put("operationType", "delete");
+        assertEquals(ObjectValue.of(Map.of("old", new BooleanValue(true))), readEnvelope(envelope).data());
+        envelope.remove("previous");
+        envelope.putNull("current");
+        ObjectValue fallback = (ObjectValue) readEnvelope(envelope).data();
+        assertEquals(NullValue.INSTANCE, fallback.get("current").orElseThrow());
+        assertTrue(fallback.get("previous").isEmpty());
+        envelope.remove("current");
+        assertTrue(((ObjectValue) readEnvelope(envelope).data()).get("current").isEmpty());
+    }
+
+    @Test
+    void modelDomainFailuresAreSafeClassifiedFeedErrors() {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode deep = mapper.createObjectNode();
+        for (int i = 0; i < 128; i++) deep = mapper.createArrayNode().add(deep);
+        for (JsonNode invalid : List.of(deep,
+                mapper.getNodeFactory().numberNode(new java.math.BigDecimal(java.math.BigInteger.ONE, 1025)),
+                mapper.getNodeFactory().numberNode(java.math.BigInteger.TEN.pow(1024)),
+                mapper.getNodeFactory().numberNode(Double.NaN),
+                mapper.getNodeFactory().binaryNode(new byte[]{1, 2}))) {
+            var envelope = mapper.createObjectNode();
+            envelope.putObject("metadata").put("id", "record").put("partitionKey", "tenant");
+            envelope.putObject("current").set("private-field", invalid);
+            MulticloudDbException failure = assertThrows(MulticloudDbException.class, () -> readEnvelope(envelope));
+            assertEquals(MulticloudDbErrorCategory.PROVIDER_ERROR, failure.error().category());
+            assertEquals(ProviderId.COSMOS, failure.error().provider());
+            assertEquals("readChanges", failure.error().operation());
+            assertFalse(failure.error().retryable());
+            assertEquals(Map.of("reason", "invalid_document_payload"), failure.error().providerDetails());
+            assertEquals("Provider response cannot be represented as a Document value.", failure.error().message());
+            org.junit.jupiter.api.Assertions.assertNull(failure.getCause());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private ChangeEvent readEnvelope(JsonNode envelope) {
+        CosmosContainer container = mock(CosmosContainer.class);
+        CosmosPagedIterable<JsonNode> paged = mock(CosmosPagedIterable.class);
+        FeedResponse<JsonNode> response = mock(FeedResponse.class);
+        when(container.queryChangeFeed(any(CosmosChangeFeedRequestOptions.class), eq(JsonNode.class)))
+                .thenReturn(paged);
+        when(paged.iterableByPage()).thenReturn(List.of(response));
+        when(response.getResults()).thenReturn(List.of(envelope));
+        when(response.getContinuationToken()).thenReturn("next");
+        var cursor = new ChangeFeedCursor(new CursorToken(ProviderId.COSMOS, ADDR, System.currentTimeMillis(),
+                CursorAnchor.NOW, List.of(new PartitionPosition(FeedRange.forFullRange().toString(), "@@FROM_NOW"))));
+        return newReader().readChanges(container, ADDR, cursor, OperationOptions.defaults()).events().get(0);
     }
 
     @Test
