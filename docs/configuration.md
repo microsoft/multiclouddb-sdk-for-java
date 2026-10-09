@@ -22,7 +22,6 @@ Select a provider and supply its connection and auth properties.
     multiclouddb.provider=cosmos
     multiclouddb.connection.endpoint=https://localhost:8081
     multiclouddb.connection.key=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==
-    multiclouddb.connection.connectionMode=gateway
     ```
 
 === "Azure Cloud (key-based)"
@@ -32,7 +31,6 @@ Select a provider and supply its connection and auth properties.
     multiclouddb.provider=cosmos
     multiclouddb.connection.endpoint=https://your-account.documents.azure.com:443/
     multiclouddb.connection.key=your-master-key
-    multiclouddb.connection.connectionMode=direct
     ```
 
 === "Azure Identity (Entra ID) - Recommended"
@@ -46,9 +44,8 @@ Select a provider and supply its connection and auth properties.
 
 | Key | Description |
 |-----|-------------|
-| `multiclouddb.connection.endpoint` | Cosmos DB account URI or emulator URI |
+| `multiclouddb.connection.endpoint` | Required, non-blank Cosmos DB account URI or emulator URI |
 | `multiclouddb.connection.key` | Master key (omit for Azure Identity auth) |
-| `multiclouddb.connection.connectionMode` | `gateway` (default) or `direct` |
 | `multiclouddb.connection.tenantId` | Azure AD tenant ID (optional, for Entra ID) |
 | `multiclouddb.connection.consistencyLevel` | Read consistency override (optional — see below) |
 
@@ -66,10 +63,47 @@ Select a provider and supply its connection and auth properties.
 - **Master key** - when `connection.key` is provided, uses shared-key authentication.
   Suitable for local emulator development only.
 
-### Connection Modes
+### Transport Defaults
 
-- **Gateway** (default) - HTTP-based routing through the Cosmos DB gateway. Required for the emulator.
-- **Direct** - TCP-based direct connectivity. Better performance for production workloads.
+The provider always uses **Gateway mode with HTTP/2 enabled**. Connection mode
+and HTTP version are intentionally not configurable. HTTP/2 is required for
+Gateway V2 and newer Cosmos features supported by Multicloud DB.
+See [Architecture - Cosmos Gateway Transport](architecture.md#cosmos-gateway-transport)
+for the design rationale and service/SDK boundary.
+
+#### Automatic Gateway version selection
+
+Multicloud DB does not expose a Gateway V1/V2 selector. The Cosmos account
+response advertises whether Gateway V2 endpoints are available. With Gateway
+mode and HTTP/2 enabled, Azure Cosmos DB SDK 4.82 probes an advertised endpoint
+and routes eligible data-plane requests through Gateway V2 only after a
+successful probe. If the account does not advertise Gateway V2 or the probe
+does not succeed, routing remains on Gateway V1. Metadata and other ineligible
+operations may also continue to use Gateway V1.
+
+The wrapper neither reads nor writes Azure SDK internal thin-client flags.
+Gateway version remains controlled by Cosmos account configuration and native
+SDK routing logic rather than a Multicloud DB connection property.
+
+After successful client construction, the provider emits one INFO log with
+Gateway mode, HTTP/2 enablement, and automatic Gateway routing selection. This is a
+configuration snapshot, not a negotiated route, because selection occurs after
+construction and may vary by request.
+
+#### Removed transport settings
+
+`connectionMode`, `gatewayHttp2Enabled`, and the pre-release
+`gatewayV2Enable`/`thinClientEnabled` keys are rejected instead of being
+silently ignored. Their presence throws `IllegalArgumentException` with
+migration guidance before native builder construction, credential work, or
+network I/O, even for fixed-equivalent values such as `connectionMode=gateway`
+or `gatewayHttp2Enabled=true`.
+
+Remove all four keys from existing configuration; no replacement transport
+setting is needed. Gateway mode and HTTP/2 are fixed, while Gateway version
+selection belongs to the account and Azure SDK. The public connection-mode
+constants are also removed. Applications that require Direct/RNTBD must
+construct and use an Azure SDK client directly, outside the portable wrapper.
 
 ### Consistency Level
 
@@ -236,7 +270,6 @@ MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
     .provider(ProviderId.COSMOS)
     .connection("endpoint", "https://localhost:8081")
     .connection("key", "your-key")
-    .connection("connectionMode", "gateway")
     .build();
 
 MulticloudDbClient client = MulticloudDbClientFactory.create(config);

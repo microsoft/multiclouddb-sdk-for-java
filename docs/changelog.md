@@ -69,11 +69,26 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- Cosmos clients now always use Gateway mode with HTTP/2 enabled. The
+  `azure-cosmos` dependency is upgraded from 4.78.0 to 4.82.0 so account-advertised
+  Gateway V2 endpoints and the SDK connectivity probe select routing automatically.
+- Managed `azure-core` 1.59.0 and `azure-json` 1.5.1 now match the Cosmos SDK
+  dependency requirements instead of forcing older transitive versions.
+- Gateway version selection is left to Cosmos account configuration and the
+  Azure SDK. Successful construction logs the fixed Gateway/HTTP2 policy and
+  automatic selection without claiming a negotiated request route. See the
+  [transport design rationale](architecture.md#cosmos-gateway-transport).
 - Removed the hardcoded `ConsistencyLevel.SESSION` override from `CosmosClientBuilder`. Accounts with a default of `STRONG` or `BOUNDED_STALENESS` will now serve reads at their configured level. To restore the previous behaviour, set `multiclouddb.connection.consistencyLevel=SESSION`.
 - `BETWEEN` translation now wraps in parentheses (`(c.field BETWEEN @lo AND @hi)`) to avoid a Cosmos NoSQL parser ambiguity with trailing `AND`.
 
 **Removed:**
 
+- `connectionMode` and its public constants; Direct mode is no longer
+  selectable. Stale `connectionMode`, `gatewayHttp2Enabled`, and pre-release
+  `gatewayV2Enable`/`thinClientEnabled` settings fail before native builder
+  construction, even for fixed-equivalent values. Multicloud DB exposes no
+  HTTP-version or Gateway-version selector. See
+  [migration guidance](configuration.md#removed-transport-settings).
 - `CosmosConstants.CONSISTENCY_LEVEL_DEFAULT` — removed without a deprecation cycle (pre-release). Callers should use `ConsistencyLevel.SESSION` directly.
 
 **Documentation:**

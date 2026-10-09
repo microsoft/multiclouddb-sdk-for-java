@@ -6,7 +6,11 @@ package com.multiclouddb.provider.cosmos;
 import com.azure.cosmos.ConsistencyLevel;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -39,31 +43,19 @@ class CosmosConstantsTest {
         assertEquals("tenantId", CosmosConstants.CONFIG_TENANT_ID);
     }
 
-
-    @Test
-    @DisplayName("CONFIG_CONNECTION_MODE key value")
-    void configConnectionModeKey() {
-        assertEquals("connectionMode", CosmosConstants.CONFIG_CONNECTION_MODE);
-    }
-
-    // ── Connection mode values ────────────────────────────────────────────────
-
-    @Test
-    @DisplayName("CONNECTION_MODE_GATEWAY value")
-    void connectionModeGateway() {
-        assertEquals("gateway", CosmosConstants.CONNECTION_MODE_GATEWAY);
-    }
-
-    @Test
-    @DisplayName("CONNECTION_MODE_DIRECT value")
-    void connectionModeDirect() {
-        assertEquals("direct", CosmosConstants.CONNECTION_MODE_DIRECT);
-    }
-
-    @Test
-    @DisplayName("CONNECTION_MODE_DEFAULT is gateway")
-    void connectionModeDefaultIsGateway() {
-        assertEquals(CosmosConstants.CONNECTION_MODE_GATEWAY, CosmosConstants.CONNECTION_MODE_DEFAULT);
+    @ParameterizedTest
+    @CsvSource({
+            "REMOVED_CONNECTION_MODE_CONFIG, connectionMode",
+            "REMOVED_GATEWAY_HTTP2_CONFIG, gatewayHttp2Enabled",
+            "REMOVED_GATEWAY_V2_CONFIG, gatewayV2Enable",
+            "REMOVED_THIN_CLIENT_CONFIG, thinClientEnabled"
+    })
+    @DisplayName("Rejected legacy keys retain their values and package-private visibility")
+    void removedConfigKeysRemainPackagePrivate(String fieldName, String expectedValue)
+            throws ReflectiveOperationException {
+        Field field = CosmosConstants.class.getDeclaredField(fieldName);
+        assertEquals(expectedValue, field.get(null));
+        assertEquals(0, field.getModifiers() & (Modifier.PUBLIC | Modifier.PROTECTED | Modifier.PRIVATE));
     }
 
     // ── Consistency ───────────────────────────────────────────────────────────
@@ -238,4 +230,3 @@ class CosmosConstantsTest {
         assertEquals(100.0, CosmosConstants.DIAG_THRESHOLD_QUERY_RU);
     }
 }
-

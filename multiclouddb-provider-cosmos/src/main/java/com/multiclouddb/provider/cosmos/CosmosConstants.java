@@ -30,20 +30,11 @@ public final class CosmosConstants {
     /** Connection config key for the Azure tenant ID (optional — used with DefaultAzureCredential). */
     public static final String CONFIG_TENANT_ID = "tenantId";
 
-
-    /** Connection config key for the connection mode ({@code direct} or {@code gateway}). */
-    public static final String CONFIG_CONNECTION_MODE = "connectionMode";
-
-    // ── Connection mode values ────────────────────────────────────────────────
-
-    /** Gateway connection mode — recommended for emulator and restricted networks. */
-    public static final String CONNECTION_MODE_GATEWAY = "gateway";
-
-    /** Direct connection mode — lower latency, recommended for production. */
-    public static final String CONNECTION_MODE_DIRECT = "direct";
-
-    /** Default connection mode applied when {@code connectionMode} is not configured. */
-    public static final String CONNECTION_MODE_DEFAULT = CONNECTION_MODE_GATEWAY;
+    // Rejected legacy keys, not supported configuration options.
+    static final String REMOVED_CONNECTION_MODE_CONFIG = "connectionMode";
+    static final String REMOVED_GATEWAY_HTTP2_CONFIG = "gatewayHttp2Enabled";
+    static final String REMOVED_GATEWAY_V2_CONFIG = "gatewayV2Enable";
+    static final String REMOVED_THIN_CLIENT_CONFIG = "thinClientEnabled";
 
     // ── Consistency ───────────────────────────────────────────────────────────
 

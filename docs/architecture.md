@@ -164,3 +164,80 @@ supposed to be a provider-agnostic interface, which defeats portability.
 
 See the [Developer Guide](guide.md#why-key-is-an-explicit-parameter) for the
 full rationale.
+
+### Cosmos Gateway Transport
+
+The Cosmos provider fixes Gateway mode and HTTP/2 rather than merely making
+them defaults. One supported transport reduces configuration drift and keeps
+network protocol, proxy, and firewall behavior from depending on an unnecessary
+application-level choice. Retaining a Direct-mode switch would still allow a
+path outside that policy.
+
+These are separate layers:
+
+| Layer | Responsibility |
+|-------|----------------|
+| Gateway mode | Uses Cosmos HTTP connectivity instead of Direct/RNTBD |
+| Gateway HTTP/2 | Enables the wire protocol required by Gateway V2 and newer supported Cosmos features |
+| Gateway V1/V2 | Selects the service routing path; V2 is a lower-overhead proxy for eligible data-plane requests |
+
+Gateway V2 is also called the "thin client" inside the Azure SDK. It is not
+another client library, application-side process, or sidecar to install.
+Gateway mode and HTTP/2 remain fixed regardless of the selected Gateway version.
+
+The provider explicitly enables HTTP/2 through the supported per-client
+[`GatewayConnectionConfig`][cosmos-gateway-config] and
+[`Http2ConnectionConfig`][cosmos-http2-config] APIs. SDK 4.82.0 still defaults
+Gateway HTTP/2 to disabled, so relying on the native default would not meet
+this contract. A builder setting also avoids depending on ambient process
+configuration. The automatic routing contract requires
+[Azure Cosmos Java SDK 4.82.0 or later][cosmos-sdk-release], which provides
+probe-gated Gateway V2 selection rather than requiring a forced opt-in.
+
+#### Service and SDK Ownership
+
+The [Cosmos account response][cosmos-account-response] advertises Gateway V2
+endpoint availability. The SDK starts on Gateway V1 and uses its
+[connectivity configuration][cosmos-connectivity-config] and
+[native probe][cosmos-endpoint-probe] to check an advertised endpoint.
+Only a successful probe makes eligible data-plane requests candidates for V2.
+Missing endpoints or an unsuccessful probe leave routing on V1; metadata and
+other ineligible requests can still use V1 after a successful probe. This
+fallback does not mean the wrapper suppresses native connectivity failures.
+
+The wrapper adds no probe or request-routing layer and exposes no Gateway
+version selector or separate query-plan routing switch. SDK 4.82.0 has no
+supported public per-client Gateway V2 builder selector. Its
+[internal JVM-wide thin-client flags][cosmos-internal-config] are not a
+Multicloud DB contract: the wrapper neither reads nor writes them, including
+through reflection. Mapping a connection property to those flags would create
+an unsupported process-wide override and could bypass the safe probe.
+
+#### Configuration and Portability Boundary
+
+The presence of `connectionMode`, `gatewayHttp2Enabled`, `gatewayV2Enable`, or
+`thinClientEnabled` causes rejection before native builder construction,
+credential work, or network I/O, even for fixed-equivalent values such as
+`gateway` or `true`. Silent acceptance would leave deployments with settings
+that appear to control behavior but no longer do.
+
+After successful native client construction, one INFO record describes the
+fixed Gateway/HTTP2 policy and automatic account/SDK selection, without
+including credentials. It is a **configuration snapshot**, not a negotiated
+per-request route: the SDK exposes no public construction-time Gateway-version
+getter, and routing can vary by topology, probe result, and request eligibility.
+
+This provider-local decision changes no portable CRUD, query, paging,
+diagnostics, capability, or error contracts and adds no persisted data model.
+DynamoDB and Spanner need no corresponding setting. Connection-pool tuning is
+separate from transport selection. See the authoritative
+[configuration and migration guidance](configuration.md#transport-defaults)
+for supported inputs and removal of pre-release settings.
+
+[cosmos-sdk-release]: https://github.com/Azure/azure-sdk-for-java/releases/tag/com.azure%2Bazure-cosmos_4.82.0
+[cosmos-gateway-config]: https://github.com/Azure/azure-sdk-for-java/blob/com.azure%2Bazure-cosmos_4.82.0/sdk/cosmos/azure-cosmos/src/main/java/com/azure/cosmos/GatewayConnectionConfig.java
+[cosmos-http2-config]: https://github.com/Azure/azure-sdk-for-java/blob/com.azure%2Bazure-cosmos_4.82.0/sdk/cosmos/azure-cosmos/src/main/java/com/azure/cosmos/Http2ConnectionConfig.java
+[cosmos-account-response]: https://github.com/Azure/azure-sdk-for-java/blob/com.azure%2Bazure-cosmos_4.82.0/sdk/cosmos/azure-cosmos/src/main/java/com/azure/cosmos/implementation/DatabaseAccount.java
+[cosmos-connectivity-config]: https://github.com/Azure/azure-sdk-for-java/blob/com.azure%2Bazure-cosmos_4.82.0/sdk/cosmos/azure-cosmos/src/main/java/com/azure/cosmos/implementation/ThinClientConnectivityConfig.java
+[cosmos-endpoint-probe]: https://github.com/Azure/azure-sdk-for-java/blob/com.azure%2Bazure-cosmos_4.82.0/sdk/cosmos/azure-cosmos/src/main/java/com/azure/cosmos/implementation/EndpointProbeClient.java
+[cosmos-internal-config]: https://github.com/Azure/azure-sdk-for-java/blob/com.azure%2Bazure-cosmos_4.82.0/sdk/cosmos/azure-cosmos/src/main/java/com/azure/cosmos/implementation/Configs.java
