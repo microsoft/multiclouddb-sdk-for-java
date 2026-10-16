@@ -102,6 +102,37 @@ The raw HTTP or gRPC status code is also available via `error.statusCode()`.
 > The portable API does not yet expose ETag-based conditional updates; when it does, the 412-equivalent
 > path will be split into a dedicated `PRECONDITION_FAILED` category (tracked in issue #29).
 
+## DynamoDB Native Numeric Fidelity
+
+The DynamoDB adapter preserves native `N` values and every member of an `NS`
+without converting them through binary64 floating point. The same decoding
+applies inside nested maps/lists and DynamoDB Streams images.
+
+| Native numeric string | Jackson node | Java value in query-result maps |
+|---|---|---|
+| Integer within the signed 32-bit range | `IntNode` | `Integer` |
+| Integer outside that range but within signed 64-bit range | `LongNode` | `Long` |
+| Integer outside the signed 64-bit range | `BigIntegerNode` | `BigInteger` |
+| Decimal or exponent notation, including `1e3` | `DecimalNode` | `BigDecimal` |
+
+Decimal results previously used `DoubleNode` / `Double`; callers must not assume
+that every non-integral value is a `Double`. Encoding a decoded number preserves
+its numeric value, not necessarily the original exponent spelling or scale.
+DynamoDB itself can canonicalize numeric strings before returning them.
+
+Native number sets still decode as Jackson arrays or Java lists. Writing those
+arrays/lists back produces DynamoDB `L` attributes containing `N` members; it
+preserves numeric values, not native set identity or ordering.
+
+This is a **provider-level decoding guarantee**, not a new cross-provider
+numeric domain. The portable numeric ranges, canonical result types, and
+rejection/normalization policy are tracked separately in
+[#111](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/111).
+That policy belongs at the portable API boundary, after lossless native decoding,
+rather than in an accidental mapper conversion. Query literal and parameter
+rules are separate work in
+[#108](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/108).
+
 ## Change-Feed History Retention
 
 The portable change-feed read path guarantees a **24-hour** history floor on

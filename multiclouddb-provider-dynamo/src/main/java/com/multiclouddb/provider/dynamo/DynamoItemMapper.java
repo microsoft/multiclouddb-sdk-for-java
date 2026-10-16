@@ -9,11 +9,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.*;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.*;
 
 /**
  * Bidirectional mapper between Jackson {@link JsonNode} and DynamoDB
  * {@link AttributeValue}.
+ * <p>
+ * Native numbers are decoded losslessly. Portable numeric range validation or
+ * normalization belongs at the portable API boundary, not in this mapper.
  */
 public final class DynamoItemMapper {
 
@@ -82,21 +87,16 @@ public final class DynamoItemMapper {
 
     /**
      * Convert a single DynamoDB AttributeValue to a JsonNode.
+     * Numeric strings in {@code N} and {@code NS} use {@link DecimalNode} for
+     * decimal or exponent notation, and {@link IntNode}, {@link LongNode}, or
+     * {@link BigIntegerNode} for integer notation according to its range.
      */
     public static JsonNode attributeValueToJsonNode(AttributeValue av) {
         if (av.s() != null && av.type() == AttributeValue.Type.S) {
             return TextNode.valueOf(av.s());
         }
         if (av.n() != null && av.type() == AttributeValue.Type.N) {
-            String numStr = av.n();
-            if (numStr.contains(".")) {
-                return new DoubleNode(Double.parseDouble(numStr));
-            }
-            try {
-                return new IntNode(Integer.parseInt(numStr));
-            } catch (NumberFormatException e) {
-                return new LongNode(Long.parseLong(numStr));
-            }
+            return parseNumber(av.n());
         }
         if (av.type() == AttributeValue.Type.BOOL) {
             return BooleanNode.valueOf(av.bool());
@@ -124,12 +124,26 @@ public final class DynamoItemMapper {
         if (av.hasNs() && av.type() == AttributeValue.Type.NS) {
             ArrayNode array = MAPPER.createArrayNode();
             for (String n : av.ns()) {
-                array.add(new DoubleNode(Double.parseDouble(n)));
+                array.add(parseNumber(n));
             }
             return array;
         }
         // Fallback
         return NullNode.getInstance();
+    }
+
+    private static NumericNode parseNumber(String value) {
+        if (value.indexOf('.') >= 0 || value.indexOf('e') >= 0 || value.indexOf('E') >= 0) {
+            return DecimalNode.valueOf(new BigDecimal(value));
+        }
+        BigInteger integer = new BigInteger(value);
+        if (integer.bitLength() < Integer.SIZE) {
+            return IntNode.valueOf(integer.intValue());
+        }
+        if (integer.bitLength() < Long.SIZE) {
+            return LongNode.valueOf(integer.longValue());
+        }
+        return BigIntegerNode.valueOf(integer);
     }
 
     /**
