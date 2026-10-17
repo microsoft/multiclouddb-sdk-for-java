@@ -3,7 +3,9 @@
 
 package com.multiclouddb.conformance;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import static com.multiclouddb.conformance.Documents.document;
+
+import com.multiclouddb.api.document.*;
 import com.multiclouddb.api.CapabilitySet;
 import com.multiclouddb.api.DocumentResult;
 import com.multiclouddb.api.MulticloudDbClient;
@@ -99,33 +101,31 @@ public abstract class CrudConformanceTests {
     @DisplayName("upsert + read roundtrip")
     void upsertAndRead() {
         MulticloudDbKey key = MulticloudDbKey.of("conf-test-1", "conf-test-1");
-        client.upsert(getAddress(), key,
-                Map.of("title", "Conformance Test Item", "value", 42, "active", true));
+        client.upsert(getAddress(), key, document(Map.of("title", "Conformance Test Item", "value", 42, "active", true)));
 
         DocumentResult result = client.read(getAddress(), key);
         assertNotNull(result, "Document should be returned after upsert");
-        assertEquals("Conformance Test Item", result.document().get("title").asText());
-        assertEquals(42, result.document().get("value").asInt());
-        assertTrue(result.document().get("active").asBoolean());
+        assertEquals(new StringValue("Conformance Test Item"), result.document().get("title").orElseThrow());
+        assertEquals(NumberValue.of(42), result.document().get("value").orElseThrow());
+        assertEquals(new BooleanValue(true), result.document().get("active").orElseThrow());
     }
 
     @Test @Order(2)
     @DisplayName("upsert overwrites existing document (full replacement, no partial merge)")
     void upsertOverwrites() {
         MulticloudDbKey key = MulticloudDbKey.of("conf-test-upsert", "conf-test-upsert");
-        client.upsert(getAddress(), key,
-                Map.of("version", 1, "originalOnly", "should-disappear", "shared", "v1"));
-        client.upsert(getAddress(), key, Map.of("version", 2, "extra", "field", "shared", "v2"));
+        client.upsert(getAddress(), key, document(Map.of("version", 1, "originalOnly", "should-disappear", "shared", "v1")));
+        client.upsert(getAddress(), key, document(Map.of("version", 2, "extra", "field", "shared", "v2")));
 
         DocumentResult result = client.read(getAddress(), key);
         assertNotNull(result);
-        JsonNode doc = result.document();
-        assertEquals(2, doc.get("version").asInt(), "version should be replaced");
-        assertEquals("v2", doc.get("shared").asText(), "shared field should be replaced");
-        assertTrue(doc.has("extra"), "new field should be present");
+        Document doc = result.document();
+        assertEquals(NumberValue.of(2), doc.get("version").orElseThrow(), "version should be replaced");
+        assertEquals(new StringValue("v2"), doc.get("shared").orElseThrow(), "shared field should be replaced");
+        assertTrue(doc.get("extra").isPresent(), "new field should be present");
         // upsert is a full document replacement — fields from the previous version
         // that are not in the new payload must NOT survive (no partial merge).
-        assertFalse(doc.has("originalOnly"),
+        assertTrue(doc.get("originalOnly").isEmpty(),
                 "upsert must fully replace the document; stale fields must not survive");
         safeDelete(key);
     }
@@ -141,7 +141,7 @@ public abstract class CrudConformanceTests {
     @DisplayName("delete removes document")
     void deleteDocument() {
         MulticloudDbKey key = MulticloudDbKey.of("conf-test-delete", "conf-test-delete");
-        client.upsert(getAddress(), key, Map.of("title", "To be deleted"));
+        client.upsert(getAddress(), key, document(Map.of("title", "To be deleted")));
         assertNotNull(client.read(getAddress(), key));
         client.delete(getAddress(), key);
         assertNull(client.read(getAddress(), key));
@@ -165,8 +165,7 @@ public abstract class CrudConformanceTests {
     @DisplayName("query returns items")
     void queryAll() {
         for (int i = 1; i <= 3; i++) {
-            client.upsert(getAddress(), MulticloudDbKey.of("conf-query-" + i, "conf-query-" + i),
-                    Map.of("title", "Query Item " + i, "batch", "conformance"));
+            client.upsert(getAddress(), MulticloudDbKey.of("conf-query-" + i, "conf-query-" + i), document(Map.of("title", "Query Item " + i, "batch", "conformance")));
         }
         QueryPage page = client.query(getAddress(),
                 QueryRequest.builder().expression("SELECT * FROM c").maxPageSize(50).build());
@@ -179,8 +178,7 @@ public abstract class CrudConformanceTests {
     @DisplayName("query with page size limits results")
     void queryPaging() {
         for (int i = 1; i <= 5; i++) {
-            client.upsert(getAddress(), MulticloudDbKey.of("conf-page-" + i, "conf-page-" + i),
-                    Map.of("title", "Page Item " + i));
+            client.upsert(getAddress(), MulticloudDbKey.of("conf-page-" + i, "conf-page-" + i), document(Map.of("title", "Page Item " + i)));
         }
         QueryPage page1 = client.query(getAddress(),
                 QueryRequest.builder().expression("SELECT * FROM c").maxPageSize(2).build());
@@ -215,11 +213,9 @@ public abstract class CrudConformanceTests {
     @DisplayName("partitionKey scopes query to matching items only")
     void queryByPartitionKey() {
         for (int i = 1; i <= 3; i++)
-            client.upsert(getAddress(), MulticloudDbKey.of("alpha", "pk-alpha-" + i),
-                    Map.of("title", "Alpha Item " + i, "group", "alpha"));
+            client.upsert(getAddress(), MulticloudDbKey.of("alpha", "pk-alpha-" + i), document(Map.of("title", "Alpha Item " + i, "group", "alpha")));
         for (int i = 1; i <= 2; i++)
-            client.upsert(getAddress(), MulticloudDbKey.of("beta", "pk-beta-" + i),
-                    Map.of("title", "Beta Item " + i, "group", "beta"));
+            client.upsert(getAddress(), MulticloudDbKey.of("beta", "pk-beta-" + i), document(Map.of("title", "Beta Item " + i, "group", "beta")));
 
         QueryPage alphaPage = client.query(getAddress(),
                 QueryRequest.builder().partitionKey("alpha").maxPageSize(100).build());
@@ -244,8 +240,8 @@ public abstract class CrudConformanceTests {
         // from a previously failed run) cannot interfere with the assertion:
         // we only ever see items seeded by *this* invocation.
         String marker = "cross-conf-" + java.util.UUID.randomUUID();
-        client.upsert(getAddress(), MulticloudDbKey.of("cross-a", "pk-cross-a"), Map.of("title", "Cross-A", "marker", marker));
-        client.upsert(getAddress(), MulticloudDbKey.of("cross-b", "pk-cross-b"), Map.of("title", "Cross-B", "marker", marker));
+        client.upsert(getAddress(), MulticloudDbKey.of("cross-a", "pk-cross-a"), document(Map.of("title", "Cross-A", "marker", marker)));
+        client.upsert(getAddress(), MulticloudDbKey.of("cross-b", "pk-cross-b"), document(Map.of("title", "Cross-B", "marker", marker)));
 
         // Iterate continuation tokens so we evaluate the *full* result set
         // for this marker, not just the first page. With a fixed marker we
@@ -311,47 +307,49 @@ public abstract class CrudConformanceTests {
         doc.put("emptyArray", List.of());
 
         try {
-            client.upsert(getAddress(), key, doc);
+            client.upsert(getAddress(), key, document(doc));
             DocumentResult r = client.read(getAddress(), key);
             assertNotNull(r, "Document should be readable after upsert");
-            JsonNode d = r.document();
+            Map<String, DocumentValue> d = r.document().root().fields();
 
-            assertEquals("hello-world", d.get("strField").asText(), "string fidelity");
-            // JsonNode.asInt() / asLong() coerce silently — a provider that stores
-            // integers as JSON doubles would still pass a value comparison up to
-            // 2^53. Guard the *type* explicitly with isIntegralNumber() /
-            // canConvertToLong() so a silent int → double promotion fails here.
-            assertTrue(d.get("intField").isIntegralNumber(),
+            assertEquals(new StringValue("hello-world"), d.get("strField"), "string fidelity");
+            // Mathematical equality alone would hide an integer-to-floating promotion.
+            assertTrue(integral(d.get("intField")),
                     "int field must round-trip as an integral JSON number, not a double");
-            assertEquals(12345, d.get("intField").asInt(), "int value fidelity");
-            assertTrue(d.get("longField").isIntegralNumber(),
+            assertEquals(12345, ((NumberValue) d.get("intField")).decimalValue().intValueExact(), "int value fidelity");
+            assertTrue(integral(d.get("longField")),
                     "long field must round-trip as an integral JSON number, not a double");
-            assertTrue(d.get("longField").canConvertToLong(),
-                    "long field must round-trip without losing precision");
-            assertEquals(9_876_543_210L, d.get("longField").asLong(), "long value fidelity");
-            assertTrue(d.get("bigLongField").isIntegralNumber(),
+            assertEquals(9_876_543_210L, ((NumberValue) d.get("longField")).decimalValue().longValueExact(),
+                    "long value fidelity without losing precision");
+            assertTrue(integral(d.get("bigLongField")),
                     "near-Long.MAX_VALUE must round-trip as an integral JSON number");
-            assertTrue(d.get("bigLongField").canConvertToLong(),
-                    "near-Long.MAX_VALUE must round-trip without losing precision");
-            assertEquals(9_223_372_036_854_775_800L, d.get("bigLongField").asLong(),
+            assertEquals(9_223_372_036_854_775_800L, ((NumberValue) d.get("bigLongField")).decimalValue().longValueExact(),
                     "near-Long.MAX_VALUE value fidelity (would fail on silent long → double)");
-            assertEquals(3.14159, d.get("doubleField").asDouble(), 1e-9, "double fidelity");
-            assertTrue(d.get("boolTrue").asBoolean(), "boolean true fidelity");
-            assertFalse(d.get("boolFalse").asBoolean(), "boolean false fidelity");
-            assertTrue(d.has("nullField"), "null field should round-trip as a present field");
-            assertTrue(d.get("nullField").isNull(), "null field should round-trip as JSON null");
+            assertEquals(3.14159, ((NumberValue) d.get("doubleField")).value().doubleValue(), 1e-9, "double fidelity");
+            assertEquals(new BooleanValue(true), d.get("boolTrue"), "boolean true fidelity");
+            assertEquals(new BooleanValue(false), d.get("boolFalse"), "boolean false fidelity");
+            assertTrue(d.containsKey("nullField"), "null field should round-trip as a present field");
+            assertEquals(NullValue.INSTANCE, d.get("nullField"), "null field should round-trip as explicit null");
             assertNotNull(d.get("nestedObj"), "nested object should be present");
-            assertEquals("value", d.get("nestedObj").get("inner").asText(), "nested object fidelity");
-            assertEquals(7, d.get("nestedObj").get("n").asInt(), "nested numeric fidelity");
+            ObjectValue nested = (ObjectValue) d.get("nestedObj");
+            assertEquals(new StringValue("value"), nested.get("inner").orElseThrow(), "nested object fidelity");
+            assertEquals(NumberValue.of(7), nested.get("n").orElseThrow(), "nested numeric fidelity");
             assertNotNull(d.get("arrayField"), "array should be present");
-            assertTrue(d.get("arrayField").isArray(), "array field should round-trip as a JSON array");
-            assertEquals(3, d.get("arrayField").size(), "array size fidelity");
-            assertEquals("a", d.get("arrayField").get(0).asText(), "array element fidelity");
-            assertTrue(d.get("emptyArray").isArray(), "empty array fidelity");
-            assertEquals(0, d.get("emptyArray").size(), "empty array length fidelity");
+            assertTrue(d.get("arrayField") instanceof ArrayValue, "array kind fidelity");
+            List<DocumentValue> array = ((ArrayValue) d.get("arrayField")).values();
+            assertEquals(3, array.size(), "array size fidelity");
+            assertEquals(new StringValue("a"), array.get(0), "array element fidelity");
+            assertEquals(ArrayValue.of(List.of()), d.get("emptyArray"), "empty array fidelity");
         } finally {
             safeDelete(key);
         }
+    }
+
+    private static boolean integral(DocumentValue value) {
+        if (!(value instanceof NumberValue number)) return false;
+        return number.value() instanceof Byte || number.value() instanceof Short
+                || number.value() instanceof Integer || number.value() instanceof Long
+                || number.value() instanceof java.math.BigInteger;
     }
 
     @Test @Order(15)
@@ -364,9 +362,9 @@ public abstract class CrudConformanceTests {
         String unique = "conf-dup-" + java.util.UUID.randomUUID();
         MulticloudDbKey key = MulticloudDbKey.of(unique, unique);
         try {
-            client.create(getAddress(), key, Map.of("title", "first"));
+            client.create(getAddress(), key, document(Map.of("title", "first")));
             MulticloudDbException ex = assertThrows(MulticloudDbException.class,
-                    () -> client.create(getAddress(), key, Map.of("title", "second")),
+                    () -> client.create(getAddress(), key, document(Map.of("title", "second"))),
                     "create of duplicate key must throw");
             assertEquals(MulticloudDbErrorCategory.CONFLICT, ex.error().category(),
                     "Duplicate-create must normalize to CONFLICT across providers");
@@ -400,8 +398,7 @@ public abstract class CrudConformanceTests {
         int seedCount = 7;
         String marker = "pi-" + UUID.randomUUID().toString().substring(0, 6);
         for (int i = 1; i <= seedCount; i++) {
-            client.upsert(getAddress(), MulticloudDbKey.of(pk, "pi-" + i),
-                    Map.of("marker", marker, "n", i));
+            client.upsert(getAddress(), MulticloudDbKey.of(pk, "pi-" + i), document(Map.of("marker", marker, "n", i)));
         }
         try {
             // Compare the actual *set* of returned items, not just counts.
@@ -520,16 +517,16 @@ public abstract class CrudConformanceTests {
         // Mutating ops fail before any network call, so no cleanup is needed —
         // the closed client cannot have written anything.
         assertClientClosed(assertThrows(MulticloudDbException.class,
-                () -> throwaway.create(address, key, Map.of("k", "v"), null)),
+                () -> throwaway.create(address, key, document(Map.of("k", "v")), null)),
                 "create");
         assertClientClosed(assertThrows(MulticloudDbException.class,
                 () -> throwaway.read(address, key, null)),
                 "read");
         assertClientClosed(assertThrows(MulticloudDbException.class,
-                () -> throwaway.update(address, key, Map.of("k", "v"), null)),
+                () -> throwaway.update(address, key, document(Map.of("k", "v")), null)),
                 "update");
         assertClientClosed(assertThrows(MulticloudDbException.class,
-                () -> throwaway.upsert(address, key, Map.of("k", "v"), null)),
+                () -> throwaway.upsert(address, key, document(Map.of("k", "v")), null)),
                 "upsert");
         assertClientClosed(assertThrows(MulticloudDbException.class,
                 () -> throwaway.delete(address, key, null)),
@@ -587,8 +584,7 @@ public abstract class CrudConformanceTests {
         // Seed 5 items with ages 10, 20, 30, 40, 50.
         int[] ages = { 10, 20, 30, 40, 50 };
         for (int a : ages) {
-            client.upsert(getAddress(), MulticloudDbKey.of(pk, "cmp-" + a),
-                    Map.of("marker", marker, "age", a));
+            client.upsert(getAddress(), MulticloudDbKey.of(pk, "cmp-" + a), document(Map.of("marker", marker, "age", a)));
         }
         try {
             // Each pair: expression, expected count
@@ -612,8 +608,7 @@ public abstract class CrudConformanceTests {
         String marker = "ib-" + UUID.randomUUID().toString().substring(0, 6);
         int[] ages = { 10, 20, 30, 40, 50 };
         for (int a : ages) {
-            client.upsert(getAddress(), MulticloudDbKey.of(pk, "ib-" + a),
-                    Map.of("marker", marker, "age", a));
+            client.upsert(getAddress(), MulticloudDbKey.of(pk, "ib-" + a), document(Map.of("marker", marker, "age", a)));
         }
         try {
             assertCount("age IN (@a, @b, @c) AND marker = @m",

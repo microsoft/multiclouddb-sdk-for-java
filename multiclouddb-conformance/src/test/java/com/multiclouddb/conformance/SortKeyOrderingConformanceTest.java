@@ -3,6 +3,8 @@
 
 package com.multiclouddb.conformance;
 
+import static com.multiclouddb.conformance.Documents.document;
+
 import com.multiclouddb.api.*;
 import org.junit.jupiter.api.*;
 
@@ -91,16 +93,11 @@ public abstract class SortKeyOrderingConformanceTest {
     @DisplayName("partition-scoped query returns items sorted by sort key ASC")
     void partitionQueryReturnsSortedBySortKey() {
         // Insert items deliberately OUT of lexicographic sort-key order
-        client.upsert(getAddress(), MulticloudDbKey.of("sort-part", "sort-charlie"),
-                Map.of("label", "charlie", "group", "sort-test"));
-        client.upsert(getAddress(), MulticloudDbKey.of("sort-part", "sort-alpha"),
-                Map.of("label", "alpha", "group", "sort-test"));
-        client.upsert(getAddress(), MulticloudDbKey.of("sort-part", "sort-bravo"),
-                Map.of("label", "bravo", "group", "sort-test"));
-        client.upsert(getAddress(), MulticloudDbKey.of("sort-part", "sort-echo"),
-                Map.of("label", "echo", "group", "sort-test"));
-        client.upsert(getAddress(), MulticloudDbKey.of("sort-part", "sort-delta"),
-                Map.of("label", "delta", "group", "sort-test"));
+        client.upsert(getAddress(), MulticloudDbKey.of("sort-part", "sort-charlie"), document(Map.of("label", "charlie", "group", "sort-test")));
+        client.upsert(getAddress(), MulticloudDbKey.of("sort-part", "sort-alpha"), document(Map.of("label", "alpha", "group", "sort-test")));
+        client.upsert(getAddress(), MulticloudDbKey.of("sort-part", "sort-bravo"), document(Map.of("label", "bravo", "group", "sort-test")));
+        client.upsert(getAddress(), MulticloudDbKey.of("sort-part", "sort-echo"), document(Map.of("label", "echo", "group", "sort-test")));
+        client.upsert(getAddress(), MulticloudDbKey.of("sort-part", "sort-delta"), document(Map.of("label", "delta", "group", "sort-test")));
 
         try {
             QueryPage page = client.query(getAddress(),
@@ -135,12 +132,9 @@ public abstract class SortKeyOrderingConformanceTest {
         // The portable expression "batch = @batch" is translated by the SDK's
         // expression translator into a PartiQL ExecuteStatement (queryWithTranslation
         // path on DynamoDB), NOT into executeScanWithFilter.
-        client.upsert(getAddress(), MulticloudDbKey.of("xp-c", "xp-scan-charlie"),
-                Map.of("label", "charlie", "batch", "xp-sort-test"));
-        client.upsert(getAddress(), MulticloudDbKey.of("xp-a", "xp-scan-alpha"),
-                Map.of("label", "alpha", "batch", "xp-sort-test"));
-        client.upsert(getAddress(), MulticloudDbKey.of("xp-b", "xp-scan-bravo"),
-                Map.of("label", "bravo", "batch", "xp-sort-test"));
+        client.upsert(getAddress(), MulticloudDbKey.of("xp-c", "xp-scan-charlie"), document(Map.of("label", "charlie", "batch", "xp-sort-test")));
+        client.upsert(getAddress(), MulticloudDbKey.of("xp-a", "xp-scan-alpha"), document(Map.of("label", "alpha", "batch", "xp-sort-test")));
+        client.upsert(getAddress(), MulticloudDbKey.of("xp-b", "xp-scan-bravo"), document(Map.of("label", "bravo", "batch", "xp-sort-test")));
 
         try {
             // Cross-partition portable query — no partitionKey set
@@ -179,12 +173,9 @@ public abstract class SortKeyOrderingConformanceTest {
         // Use a unique partition key prefix so we can identify our items in the
         // result set (other tests may have left data in the container).
         // This no-expression path routes to executeScan on DynamoDB.
-        client.upsert(getAddress(), MulticloudDbKey.of("uscan-c", "uscan-charlie"),
-                Map.of("label", "charlie", "scangroup", "unfiltered-sort-test"));
-        client.upsert(getAddress(), MulticloudDbKey.of("uscan-a", "uscan-alpha"),
-                Map.of("label", "alpha", "scangroup", "unfiltered-sort-test"));
-        client.upsert(getAddress(), MulticloudDbKey.of("uscan-b", "uscan-bravo"),
-                Map.of("label", "bravo", "scangroup", "unfiltered-sort-test"));
+        client.upsert(getAddress(), MulticloudDbKey.of("uscan-c", "uscan-charlie"), document(Map.of("label", "charlie", "scangroup", "unfiltered-sort-test")));
+        client.upsert(getAddress(), MulticloudDbKey.of("uscan-a", "uscan-alpha"), document(Map.of("label", "alpha", "scangroup", "unfiltered-sort-test")));
+        client.upsert(getAddress(), MulticloudDbKey.of("uscan-b", "uscan-bravo"), document(Map.of("label", "bravo", "scangroup", "unfiltered-sort-test")));
 
         try {
             // Completely unfiltered query — no expression, no partitionKey.
@@ -230,12 +221,9 @@ public abstract class SortKeyOrderingConformanceTest {
         // Insert items across DIFFERENT partitions, deliberately out of order.
         // The legacy DynamoDB expression (:param notation) routes to executeScanWithFilter
         // when no partitionKey is set — a DynamoDB-native Scan with FilterExpression.
-        client.upsert(getAddress(), MulticloudDbKey.of("lf-c", "lf-charlie"),
-                Map.of("label", "charlie", "legacy_batch", "lf-sort-test"));
-        client.upsert(getAddress(), MulticloudDbKey.of("lf-a", "lf-alpha"),
-                Map.of("label", "alpha", "legacy_batch", "lf-sort-test"));
-        client.upsert(getAddress(), MulticloudDbKey.of("lf-b", "lf-bravo"),
-                Map.of("label", "bravo", "legacy_batch", "lf-sort-test"));
+        client.upsert(getAddress(), MulticloudDbKey.of("lf-c", "lf-charlie"), document(Map.of("label", "charlie", "legacy_batch", "lf-sort-test")));
+        client.upsert(getAddress(), MulticloudDbKey.of("lf-a", "lf-alpha"), document(Map.of("label", "alpha", "legacy_batch", "lf-sort-test")));
+        client.upsert(getAddress(), MulticloudDbKey.of("lf-b", "lf-bravo"), document(Map.of("label", "bravo", "legacy_batch", "lf-sort-test")));
 
         try {
             QueryPage page = client.query(getAddress(),

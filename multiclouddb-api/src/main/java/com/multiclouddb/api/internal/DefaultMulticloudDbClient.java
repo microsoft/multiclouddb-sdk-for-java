@@ -24,6 +24,7 @@ import com.multiclouddb.api.changefeed.ChangeFeedPage;
 import com.multiclouddb.api.changefeed.CursorExpiredException;
 import com.multiclouddb.api.changefeed.internal.CursorToken;
 import com.multiclouddb.api.changefeed.internal.CursorTokenCodec;
+import com.multiclouddb.api.document.Document;
 import com.multiclouddb.api.query.Expression;
 import com.multiclouddb.api.query.ExpressionParseException;
 import com.multiclouddb.api.query.ExpressionParser;
@@ -82,7 +83,7 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
     }
 
     @Override
-    public void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void create(ResourceAddress address, MulticloudDbKey key, Document document, OperationOptions options) {
         checkOpen(OperationNames.CREATE);
         Instant start = Instant.now();
         try {
@@ -114,7 +115,7 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
     }
 
     @Override
-    public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void update(ResourceAddress address, MulticloudDbKey key, Document document, OperationOptions options) {
         checkOpen(OperationNames.UPDATE);
         Instant start = Instant.now();
         try {
@@ -130,7 +131,7 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
     }
 
     @Override
-    public void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void upsert(ResourceAddress address, MulticloudDbKey key, Document document, OperationOptions options) {
         checkOpen(OperationNames.UPSERT);
         Instant start = Instant.now();
         try {

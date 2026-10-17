@@ -72,9 +72,15 @@ runtime dependencies:
 
 ## 3. Write Portable Code
 
+The following examples target the coordinated development SNAPSHOT reactor,
+not the previous released beta signatures. See
+[customer codecs and migration](customer-object-mapping.md).
+
 ```java
 import com.multiclouddb.api.*;
-import com.fasterxml.jackson.databind.JsonNode;
+import com.multiclouddb.api.document.*;
+import java.util.Map;
+import java.util.Properties;
 
 // Configure - provider selected entirely by config, not code
 Properties props = new Properties();
@@ -94,17 +100,17 @@ MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
 try (MulticloudDbClient client = MulticloudDbClientFactory.create(config)) {
 
 // CRUD - same code for every provider
-Map<String, Object> doc = Map.of(
-        "title", "Buy groceries",
-        "completed", false
-);
+Document doc = Document.builder()
+        .put("title", new StringValue("Buy groceries"))
+        .put("completed", new BooleanValue(false))
+        .build();
 
 ResourceAddress todos = new ResourceAddress("mydb", "todos");
 MulticloudDbKey key = MulticloudDbKey.of("todo-1", "todo-1");
 
 client.upsert(todos, key, doc);                  // Create or replace
 DocumentResult result = client.read(todos, key); // Point read
-JsonNode document = result.document();           // The document payload
+Document document = result.document();           // Immutable neutral payload
 client.delete(todos, key);                       // Delete
 }
 ```

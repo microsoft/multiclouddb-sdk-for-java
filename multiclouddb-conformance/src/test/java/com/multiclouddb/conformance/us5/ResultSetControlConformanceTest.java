@@ -3,6 +3,8 @@
 
 package com.multiclouddb.conformance.us5;
 
+import static com.multiclouddb.conformance.Documents.document;
+
 import com.multiclouddb.api.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.Map;
@@ -63,7 +65,7 @@ public abstract class ResultSetControlConformanceTest {
         for (int i = 1; i <= SEED_COUNT; i++) {
             Map<String, Object> doc = Map.of("score", i * 10, "label", "item-" + i);
             MulticloudDbKey key = MulticloudDbKey.of("rsc-" + i, "rsc-" + i);
-            client.upsert(getAddress(), key, doc);
+            client.upsert(getAddress(), key, document(doc));
         }
     }
 

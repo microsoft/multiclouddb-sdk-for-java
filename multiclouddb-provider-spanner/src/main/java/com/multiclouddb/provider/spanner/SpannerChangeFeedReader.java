@@ -561,6 +561,7 @@ final class SpannerChangeFeedReader {
         String modTypeRaw = getStringOrNull(rec, "mod_type");
         String modType = modTypeRaw != null ? modTypeRaw : "UPDATE";
         ChangeType type = mapModType(modType);
+        List<String> int64Columns = int64Columns(rec);
 
         List<Struct> mods = getStructListOrEmpty(rec, "mods");
         List<ChangeEvent> out = new ArrayList<>(mods.size());
@@ -569,11 +570,11 @@ final class SpannerChangeFeedReader {
             String eventId = txnId + ":" + (commitTs != null ? commitTs.toString() : "") + ":"
                     + recordSeq + ":" + idx;
             MulticloudDbKey key = extractKey(mod);
-            JsonNode data = extractValues(mod, type);
+            JsonNode data = extractValues(mod, type, int64Columns);
             Instant eventInstant = commitTs != null
                     ? Instant.ofEpochSecond(commitTs.getSeconds(), commitTs.getNanos())
                     : Instant.EPOCH;
-            out.add(new ChangeEvent(key, type, eventInstant, data, eventId));
+            out.add(new ChangeEvent(key, type, eventInstant, NativeDocuments.changeData(data), eventId));
             idx++;
         }
         return new DataChangeBatch(out, commitTs != null ? commitTs : Timestamp.now(), recordSeq);
@@ -629,7 +630,39 @@ final class SpannerChangeFeedReader {
         return MulticloudDbKey.of(pk);
     }
 
-    private JsonNode extractValues(Struct mod, ChangeType type) {
+    /**
+     * Missing/null/empty metadata preserves legacy values without inference.
+     * Present malformed declarations fail explicitly rather than silently losing type information.
+     */
+    private static List<String> int64Columns(Struct record) {
+        List<String> columns = new ArrayList<>();
+        Map<String, String> declared = new HashMap<>();
+        try {
+            for (Struct column : getStructListOrEmpty(record, "column_types")) {
+                if (column == null) throw NativeDocuments.invalidPayload(OperationNames.READ_CHANGES);
+                String name = getStringOrNull(column, "name");
+                String json = getStringOrNull(column, "type");
+                if (name == null || json == null) {
+                    throw NativeDocuments.invalidPayload(OperationNames.READ_CHANGES);
+                }
+                JsonNode descriptor = MAPPER.readTree(json);
+                if (descriptor == null || !descriptor.path("code").isTextual()) {
+                    throw NativeDocuments.invalidPayload(OperationNames.READ_CHANGES);
+                }
+                String code = descriptor.get("code").textValue();
+                if (declared.putIfAbsent(name, code) != null) {
+                    throw NativeDocuments.invalidPayload(OperationNames.READ_CHANGES);
+                }
+                if ("INT64".equals(code)) columns.add(name);
+            }
+        } catch (com.fasterxml.jackson.core.JsonProcessingException
+                 | IllegalArgumentException | IllegalStateException invalid) {
+            throw NativeDocuments.invalidPayload(OperationNames.READ_CHANGES);
+        }
+        return columns;
+    }
+
+    private JsonNode extractValues(Struct mod, ChangeType type, List<String> int64Columns) {
         // For CREATE/UPDATE prefer new_values; for DELETE fall back to old_values.
         String field;
         if (type == ChangeType.DELETE && hasNonNullField(mod, "old_values")) {
@@ -643,14 +676,48 @@ final class SpannerChangeFeedReader {
         }
         String json = getStringOrNull(mod, field);
         if (json == null) return MAPPER.createObjectNode();
+        JsonNode raw;
         try {
-            JsonNode raw = MAPPER.readTree(json);
-            return filterByFieldData(raw);
-        } catch (Exception e) {
+            raw = MAPPER.readTree(json);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            if (!int64Columns.isEmpty()) {
+                throw NativeDocuments.invalidPayload(OperationNames.READ_CHANGES);
+            }
             ObjectNode wrap = MAPPER.createObjectNode();
             wrap.put("raw", json);
             return wrap;
         }
+        raw = filterByFieldData(raw);
+        // Normalize only retained, metadata-declared columns, outside the legacy raw fallback.
+        if (raw instanceof ObjectNode object) {
+            for (String column : int64Columns) {
+                JsonNode value = object.get(column);
+                if (value != null && !value.isNull()) {
+                    object.put(column, decodeInt64(value));
+                }
+            }
+        }
+        return raw;
+    }
+
+    private static long decodeInt64(JsonNode value) {
+        if (value.isIntegralNumber() && value.canConvertToLong()) return value.longValue();
+        if (value.isTextual()) {
+            String text = value.textValue();
+            int start = text.startsWith("-") ? 1 : 0;
+            if (start == text.length()) throw NativeDocuments.invalidPayload(OperationNames.READ_CHANGES);
+            for (int i = start; i < text.length(); i++) {
+                if (text.charAt(i) < '0' || text.charAt(i) > '9') {
+                    throw NativeDocuments.invalidPayload(OperationNames.READ_CHANGES);
+                }
+            }
+            try {
+                return Long.parseLong(text);
+            } catch (NumberFormatException invalid) {
+                throw NativeDocuments.invalidPayload(OperationNames.READ_CHANGES);
+            }
+        }
+        throw NativeDocuments.invalidPayload(OperationNames.READ_CHANGES);
     }
 
     /**

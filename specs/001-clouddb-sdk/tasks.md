@@ -7,7 +7,7 @@ description: "Tasks for implementing Multicloud DB SDK (Java)"
 **Input**: Design documents from `specs/001-clouddb-sdk/`  
 **Prerequisites**: plan.md (required), spec.md (required), research.md, data-model.md, contracts/openapi.yaml, quickstart.md
 
-**Tech stack (from plan.md)**: Java 17 (LTS), multi-module Maven, SLF4J API, Jackson `JsonNode`, JUnit 5 + Mockito
+**Tech stack (from plan.md)**: Java 17 (LTS), multi-module Maven, SLF4J API, neutral Document, private Gson cursor JSON, optional/provider Jackson 2.22.3, JUnit 5 + Mockito
 
 ## Format: `- [ ] T### [P?] [US?] Description with file path`
 
@@ -21,7 +21,7 @@ description: "Tasks for implementing Multicloud DB SDK (Java)"
 **Purpose**: Create the multi-module Maven library skeleton and baseline build configuration.
 
 - [x] T001 Create parent Maven aggregator `pom.xml` (modules + shared properties for Java 17)
-- [x] T002 Create `multiclouddb-api/pom.xml` (API module; depends on Jackson + SLF4J)
+- [x] T002 Create `multiclouddb-api/pom.xml` (current Foundation runtime: SLF4J + private Gson and its transitive annotation metadata; Jackson is test-only)
 - [x] T003 Create `multiclouddb-spi/pom.xml` (SPI module; depends on `multiclouddb-api`)
 - [x] T004 [P] Create `multiclouddb-provider-cosmos/pom.xml` (provider module; depends on `multiclouddb-spi` + `com.azure:azure-cosmos`)
 - [x] T005 [P] Create `multiclouddb-provider-dynamo/pom.xml` (provider module; depends on `multiclouddb-spi` + `software.amazon.awssdk:dynamodb`)
@@ -686,20 +686,31 @@ RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use sing
 
 ## Phase 17: User Story 7 — Uniform Document Size and Quota Limits (Priority: P2)
 
-**Goal**: The SDK enforces a 400 KB maximum document size across all providers before sending any I/O. Oversized documents are rejected with `INVALID_REQUEST`.
+**Goal**: The SDK enforces a 399 KiB (408,576 bytes) logical JSON maximum for Document write inputs across all providers before provider delegation. Oversized documents are rejected with `INVALID_REQUEST`; passing the check does not guarantee native fit.
 
-- [x] T158 [P] [US7] Create `DocumentSizeValidator` utility class with `MAX_BYTES = 400 * 1024` and `validate(JsonNode document, String operation)` method that serializes to UTF-8 bytes via `ObjectMapper.writeValueAsBytes()` and throws `MulticloudDbException(INVALID_REQUEST)` when byte length exceeds the limit.
+- [x] T158 [P] [US7] Implement `DocumentSizeValidator` with `MAX_BYTES = 400 * 1024 - 1024` and `validate(Document document, String operation)`. `DocumentJsonSize` structurally counts the legacy logical JSON byte profile without Jackson or JSON-byte allocation; overflow throws `MulticloudDbException(INVALID_REQUEST)` with an observed lower-bound count.
   File: `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DocumentSizeValidator.java`
 
-- [x] T159 [US7] Update `DefaultMulticloudDbClient` to call `DocumentSizeValidator.validate(document, operation)` at the start of `create()` and `upsert()` before the provider delegation block.
+- [x] T159 [US7] Update `DefaultMulticloudDbClient` to call `DocumentSizeValidator.validate(document, operation)` in `create()`, `update()` and `upsert()` after the closed-client check and before provider delegation.
   File: `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DefaultMulticloudDbClient.java`
 
-- [x] T160 [US7] Create `DocumentSizeConformanceTest.java` with tests: document within limit is accepted; document exceeding 400 KB is rejected on upsert with INVALID_REQUEST; document exceeding 400 KB is rejected on create with INVALID_REQUEST.
+- [x] T160 [US7] Create `DocumentSizeConformanceTest.java` with tests: within-limit inputs pass SDK size validation; inputs exceeding 399 KiB are rejected on create/upsert with INVALID_REQUEST. `DocumentJsonSizeTest` additionally pins the exact below/equal/above boundary, numeric/Unicode byte profile and early-cutoff diagnostics.
   File: `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us7/DocumentSizeConformanceTest.java`
 
 ---
 
 ## Phase 18: Build and Validate
+
+**Foundation scope/evidence**: [PR 1](../../docs/design/serialization-pr1-foundation.md)
+adds the immutable six-kind model and explicit application-owned codecs, optional
+Jackson token adapter and direct native writes for all providers. Cosmos read
+filtering avoids response copies. `NativeWriteMappingTest` covers CREATE/UPDATE/
+UPSERT against test-only legacy native conversion oracles, including numeric
+representation, key/TTL collisions and Spanner FIELD_DATA/transaction call counts.
+Model/codec/size/read/feed tests remain required. The historical build results
+below record earlier milestones, not the current test count. Binary, new numeric
+policy, DynamoDB-equivalent item sizing and new partial updates are not completed
+tasks in Foundation.
 
 - [x] T161 Build and validate all modules compile and all existing + new tests pass: `mvn clean install -DskipTests` confirms zero compilation errors, then `mvn test -pl multiclouddb-api` confirms 28 tests pass. Full clean build successful across all modules.
 

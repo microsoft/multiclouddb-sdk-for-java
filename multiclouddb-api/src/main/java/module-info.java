@@ -16,6 +16,8 @@ module com.multiclouddb.api {
     exports com.multiclouddb.api;
     exports com.multiclouddb.api.query;
     exports com.multiclouddb.api.changefeed;
+    exports com.multiclouddb.api.document;
+    exports com.multiclouddb.api.codec;
 
     // SPI — only to provider modules and the conformance test suite, not to app code.
     // NOTE: multiclouddb-conformance currently has no module-info.java and runs on
@@ -41,9 +43,6 @@ module com.multiclouddb.api {
     // ServiceLoader discovery
     uses com.multiclouddb.spi.MulticloudDbProviderAdapter;
 
-    // transitive: JsonNode appears in the public API surface (MulticloudDbClient.read(),
-    // QueryPage.items()), so app modules must be able to use it without adding their
-    // own `requires com.fasterxml.jackson.databind` directive.
-    requires transitive com.fasterxml.jackson.databind;
     requires org.slf4j;
+    requires com.google.gson;
 }

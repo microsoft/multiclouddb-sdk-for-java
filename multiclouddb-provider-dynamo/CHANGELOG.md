@@ -7,6 +7,27 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Document mapping (development)
+
+- The model is restricted to six JSON-like kinds. BinaryNode payloads reaching
+  the neutral read/feed converter fail with the safe PROVIDER_ERROR below.
+  The earlier native B-attribute-to-null fallback remains unchanged and is
+  characterized for actual read/feed paths; it is not Document binary support.
+- Accept neutral Document CRUD payloads and return Document point reads plus
+  nullable DocumentValue change-feed data. Write directly to AttributeValue
+  containers without intermediate Map/List or whole Jackson trees, retaining
+  numeric text (including decimal normalization), key/TTL injection and write
+  conditions. Read/feed/query mapping, number parsing limitations, native SDK
+  encoding, metadata and delete old-image selection remain unchanged.
+  Declare Jackson directly rather than inheriting it from API.
+- Native-to-model read/feed rejection is a nonretryable `PROVIDER_ERROR` with
+  operation/provider and fixed `invalid_document_payload` reason, without
+  payload/native diagnostic causes. External rows/events outside the model domain
+  can fail this way; final new/old/empty/absent event payloads are regression-tested.
+- Coordinated `0.1.0-beta.2-SNAPSHOT` development API dependency; no release,
+  storage-range expansion or general provider bug fix. See
+  [mapping support and migration](../docs/customer-object-mapping.md).
+
 ## [0.1.0-beta.2] — 2026-06-22
 
 > **Requires `multiclouddb-api` 0.1.0-beta.2 or later** — this release consumes API surface (change-feed cursors, `CLIENT_CLOSED` envelope, `ChangeFeedConfig.extendedRetention(...)` opt-in gating) introduced in API beta.2. The dependency is pinned in the published POM.

@@ -11,6 +11,10 @@ import com.multiclouddb.api.MulticloudDbKey;
 import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
+import com.multiclouddb.api.document.Document;
+import com.multiclouddb.api.document.StringValue;
+import com.multiclouddb.api.document.NumberValue;
+import com.multiclouddb.api.document.BooleanValue;
 
 import java.util.Map;
 
@@ -85,7 +89,7 @@ public class Main {
         System.out.println("── SDK warm-up ────────────────────────────────────────────────");
         client.query(address, QueryRequest.builder().maxPageSize(1).build());
         MulticloudDbKey warmupKey = MulticloudDbKey.of("__warmup__", "__warmup__");
-        client.upsert(address, warmupKey, Map.of("id", "__warmup__"));
+        client.upsert(address, warmupKey, Document.builder().put("id", new StringValue("__warmup__")).build());
         client.delete(address, warmupKey);
         System.out.println("  Read and write metadata cached.");
         System.out.println();
@@ -178,9 +182,13 @@ public class Main {
     private void upsert(String id, String name, String category,
                         double price, boolean inStock) {
         MulticloudDbKey key = MulticloudDbKey.of(id, id);
-        Map<String, Object> doc = Map.of(
-                "id", id, "name", name, "category", category,
-                "price", price, "inStock", inStock);
+        Document doc = Document.builder()
+                .put("id", new StringValue(id))
+                .put("name", new StringValue(name))
+                .put("category", new StringValue(category))
+                .put("price", NumberValue.of(price))
+                .put("inStock", new BooleanValue(inStock))
+                .build();
 
         System.out.printf("  client.upsert(address, key(%s), doc)%n", id);
         client.upsert(address, key, doc);
@@ -194,7 +202,10 @@ public class Main {
         System.out.printf("  client.read(address, key(%s))%n", id);
         DocumentResult result = client.read(address, key);
         if (result != null) {
-            System.out.println("    → " + result.document().toPrettyString());
+            Document document = result.document();
+            System.out.printf("    → name=%s, price=%s%n",
+                    ((StringValue) document.get("name").orElseThrow()).value(),
+                    ((NumberValue) document.get("price").orElseThrow()).value());
         } else {
             System.out.println("    → not found");
         }

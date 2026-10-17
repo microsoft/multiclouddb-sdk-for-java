@@ -18,6 +18,7 @@ import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
 import com.multiclouddb.api.changefeed.ChangeFeedCursor;
 import com.multiclouddb.api.changefeed.ChangeFeedPage;
+import com.multiclouddb.api.document.Document;
 import com.multiclouddb.api.query.TranslatedQuery;
 
 import java.util.ArrayList;
@@ -41,7 +42,7 @@ public interface MulticloudDbProviderClient extends AutoCloseable {
      *
      * @throws MulticloudDbException with category CONFLICT if the key already exists
      */
-    void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
+    void create(ResourceAddress address, MulticloudDbKey key, Document document, OperationOptions options);
 
     /**
      * Read a document by key.
@@ -55,12 +56,12 @@ public interface MulticloudDbProviderClient extends AutoCloseable {
      *
      * @throws MulticloudDbException with category NOT_FOUND if the key does not exist
      */
-    void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
+    void update(ResourceAddress address, MulticloudDbKey key, Document document, OperationOptions options);
 
     /**
      * Upsert (create or replace) a document.
      */
-    void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
+    void upsert(ResourceAddress address, MulticloudDbKey key, Document document, OperationOptions options);
 
     /**
      * Delete a document by key.

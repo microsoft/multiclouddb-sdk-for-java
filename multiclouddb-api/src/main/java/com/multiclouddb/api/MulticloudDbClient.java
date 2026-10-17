@@ -6,6 +6,7 @@ package com.multiclouddb.api;
 import com.multiclouddb.api.changefeed.ChangeFeedCursor;
 import com.multiclouddb.api.changefeed.ChangeFeedPage;
 import com.multiclouddb.api.changefeed.CursorExpiredException;
+import com.multiclouddb.api.document.Document;
 
 import java.util.List;
 import java.util.Map;
@@ -32,12 +33,12 @@ public interface MulticloudDbClient extends AutoCloseable {
      * @param options  operation options (timeout, etc.)
      * @throws MulticloudDbException with category CONFLICT if the key already exists
      */
-    void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
+    void create(ResourceAddress address, MulticloudDbKey key, Document document, OperationOptions options);
 
     /**
      * Insert a new document using default options. Fails if key already exists.
      */
-    default void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document) {
+    default void create(ResourceAddress address, MulticloudDbKey key, Document document) {
         create(address, key, document, OperationOptions.defaults());
     }
 
@@ -69,13 +70,13 @@ public interface MulticloudDbClient extends AutoCloseable {
      * @param options  operation options
      * @throws MulticloudDbException with category NOT_FOUND if the key does not exist
      */
-    void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
+    void update(ResourceAddress address, MulticloudDbKey key, Document document, OperationOptions options);
 
     /**
      * Update an existing document using default options. Fails if key does not
      * exist.
      */
-    default void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document) {
+    default void update(ResourceAddress address, MulticloudDbKey key, Document document) {
         update(address, key, document, OperationOptions.defaults());
     }
 
@@ -87,13 +88,13 @@ public interface MulticloudDbClient extends AutoCloseable {
      * @param document document payload
      * @param options  operation options (timeout, etc.)
      */
-    void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
+    void upsert(ResourceAddress address, MulticloudDbKey key, Document document, OperationOptions options);
 
     /**
      * Upsert (create or replace) a document identified by key, using default
      * options.
      */
-    default void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document) {
+    default void upsert(ResourceAddress address, MulticloudDbKey key, Document document) {
         upsert(address, key, document, OperationOptions.defaults());
     }
 

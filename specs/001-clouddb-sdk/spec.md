@@ -4,6 +4,38 @@
 **Created**: 2026-01-23  
 **Status**: Draft  
 
+## Foundation serialization scope (PR 1)
+
+The current [Foundation design](../../docs/design/serialization-pr1-foundation.md)
+requires an immutable object-root Document with exactly null, boolean, string,
+number, array and object values. Missing fields differ from explicit null.
+NumberValue retains the supplied Byte, Short, Integer, Long, Float, Double,
+BigInteger or BigDecimal with mathematical equality, finite values, precision
+<=1024 digits, scale [-1024,+1024] and container depth <=128. These are model
+bounds, not universal database numeric fidelity or Java-type round-trip guarantees.
+
+Applications MUST explicitly call their selected DocumentCodec with Class or
+neutral TypeRef; the client MUST NOT register, discover or invoke application
+codecs. The optional JacksonDocumentCodec uses in-memory tokens and a safe
+configuration snapshot. Core API public/runtime boundaries MUST remain Jackson-free.
+CRUD writes and point reads use Document; ChangeEvent data is nullable
+DocumentValue with existing selected-image semantics. Query Map/Object contracts
+remain unchanged.
+
+Providers MUST preserve existing keys, TTL, conditions, field visibility,
+numeric conversion and errors while mapping writes directly to Cosmos ObjectNode,
+Dynamo AttributeValue and Spanner typed mutations/marked nested JSON STRINGs.
+Cosmos read construction skips excluded root fields before model validation,
+without mutating the native response. Other read/feed parsers and Spanner update
+transactions remain unchanged. Native SDK transport encoding is separate.
+
+PR 1 retains the **399 KiB logical JSON** check in FR-060/061. A DynamoDB-equivalent
+**400 KiB item budget** is selected follow-on direction only; numeric accounting,
+binary, partial updates and final-document sizing require separate decisions.
+Future offloading/chunking requirements below are deferred and use a future
+agreed inline threshold; they do not authorize automatic envelopes, compression,
+encryption, offload or a new numeric/storage policy in Foundation.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Write Once, Run Anywhere CRUD + Query (Priority: P1)
@@ -173,13 +205,13 @@ As an application developer, I can set a time-to-live (TTL) on individual docume
 
 As an application developer, I experience consistent document size limits and quota constraints across all providers, so that my application behaves predictably regardless of which provider is selected.
 
-**Why this priority**: Providers impose different native limits for document size, partition size, and other quotas (e.g., DynamoDB's 400 KB item size vs. Cosmos DB's 2 MB default, or varying logical partition size caps). Without uniform enforcement, applications may work on one provider but fail unexpectedly on another, undermining portability.
+**Why this priority**: Providers impose different native limits for document size, partition size, and other quotas (e.g., DynamoDB's 400 KiB item size vs. Cosmos DB's 2 MB default, or varying logical partition size caps). A common logical precheck provides consistent SDK rejection without claiming to predict every native constraint.
 
-**Independent Test**: A document exceeding 400 KB is rejected with a clear error on every provider, and a document within 400 KB is accepted on every provider.
+**Independent Test**: Inputs above 399 KiB (408,576 logical JSON bytes) are rejected before provider delegation; inputs exactly at or below the limit pass this size check on every provider. Native schema/type/size constraints still apply.
 
 **Acceptance Scenarios**:
 
-1. **Given** a document within the SDK's uniform size limit, **When** it is stored on any provider, **Then** it is persisted successfully.
+1. **Given** a document within the SDK's 399 KiB logical size limit, **When** it is submitted to any provider, **Then** it passes SDK size validation; persistence additionally requires compatible native schema, types and size.
 2. **Given** a document exceeding the SDK's uniform size limit, **When** the application attempts to store it on any provider, **Then** the SDK raises a clear, consistent error indicating the limit before sending the request to the provider.
 3. **Given** a provider with a native size limit larger than the SDK's uniform limit, **When** a document exceeding the SDK limit is submitted, **Then** the SDK still rejects it to maintain cross-provider consistency.
 4. **Given** quota limits defined by the SDK (e.g., maximum partition size), **When** those limits are approached or exceeded, **Then** the SDK surfaces clear, provider-neutral errors or warnings.
@@ -239,9 +271,15 @@ As an application developer, I can specify a read consistency level (e.g., stron
 
 ### User Story 11 - Transparent Large Object (BLOB) Offloading (Priority: P2)
 
+**Current implementation scope**: This is a deferred requirement, not implemented
+by the current customer-serialization increment. Its Document model contains
+only null, boolean, string, number, array and object; there is no binary kind or
+automatic BLOB offloading. Explicit application text mapping remains ordinary
+string data. The future acceptance scenarios below are retained as requirements.
+
 As an application developer, I can store and retrieve binary payloads (serialized objects, protocol buffers, compressed archives) that exceed the SDK's uniform document size limit, and the SDK transparently offloads the oversized payload to provider-appropriate external object storage while maintaining a reference in the database document — so that my application code treats these as normal document fields without awareness of the offloading mechanism. Large object handling is enabled by SDK configuration that selects eligible document field paths; no code-level annotations or hooks are required.
 
-**Why this priority**: Applications migrating from Cassandra commonly store large serialized objects inline (e.g., protobuf-encoded aggregated positions, pre-composed cached objects up to 3–4 MB). The SDK's 400 KB uniform document size limit would reject these payloads outright, blocking migration. Transparent offloading enables these workloads without requiring application-level chunking or external storage management code.
+**Why this priority**: Applications migrating from Cassandra commonly store large serialized objects inline (e.g., protobuf-encoded aggregated positions, pre-composed cached objects up to 3–4 MB). Foundation's 399 KiB logical input limit rejects such oversized inputs. Future offloading could enable these workloads; its inline accounting policy is not defined by PR 1.
 
 **Independent Test**: A sample application stores a 2 MB binary field via the SDK on any supported provider, and reads it back identically. The application code is unchanged between providers — only configuration (including storage backend endpoint/credentials and configured large-object field paths) varies.
 
@@ -250,7 +288,7 @@ As an application developer, I can store and retrieve binary payloads (serialize
 1. **Given** a document with a field selected in configuration for large object handling and a payload of 2 MB, **When** the application upserts the document, **Then** the SDK transparently stores the oversized payload in external object storage and persists a reference in the database document.
 2. **Given** a document with a large object reference stored in the database, **When** the application reads the document, **Then** the SDK transparently retrieves the payload from external storage and returns the complete document to the application with the large object field fully materialized.
 3. **Given** a document with a large object that is deleted from the database, **When** the delete operation completes, **Then** the SDK also removes the corresponding object from external storage (or marks it for deferred cleanup).
-4. **Given** a configured large object field whose payload is within the SDK's uniform size limit (≤ 400 KB), **When** the document is stored, **Then** the SDK stores it inline in the database document without offloading (no external storage overhead for small payloads).
+4. **Given** a configured large object field whose payload fits the future agreed inline threshold, **When** the document is stored, **Then** the future facility stores it inline without offloading.
 5. **Given** external object storage that is temporarily unavailable, **When** the application attempts to read a document with an offloaded large object, **Then** the SDK returns a clear error indicating the external storage dependency is unavailable.
 
 ---
@@ -259,7 +297,7 @@ As an application developer, I can store and retrieve binary payloads (serialize
 
 As an application developer, I can store and retrieve structured documents that exceed the SDK's uniform document size limit, and the SDK transparently splits the document into multiple linked chunks stored within the same database collection — so that my application sees a single logical document without managing chunking logic.
 
-**Why this priority**: Some workloads have structured JSON documents that naturally exceed 400 KB (e.g., deeply nested configuration objects, aggregated time-series snapshots). When external object storage is not desired or available, the SDK can transparently chunk within the database itself, keeping all data co-located with the same consistency and query guarantees.
+**Why this priority**: Some workloads have structured JSON documents exceeding the current 399 KiB logical input limit (e.g., deeply nested configuration objects, aggregated time-series snapshots). Future chunking could keep these data in the database; chunk sizing and consistency guarantees are deferred, not Foundation behavior.
 
 **Independent Test**: A sample application stores a 1.5 MB JSON document via the SDK on any supported provider, reads it back identically, and the application code is unaware of chunking internals.
 
@@ -573,7 +611,7 @@ As an application developer, I can perform portable secondary lookups and, separ
 - What happens when a consistency level override is requested on a query that also uses partition key scoping? The consistency level and partition scope must be combinable without interference.
 - What happens when a large object is offloaded to external storage and the database record is deleted but external storage cleanup fails? The SDK must attempt cleanup and report a partial failure with guidance to manually remove the orphaned object. Deferred cleanup (garbage collection) may be used as an alternative.
 - What happens when external object storage is unavailable during a read of a document with an offloaded large object? The SDK must return a clear error identifying the external dependency failure, not silently return the document without the large object field.
-- What happens when a large object field's payload is exactly at the SDK's uniform size limit boundary (400 KB)? Payloads at or below the limit are stored inline; only payloads exceeding the limit are offloaded.
+- Future offloading boundary: payloads fitting the separately agreed inline threshold remain inline; larger payloads are offloaded. Foundation implements no offload and rejects logical Document inputs above 399 KiB.
 - What happens when a chunked document is partially written (some chunks succeed, others fail)? The SDK must clean up partial chunks and report the failure. On providers supporting transactional batch, chunks must be written atomically.
 - What happens when a chunked document's chunks are inconsistent (e.g., a chunk is missing or corrupted)? The SDK must detect the inconsistency and return a clear error rather than returning a partial/corrupted document.
 - What happens when a query matches a chunked document but the query field is in a secondary chunk (not the root)? Only fields in the root/primary chunk are queryable; secondary chunk fields are not indexed or queryable.
@@ -713,8 +751,8 @@ The SDK enforces a strict no-code-escape-hatch policy to preserve portability:
 
 #### Uniform Document Size and Quota Limit Requirements
 
-- **FR-060**: The SDK MUST define a uniform maximum document size that is enforced consistently across all providers. The lowest common denominator is currently DynamoDB's 400 KB item size limit, so the SDK's uniform limit MUST be 400 KB, ensuring documents accepted by the SDK are storable on every provider.
-- **FR-061**: The SDK MUST validate document size against the uniform limit before sending the request to the provider and MUST reject oversized documents with a clear, actionable error.
+- **FR-060**: Foundation MUST enforce a uniform logical JSON input limit of **399 KiB (408,576 bytes)** across all providers, retaining the legacy byte profile and 1 KiB margin below DynamoDB's **400 KiB (409,600-byte) native item limit**. This is not native item accounting: SDK-added keys/TTL, metadata and encoding overhead are outside this logical input count, so passing it MUST NOT be advertised as guaranteed native fit.
+- **FR-061**: The SDK MUST structurally validate Document size for create, update and upsert after application mapping and before provider delegation, without allocating serialized JSON bytes. Oversized inputs MUST fail with `INVALID_REQUEST`; early-cutoff diagnostics MUST describe the observed lower bound, not an exact full size. Update validation covers the supplied input, not the final document after an existing partial-update operation.
 - **FR-062**: The SDK MUST define and document uniform quota limits for provider resources (e.g., maximum logical partition size) so that applications can anticipate constraints regardless of the selected provider.
 - **FR-063**: When a provider-specific quota limit is reached (e.g., partition size exceeded, throughput exhausted), the SDK MUST surface the failure through the standard provider-neutral error model with clear categorization and actionable guidance.
 - **FR-064**: The SDK MUST expose the configured uniform document size limit and documented quota limits programmatically so applications can perform pre-validation or display limits to end users.
@@ -774,13 +812,13 @@ The SDK enforces a strict no-code-escape-hatch policy to preserve portability:
 
 #### Transparent Large Object (BLOB) Offloading Requirements
 
-- **FR-082**: The SDK MUST provide a large object offloading facility that transparently stores binary payloads exceeding the SDK's uniform document size limit (400 KB) in an external object storage backend, while persisting a reference (pointer) in the database document.
+- **FR-082** (deferred): A future large object facility MUST offload eligible binary payloads exceeding its separately agreed inline threshold to external object storage, persisting a reference in the database document. Foundation adds neither Binary nor offloading.
 - **FR-083**: Large object offloading MUST be opt-in per field via SDK configuration only, using a provider-neutral configuration interface. Fields not designated for offloading in configuration continue to be stored inline and are subject to the uniform size limit.
 - **FR-084**: When a document with a large object field designated for offloading in SDK configuration is upserted and the field's payload exceeds the inline threshold, the SDK MUST: (1) store the payload in the configured external storage backend, (2) replace the field value in the database document with a structured reference containing the storage location and size metadata, and (3) persist the database document.
 - **FR-085**: When a document with a large object reference is read, the SDK MUST transparently retrieve the payload from external storage and return the fully materialized document to the application, identical to the original write (minus any provider-added metadata).
 - **FR-086**: When a document with a large object reference is deleted, the SDK MUST also remove (or schedule for deferred removal) the corresponding object from external storage. Orphaned objects due to partial failure MUST be detectable and cleanable via a maintenance/cleanup mechanism.
 - **FR-087**: Large object offloading MUST support configurable external storage backends per provider: Azure Blob Storage for Cosmos DB, Amazon S3 for DynamoDB, Google Cloud Storage for Spanner. A provider-neutral configuration interface MUST be used so applications can switch object storage backends alongside the database provider.
-- **FR-088**: Payloads at or below the inline threshold (≤ 400 KB) on opted-in large object fields MUST be stored inline in the database document without offloading, avoiding external storage overhead for small payloads.
+- **FR-088** (deferred): Payloads fitting the future agreed inline threshold on opted-in large object fields MUST remain inline without external storage overhead.
 - **FR-089**: Large object offloading MUST be a capability-gated feature. When offloading is configured but the external storage backend is unavailable or misconfigured, the SDK MUST raise a clear error at operation time.
 - **FR-090**: The SDK MUST define a maximum large object size limit (configurable, default 16 MB) and reject payloads exceeding it with a clear error.
 
@@ -1080,7 +1118,7 @@ The following operators and functions form the portable query subset, available 
 - **SC-032**: A read or query operation with no consistency override continues to use the provider's default consistency behavior, maintaining backward compatibility.
 - **SC-033**: A 2 MB binary payload stored via the SDK's large object offloading facility is transparently persisted in external storage and retrieved identically on read, without the application being aware of the offloading mechanism. The same application code works across all supported providers by changing only storage backend configuration.
 - **SC-034**: When a document with an offloaded large object is deleted, the corresponding external storage object is also removed (or scheduled for removal) within a configurable cleanup window.
-- **SC-035**: A payload at or below 400 KB on an opted-in large object field is stored inline without incurring external storage overhead, verifiable by observing no external storage call in diagnostics.
+- **SC-035** (deferred): A payload fitting the future agreed inline threshold on an opted-in large object field remains inline without external storage calls.
 - **SC-036**: When external object storage is unavailable during a read, the SDK returns a clear error identifying the external dependency failure within the standard error model.
 - **SC-037**: A 1.5 MB JSON document stored via the SDK's chunking facility is transparently split, persisted, and reassembled identically on read across all supported providers. The application code is unaware of chunking.
 - **SC-038**: When a chunked document is deleted, all associated chunks are removed. On providers supporting transactional batch, deletion is atomic; on others, eventual consistency of cleanup is documented.
@@ -1129,7 +1167,7 @@ The following operators and functions form the portable query subset, available 
 - **Row-level TTL scope**: The SDK supports row-level (document-level) TTL only. Cell-level TTL (per-field expiration) as found in Cassandra is not supported because the native TTL engines in Cosmos DB and DynamoDB operate at the row/item level. Applications migrating from Cassandra cell-level TTL should evaluate whether row-level TTL is sufficient for their use case.
 - **TTL precision**: TTL expiration is approximate. Providers may enforce TTL with varying granularity (e.g., Cosmos DB checks TTL in the background periodically, DynamoDB typically deletes within 48 hours of expiration). The SDK does not guarantee exact-second expiration precision.
 - **Write timestamp source**: Write timestamps are sourced from the provider's system metadata (e.g., Cosmos DB `_ts`, DynamoDB stream record timestamps). The SDK does not maintain its own write timestamps. Precision and availability may vary by provider.
-- **Uniform document size limit**: The SDK enforces a single maximum document size of 400 KB across all providers, driven by DynamoDB's 400 KB item size limit as the lowest common denominator. Cosmos DB natively supports up to 2 MB (or 10 MB for eligible accounts) and Spanner supports up to 10 MB, but the SDK enforces the 400 KB ceiling to guarantee cross-provider portability. Applications needing to store larger documents should use provider-specific escape hatches or external storage patterns.
+- **Uniform document size limit**: Foundation enforces 399 KiB (408,576 bytes) of structural logical JSON per write input, not predicted native storage or final-document size. DynamoDB's separate native item limit is 400 KiB (409,600 bytes). The selected future DynamoDB-equivalent item budget includes keys/options and needs separately agreed accounting; no native-fit guarantee, larger-document escape hatch or automatic offload is added here.
 - **Uniform quota limits**: The SDK documents and surfaces provider quota constraints (e.g., logical partition size limits, throughput caps) in a uniform way. While exact quota values may differ by provider, the SDK ensures that quota-related failures are reported through the standard error model with consistent categorization.
 - **Multi-tenancy patterns**: The SDK does not enforce tenant isolation. Multi-tenant applications can use partition key schemes to scope data by tenant (e.g., including an organization code in the partition key value) and use the existing `partitionKey` query scope (FR-039) to restrict queries to a single tenant's data. For stronger isolation (per-tenant encryption, noisy-neighbor protection), applications should use collection-per-tenant or account-per-tenant patterns with provider fleet management features. This is a deployment architecture decision, not an SDK-level concern.
 - Every Java source file in all modules (main and test) carries the standard Microsoft MIT copyright header as its first two lines. This applies to all 117 Java files across `multiclouddb-api`, `multiclouddb-conformance`, `multiclouddb-provider-cosmos`, `multiclouddb-provider-dynamo`, `multiclouddb-provider-spanner`, and `multiclouddb-samples`. A `LICENSE` file at the repository root contains the full MIT license text. The per-file header is:
@@ -1143,12 +1181,12 @@ The following operators and functions form the portable query subset, available 
 - **Bulk operation limits**: Provider-level batch size limits vary (e.g., DynamoDB limits `BatchWriteItem` to 25 items, `BatchGetItem` to 100 keys). The SDK automatically partitions larger requests into multiple provider-level batches. Applications should be aware that very large bulk requests may result in multiple provider round-trips.
 - **Read consistency mapping**: The preferred portable model is `EVENTUAL` / `LOCAL_QUORUM` / `GLOBAL_STRONG`; legacy `STRONG` aliases `GLOBAL_STRONG`. Native mappings must meet or exceed the selected minimum. Cosmos DB Session, Bounded Staleness, and Consistent Prefix remain provider-specific extensions and do not implement `LOCAL_QUORUM`. Spanner's `EVENTUAL` mapping uses a provider-configured stale-read bound (default: 15 seconds).
 - **Consistency default behavior**: When no consistency override is specified, each provider uses its own default: Cosmos DB uses the account-level consistency setting, DynamoDB defaults to eventually consistent reads, and Spanner defaults to strong reads. The SDK does not normalize these defaults to preserve existing provider behavior for applications that do not opt into consistency overrides.
-- **Large object offloading scope**: The large object offloading facility targets opaque binary payloads (serialized objects, protobufs, compressed archives, images) that exceed the 400 KB uniform document size limit. It is not a general-purpose file storage API. Payloads are stored as single objects in external storage; multi-part upload is used for payloads exceeding provider-specific thresholds (e.g., 5 MB for S3/Azure Blob). Maximum supported payload size is configurable (default 16 MB).
+- **Large object offloading scope (deferred)**: The future facility targets opaque binary payloads (serialized objects, protobufs, compressed archives, images) beyond its agreed inline threshold. It is not a general-purpose file storage API. Payloads are stored as single objects in external storage; multi-part upload is used for payloads exceeding provider-specific thresholds (e.g., 5 MB for S3/Azure Blob). The proposed maximum supported payload size is configurable (default 16 MB); none of these are Foundation guarantees.
 - **Large object storage backend pairing**: Each database provider is paired with a natural object storage backend: Cosmos DB → Azure Blob Storage, DynamoDB → Amazon S3, Spanner → Google Cloud Storage. Cross-pairing (e.g., Cosmos DB with S3) is technically possible but not a v1 priority.
 - **Large object consistency**: The SDK provides best-effort consistency between the database record and the external storage object. The write order is: (1) write to external storage, (2) persist reference in database. On failure between steps, orphaned objects may exist temporarily. A maintenance/garbage-collection mechanism is provided for cleanup. Strong transactional guarantees across database + object storage are not feasible and are outside scope.
 - **Large object lifecycle**: Deleting a database record triggers deletion of the associated external storage object. If external storage deletion fails, the SDK logs a warning and the object becomes an orphan detectable via the maintenance mechanism. Applications requiring strict lifecycle coupling should implement additional monitoring.
-- **Document chunking scope**: Document chunking targets structured JSON documents that exceed 400 KB but are logically single entities (e.g., large configuration objects, aggregated reports). It is not designed for arbitrarily large streaming data. Maximum chunked document size is configurable (default 10 MB).
-- **Document chunking query limitations**: Only fields present in the root chunk (the first chunk, containing document metadata and leading fields) are queryable. Applications requiring full-text search across oversized documents should use dedicated search indexes outside the SDK. The root chunk size is the same as the uniform limit (400 KB), so documents must have queryable fields that fit within this size.
+- **Document chunking scope (deferred)**: Document chunking targets structured JSON documents beyond the agreed inline threshold but logically single entities (e.g., large configuration objects, aggregated reports). It is not designed for arbitrarily large streaming data. The proposed maximum chunked document size is configurable (default 10 MB); this is outside Foundation.
+- **Document chunking query limitations (deferred)**: Only fields in the root chunk would be queryable. Root-chunk size must fit the future agreed budget including metadata; Foundation defines no chunk layout or size policy.
 - **Document chunking and change feed interaction**: Chunked documents appear as multiple items in the change feed (one event per chunk). The SDK does not currently reassemble change feed events for chunked documents into logical document change events. Applications consuming change feed on chunked collections should be aware of per-chunk events.
 - **Composite partition key scope**: The SDK supports composite partition keys of 2–5 components. Keys with more than 5 components are rejected at configuration time. This aligns with Cosmos DB's hierarchical partition key limit (3 levels) and provides headroom for Spanner (which supports larger composite keys natively).
 - **Composite key encoding**: Composite key support is additive to the existing key API: applications continue to create keys with `MulticloudDbKey.of(...)`, and when multiple partition-key components are needed they supply a composite partition-key value object such as `CompositePartitionKey.of("tenantId", "acme", "entityType", "order")` as the partition-key argument. For providers requiring a single partition key value (DynamoDB), composite components are encoded using a reversible URL-encoding scheme with a pipe (`|`) separator between encoded components. This ensures deterministic encoding/decoding and supports arbitrary character values in components. Example: `MulticloudDbKey.of(CompositePartitionKey.of("tenantId", "acme", "entityType", "order"), sortKey)` → partition key value `acme|order` (or `acme%7Cbar|order` if a component contains the separator).
@@ -1314,10 +1352,10 @@ This checklist is used to accept the feature as “done” at the spec level.
 
 ### Transparent Large Object (BLOB) Offloading
 
-- [ ] A binary payload exceeding 400 KB is transparently offloaded to external object storage and a reference is stored in the database document, without application code awareness.
+- [ ] A binary payload exceeding the future agreed inline threshold is offloaded with a reference stored in the document (deferred; not Foundation).
 - [ ] Reading a document with an offloaded large object transparently retrieves the payload from external storage and returns the fully materialized document.
 - [ ] Deleting a document with an offloaded large object also removes (or schedules removal of) the external storage object.
-- [ ] Payloads at or below 400 KB on opted-in fields are stored inline without offloading overhead.
+- [ ] Payloads fitting the future agreed inline threshold remain inline without offloading overhead.
 - [ ] External storage backend configuration (Azure Blob / S3 / GCS) works across all providers by changing configuration only.
 - [ ] Large object offloading is capability-gated and raises a clear error when external storage is unavailable or misconfigured.
 - [ ] Orphaned objects resulting from partial failures are detectable and cleanable via a maintenance mechanism.
@@ -1325,10 +1363,10 @@ This checklist is used to accept the feature as “done” at the spec level.
 
 ### Transparent Document Chunking
 
-- [ ] A structured document exceeding 400 KB is transparently split into multiple linked chunks stored in the same collection, without application awareness.
+- [ ] A structured document exceeding the future agreed inline threshold is split into linked chunks (deferred; not Foundation).
 - [ ] Reading a chunked document transparently reassembles all chunks and returns the complete document.
 - [ ] Deleting a chunked document removes all associated chunks (atomically where provider supports transactional batch).
-- [ ] Documents within 400 KB are stored as single items without chunking overhead when chunking is enabled.
+- [ ] Documents fitting the future agreed inline threshold remain single items without chunking overhead when the future facility is enabled.
 - [ ] Only root chunk fields are queryable; queries return correctly reassembled documents.
 - [ ] Chunk writes use compression to minimize chunk count and storage overhead.
 - [ ] Document chunking is capability-gated and raises a clear error on providers lacking required batch semantics.

@@ -576,12 +576,21 @@ components:
 
     DocumentSizeLimit:
       type: object
-      description: Uniform document size limit enforced across all providers (FR-061).
+      description: |
+        SDK logical JSON input limit for create, update and upsert across all providers
+        (FR-060/061). Counted structurally after application mapping and before provider
+        delegation, without allocating serialized JSON bytes.
       properties:
         maxDocumentSizeBytes:
           type: integer
-          const: 409600
-          description: 400 KB = 400 × 1024 bytes. DynamoDB hard limit — lowest common denominator.
+          const: 408576
+          description: |
+            399 KiB = 408,576 bytes, retaining the legacy logical JSON byte profile.
+            This is not DynamoDB's native 400 KiB (409,600-byte) item accounting:
+            injected keys/TTL, metadata and native encoding are outside this count.
+            Passing this check does not guarantee native fit or the final document
+            size after an existing partial update. A DynamoDB-equivalent item budget
+            is follow-on design only, not the Foundation limit.
 
   x-capability-additions-issue25:
     ROW_LEVEL_TTL:

@@ -3,6 +3,8 @@
 
 package com.multiclouddb.provider.cosmos;
 
+import com.multiclouddb.api.document.Document;
+
 import com.azure.core.credential.TokenCredential;
 import com.azure.cosmos.*;
 import com.azure.cosmos.models.*;
@@ -195,11 +197,11 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
      *         category {@code CONFLICT} (409) if the key already exists
      */
     @Override
-    public void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void create(ResourceAddress address, MulticloudDbKey key, Document document, OperationOptions options) {
         checkOpen(OperationNames.CREATE);
         try {
             CosmosContainer container = getContainer(address);
-            ObjectNode doc = toObjectNode(document);
+            ObjectNode doc = NativeDocuments.write(document);
             doc.put(CosmosConstants.FIELD_ID, key.sortKey() != null ? key.sortKey() : key.partitionKey());
             doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
             if (options != null && options.ttlSeconds() != null) {
@@ -241,12 +243,6 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             ObjectNode raw = response.getItem();
             if (raw == null) return null;
 
-            // Strip Cosmos system properties so the returned document is portable
-            // across providers (Cosmos-only fields like _rid, _self, _ts, etc. must
-            // not appear in a DocumentResult that callers compare across providers).
-            ObjectNode item = raw.deepCopy();
-            CosmosConstants.SYSTEM_FIELDS.forEach(item::remove);
-
             DocumentMetadata metadata = null;
             if (options != null && options.includeMetadata()) {
                 DocumentMetadata.Builder metaBuilder = DocumentMetadata.builder();
@@ -260,7 +256,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
                 }
                 metadata = metaBuilder.build();
             }
-            return new DocumentResult(item, metadata);
+            return new DocumentResult(NativeDocuments.document(raw), metadata);
         } catch (CosmosException e) {
             if (e.getStatusCode() == 404) {
                 return null;
@@ -286,11 +282,11 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
      *         does not exist
      */
     @Override
-    public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void update(ResourceAddress address, MulticloudDbKey key, Document document, OperationOptions options) {
         checkOpen(OperationNames.UPDATE);
         try {
             CosmosContainer container = getContainer(address);
-            ObjectNode doc = toObjectNode(document);
+            ObjectNode doc = NativeDocuments.write(document);
             String cosmosId = key.sortKey() != null ? key.sortKey() : key.partitionKey();
             doc.put(CosmosConstants.FIELD_ID, cosmosId);
             doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
@@ -320,11 +316,11 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
      * @throws com.multiclouddb.api.MulticloudDbException on any Cosmos error
      */
     @Override
-    public void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void upsert(ResourceAddress address, MulticloudDbKey key, Document document, OperationOptions options) {
         checkOpen(OperationNames.UPSERT);
         try {
             CosmosContainer container = getContainer(address);
-            ObjectNode doc = toObjectNode(document);
+            ObjectNode doc = NativeDocuments.write(document);
             doc.put(CosmosConstants.FIELD_ID, key.sortKey() != null ? key.sortKey() : key.partitionKey());
             doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
             if (options != null && options.ttlSeconds() != null) {
@@ -997,20 +993,6 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         }
         return diag;
     }
-
-    /**
-     * Converts a caller-supplied {@code Map<String, Object>} document into a Jackson
-     * {@link ObjectNode} suitable for Cosmos SDK write calls.
-     * Jackson is used as a private implementation detail and does not appear on the
-     * public API surface.
-     *
-     * @param document the document payload
-     * @return an {@link ObjectNode} representation of the document
-     */
-    private ObjectNode toObjectNode(Map<String, Object> document) {
-        return MAPPER.convertValue(document, ObjectNode.class);
-    }
-
 
     /**
      * Converts a Cosmos SDK {@link JsonNode} response item into a plain

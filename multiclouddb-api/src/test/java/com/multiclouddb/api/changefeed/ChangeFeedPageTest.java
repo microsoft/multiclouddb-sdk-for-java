@@ -3,23 +3,22 @@
 
 package com.multiclouddb.api.changefeed;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.multiclouddb.api.document.ObjectValue;
+import com.multiclouddb.api.document.StringValue;
 import com.multiclouddb.api.MulticloudDbKey;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class ChangeFeedPageTest {
 
-    private static final ObjectMapper M = new ObjectMapper();
-
     private static ChangeEvent evt(String key) {
-        ObjectNode data = M.createObjectNode().put("k", key);
+        ObjectValue data = ObjectValue.of(Map.of("k", new StringValue(key)));
         return new ChangeEvent(MulticloudDbKey.of(key), ChangeType.CREATE,
                 Instant.parse("2025-01-01T00:00:00Z"), data, key);
     }

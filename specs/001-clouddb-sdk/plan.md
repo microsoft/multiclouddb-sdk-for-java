@@ -69,14 +69,35 @@ The SDK is fully implemented with CRUD + query + paging + conformance tests (47 
 ## Technical Context
 
 **Language/Version**: Java 17 LTS (Eclipse Adoptium Temurin-17.0.10.7-hotspot)
-**Primary Dependencies**: Jackson 2.22.3, SLF4J 2.0.12, Azure Cosmos SDK 4.82.0, Azure Identity 1.18.2, AWS SDK v2 2.34.0 (DynamoDB + DynamoDB Enhanced), Google Cloud Spanner 6.62.0
+**Primary Dependencies**: API runtime: Gson 2.11.0 (private cursor JSON), its transitive error_prone_annotations 2.27.0 metadata dependency, and SLF4J 2.0.12; no Jackson. Optional customer adapter/native providers: Jackson 2.22.3, Azure Cosmos SDK 4.82.0, Azure Identity 1.18.2, AWS SDK v2 2.34.0, Google Cloud Spanner 6.62.0; provider-specific dependencies are managed in the root POM.
 **Storage**: Cosmos DB (NoSQL), DynamoDB, Spanner (via provider SDKs)
 **Testing**: JUnit 5.10.2, Mockito 5.11.0, Maven Surefire/Failsafe
 **Target Platform**: JVM 17+ (server-side)
 **Project Type**: Multi-module Maven library (7 modules)
 **Performance Goals**: Expression translation overhead < 1ms per query (thin wrapper principle)
-**Constraints**: No runtime dependencies beyond Jackson for AST serialization; parser must be hand-written (no ANTLR/grammar-generator dependency)
+**Constraints**: API public declarations and runtime closure remain Jackson-free. Document logical-size validation is structural; cursor JSON uses maintained Gson with official strict syntax handling. The query-expression parser remains hand-written (no ANTLR/grammar-generator dependency); this does not authorize a homegrown JSON parser. Query Map/Object contracts remain unchanged.
 **Scale/Scope**: ~25 new/modified Java source files, ~30 new test cases for expression translation, provisioning API across 7 files, cloud authentication (DefaultAzureCredential + ARM management SDK) in Cosmos provider
+
+## Foundation serialization increment
+
+The [Foundation design](../../docs/design/serialization-pr1-foundation.md)
+defines this increment: immutable six-kind Document, explicit application-owned
+Class/TypeRef codecs, optional Jackson token mapping and Jackson-free core API.
+Provider writes traverse Document directly into Cosmos ObjectNode, Dynamo
+AttributeValue containers and Spanner typed mutations/marked nested JSON STRINGs.
+Cosmos point reads filter root system fields without copying or mutating the
+response. Other read/feed parsers and query Map/Object contracts stay unchanged.
+Native SDK encoding is separate from application mapping.
+
+Validation remains structural logical JSON size <=399 KiB (408,576 bytes) after
+application mapping and before provider input construction. The selected
+DynamoDB-equivalent 400 KiB item budget, Binary and new numeric/partial-update
+policies are follow-on designs, not this implementation. Retain current numeric
+conversion, reserved keys, TTL, FIELD_DATA and Spanner update transactions.
+`NativeWriteMappingTest` compares old native conversion oracles with all three
+write operations; existing model, codec, size and read/feed tests cover the
+unchanged boundaries. No live-service or universal performance guarantee follows
+from native-mock tests or mapping-only measurements.
 
 ## Constitution Check
 
