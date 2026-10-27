@@ -7,6 +7,20 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve the exact numeric value of DynamoDB `N` attributes and every `NS`
+  member, including nested values. Decimal and exponent-form strings now decode
+  to `DecimalNode` / `BigDecimal` instead of binary64; integer strings retain
+  `IntNode` / `Integer` or `LongNode` / `Long` when they fit and use
+  `BigIntegerNode` / `BigInteger` otherwise. Read, query, and change-feed results
+  no longer silently round native numbers or fail on valid large integers and
+  exponent forms. Encoding these results preserves their numeric values.
+  Native number sets still map to arrays/lists and re-encode as DynamoDB `L`,
+  not `NS`. This fixes [#110](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/110);
+  portable numeric-domain validation remains separate in
+  [#111](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/111).
+
 ## [0.1.0-beta.2] — 2026-06-22
 
 > **Requires `multiclouddb-api` 0.1.0-beta.2 or later** — this release consumes API surface (change-feed cursors, `CLIENT_CLOSED` envelope, `ChangeFeedConfig.extendedRetention(...)` opt-in gating) introduced in API beta.2. The dependency is pinned in the published POM.

@@ -47,6 +47,14 @@ This document resolves key design choices for the Multicloud DB SDK and records 
 ## Decision 4: Portable data representation
 - Decision: Portable document payload is JSON-like: objects, arrays, strings, numbers, booleans, null.
 - Rationale: Maps well to Cosmos documents, DynamoDB items (with conversion), and Spanner rows (with mapping).
+- Native numeric fidelity: DynamoDB `N` and `NS` decoding preserves the native
+  value before any portable numeric policy is applied. Decimal/exponent strings
+  use `BigDecimal`; integer strings use `Integer`, `Long`, or `BigInteger` according
+  to range. This avoids losing precision before an API-level boundary can validate
+  or normalize the value. Number sets retain the existing array/list representation.
+  This provider-specific fix ([#110](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/110))
+  does not define or expand the portable numeric domain, which remains separate
+  work in [#111](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/111).
 - Alternatives considered:
   - Strongly typed models: harder to keep language-neutral across future FFI.
   - Provider-native encodings only: harms portability.
