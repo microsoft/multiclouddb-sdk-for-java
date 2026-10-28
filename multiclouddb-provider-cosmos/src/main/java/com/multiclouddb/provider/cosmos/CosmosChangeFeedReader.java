@@ -9,7 +9,6 @@ import com.azure.cosmos.models.CosmosChangeFeedRequestOptions;
 import com.azure.cosmos.models.FeedRange;
 import com.azure.cosmos.models.FeedResponse;
 import com.azure.cosmos.util.CosmosPagedIterable;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.multiclouddb.api.MulticloudDbError;
 import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.MulticloudDbException;
@@ -236,8 +235,8 @@ final class CosmosChangeFeedReader {
                     CosmosChangeFeedRequestOptions.createForProcessingFromNow(range)
                             .allVersionsAndDeletes();
             warmup.setMaxItemCount(1);
-            Iterator<FeedResponse<JsonNode>> it =
-                    container.queryChangeFeed(warmup, JsonNode.class).iterableByPage().iterator();
+            Iterator<FeedResponse<Object>> it =
+                    container.queryChangeFeed(warmup, Object.class).iterableByPage().iterator();
             if (it.hasNext()) {
                 String c = it.next().getContinuationToken();
                 // Capture wall-clock immediately after the bookmark materialises so
@@ -322,16 +321,16 @@ final class CosmosChangeFeedReader {
         opts.setMaxItemCount(DEFAULT_PAGE_SIZE);
 
         try {
-            CosmosPagedIterable<JsonNode> iterable = container.queryChangeFeed(opts, JsonNode.class);
-            Iterator<FeedResponse<JsonNode>> pageIter = iterable.iterableByPage().iterator();
+            CosmosPagedIterable<Object> iterable = container.queryChangeFeed(opts, Object.class);
+            Iterator<FeedResponse<Object>> pageIter = iterable.iterableByPage().iterator();
 
             List<ChangeEvent> events = new ArrayList<>();
             String newContinuation = pos.continuation();
             boolean hasMore = false;
 
             if (pageIter.hasNext()) {
-                FeedResponse<JsonNode> page = pageIter.next();
-                for (JsonNode item : page.getResults()) {
+                FeedResponse<Object> page = pageIter.next();
+                for (Object item : page.getResults()) {
                     events.add(mapEvent(item));
                 }
                 String c = page.getContinuationToken();
@@ -407,9 +406,9 @@ final class CosmosChangeFeedReader {
      * surfaced as the body so the caller still receives something usable
      * instead of a hard failure.
      */
-    private ChangeEvent mapEvent(JsonNode envelope) {
-        JsonNode metadata = envelope.path("metadata");
-        String op = metadata.path("operationType").asText("").toLowerCase(java.util.Locale.ROOT);
+    private ChangeEvent mapEvent(Object envelope) {
+        Object metadata = NativeDocuments.get(envelope, "metadata");
+        String op = textOrEmpty(NativeDocuments.get(metadata, "operationType")).toLowerCase(java.util.Locale.ROOT);
 
         ChangeType type;
         switch (op) {
@@ -428,20 +427,16 @@ final class CosmosChangeFeedReader {
         // empty object; in that case the surfaced body is empty but the
         // metadata block still carries id + partitionKey, which we recover
         // below.
-        JsonNode body = type == ChangeType.DELETE
-                ? envelope.path("previous")
-                : envelope.path("current");
+        Object body = NativeDocuments.get(envelope, type == ChangeType.DELETE ? "previous" : "current");
         if (isEmptyOrMissing(body)) {
-            JsonNode alt = type == ChangeType.DELETE
-                    ? envelope.path("current")
-                    : envelope.path("previous");
+            Object alt = NativeDocuments.get(envelope, type == ChangeType.DELETE ? "current" : "previous");
             if (!isEmptyOrMissing(alt)) {
                 body = alt;
-            } else if (body.isMissingNode() || body.isNull()) {
+            } else if (body == null) {
                 // Neither side present → fall back to the envelope itself so
                 // _ts / _etag lookups below remain safe (will simply return
                 // empty / 0, and the metadata-driven fallbacks take over).
-                body = alt.isMissingNode() || alt.isNull() ? envelope : alt;
+                body = alt == null ? envelope : alt;
             }
             // else: body is a present-but-empty JSON object (the AVAD
             // DELETE-tombstone case). Keep it as-is — an empty {} is a
@@ -457,8 +452,8 @@ final class CosmosChangeFeedReader {
         //    nested object keyed by the partition-key path segment, e.g.
         //    `{"partitionKey":"<value>"}` for a container with `/partitionKey`,
         //    so we extract the first leaf text value).
-        String id = textOrEmpty(body.get("id"));
-        if (id.isBlank()) id = textOrEmpty(metadata.get("id"));
+        String id = textOrEmpty(NativeDocuments.get(body, "id"));
+        if (id.isBlank()) id = textOrEmpty(NativeDocuments.get(metadata, "id"));
 
         String pk = textOrEmpty(firstPresent(body, "partitionKey", "pk", "_pk"));
         if (pk.isBlank()) pk = extractMetadataPartitionKey(metadata);
@@ -483,22 +478,22 @@ final class CosmosChangeFeedReader {
         // Prefer the AVAD metadata's conflict-resolution timestamp (`crts`)
         // which is the authoritative ordering instant for the change record;
         // fall back to `_ts` (second-resolution wall clock) on the body.
-        long tsSeconds = metadata.path("crts").asLong(body.path("_ts").asLong(0L));
+        long tsSeconds = NativeDocuments.asLong(NativeDocuments.get(metadata, "crts"),
+                NativeDocuments.asLong(NativeDocuments.get(body, "_ts"), 0L));
         Instant commitTs = tsSeconds > 0
                 ? Instant.ofEpochSecond(tsSeconds)
                 : Instant.now();
 
         // _etag is a stable per-version identifier; pair with id+ts as a
         // last-resort eventId when the SDK strips it.
-        String eventId = textOrEmpty(body.get("_etag"));
+        String eventId = textOrEmpty(NativeDocuments.get(body, "_etag"));
         if (eventId.isBlank()) eventId = id + "@" + tsSeconds;
 
-        return new ChangeEvent(key, type, commitTs, body, eventId);
+        return new ChangeEvent(key, type, commitTs, NativeDocuments.changeData(body), eventId, body != null);
     }
 
-    private static boolean isEmptyOrMissing(JsonNode node) {
-        return node == null || node.isMissingNode() || node.isNull()
-                || (node.isObject() && node.size() == 0);
+    private static boolean isEmptyOrMissing(Object node) {
+        return node == null || node instanceof Map<?, ?> map && map.isEmpty();
     }
 
     /**
@@ -509,28 +504,25 @@ final class CosmosChangeFeedReader {
      * {@code /partitionKey}); this helper unwraps that and also tolerates the
      * less common shape where the value is shipped as a bare string.
      */
-    private static String extractMetadataPartitionKey(JsonNode metadata) {
-        JsonNode pk = metadata.get("partitionKey");
-        if (pk == null || pk.isNull()) return "";
-        if (pk.isValueNode()) return pk.asText("");
-        if (pk.isObject() && pk.size() >= 1) {
-            JsonNode first = pk.fields().next().getValue();
-            if (first != null && first.isValueNode()) return first.asText("");
+    private static String extractMetadataPartitionKey(Object metadata) {
+        Object pk = NativeDocuments.get(metadata, "partitionKey");
+        if (pk instanceof Map<?, ?> map && !map.isEmpty()) {
+            return textOrEmpty(map.values().iterator().next());
         }
-        if (pk.isArray() && pk.size() >= 1 && pk.get(0).isValueNode()) {
-            return pk.get(0).asText("");
+        if (pk instanceof List<?> list && !list.isEmpty()) {
+            return textOrEmpty(list.get(0));
         }
-        return "";
+        return textOrEmpty(pk);
     }
 
-    private static String textOrEmpty(JsonNode node) {
-        return node == null || node.isNull() ? "" : node.asText("");
+    private static String textOrEmpty(Object node) {
+        return NativeDocuments.text(node);
     }
 
-    private static JsonNode firstPresent(JsonNode item, String... fields) {
+    private static Object firstPresent(Object item, String... fields) {
         for (String f : fields) {
-            JsonNode n = item.get(f);
-            if (n != null && !n.isNull()) return n;
+            Object n = NativeDocuments.get(item, f);
+            if (n != null) return n;
         }
         return null;
     }

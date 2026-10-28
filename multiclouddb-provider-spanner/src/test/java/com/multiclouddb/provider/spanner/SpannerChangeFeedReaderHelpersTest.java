@@ -3,11 +3,6 @@
 
 package com.multiclouddb.provider.spanner;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.IntNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.cloud.spanner.Struct;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.changefeed.ChangeType;
@@ -50,7 +45,6 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class SpannerChangeFeedReaderHelpersTest {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final SpannerChangeFeedReader READER =
             new SpannerChangeFeedReader(ProviderId.SPANNER, null, java.util.Map.of());
 
@@ -59,7 +53,7 @@ class SpannerChangeFeedReaderHelpersTest {
     @Test
     @DisplayName("filterByFieldData drops extraneous columns not in FIELD_DATA but PRESERVES partitionKey/sortKey")
     void filterByFieldData_dropsExtrasKeepsPkSk() throws Exception {
-        ObjectNode row = MAPPER.createObjectNode();
+        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
         row.put(SpannerConstants.FIELD_DATA, "[\"v\",\"tag\"]");
         row.put(SpannerConstants.FIELD_PARTITION_KEY, "pk-1");
         row.put(SpannerConstants.FIELD_SORT_KEY, "sk-1");
@@ -67,95 +61,94 @@ class SpannerChangeFeedReaderHelpersTest {
         row.put("tag", "alpha");
         row.put("extra_col", "stale-from-prior-write");
 
-        ObjectNode out = (ObjectNode) invokeFilter(row);
+        java.util.Map<?, ?> out = (java.util.Map<?, ?>) invokeFilter(row);
         assertNull(out.get(SpannerConstants.FIELD_DATA),
                 "FIELD_DATA metadata column must never leak into ChangeEvent.data()");
-        assertEquals(42, out.get("v").asInt(), "v is in FIELD_DATA → kept");
-        assertEquals("alpha", out.get("tag").asText(), "tag is in FIELD_DATA → kept");
+        assertEquals(42, out.get("v"), "v is in FIELD_DATA → kept");
+        assertEquals("alpha", out.get("tag"), "tag is in FIELD_DATA → kept");
         assertNull(out.get("extra_col"),
                 "extra_col is NOT in FIELD_DATA → must be dropped (stale column from a prior write)");
-        assertEquals("pk-1", out.get(SpannerConstants.FIELD_PARTITION_KEY).asText(),
+        assertEquals("pk-1", out.get(SpannerConstants.FIELD_PARTITION_KEY),
                 "Finding #1: PK MUST be preserved regardless of FIELD_DATA contents — "
                         + "Cosmos AVAD and Dynamo NEW_AND_OLD_IMAGES both carry the document's "
                         + "key in the post-image; Spanner must match this contract.");
-        assertEquals("sk-1", out.get(SpannerConstants.FIELD_SORT_KEY).asText(),
+        assertEquals("sk-1", out.get(SpannerConstants.FIELD_SORT_KEY),
                 "Finding #1: SK MUST be preserved regardless of FIELD_DATA contents");
     }
 
     @Test
     @DisplayName("filterByFieldData with no FIELD_DATA returns the object unchanged (legacy row fallback)")
     void filterByFieldData_noMetadata_returnsUnchanged() throws Exception {
-        ObjectNode row = MAPPER.createObjectNode();
+        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
         row.put("v", 1);
         row.put("tag", "x");
         row.put("extra_col", "also-kept");
 
-        ObjectNode out = (ObjectNode) invokeFilter(row);
+        java.util.Map<?, ?> out = (java.util.Map<?, ?>) invokeFilter(row);
         // No FIELD_DATA means a legacy row that pre-dates the FIELD_DATA regime.
         // SpannerRowMapper.parseFieldMetadata's "no metadata → project every
         // column" rule applies; the filter must mirror that.
-        assertEquals(1, out.get("v").asInt());
-        assertEquals("x", out.get("tag").asText());
-        assertEquals("also-kept", out.get("extra_col").asText(),
+        assertEquals(1, out.get("v"));
+        assertEquals("x", out.get("tag"));
+        assertEquals("also-kept", out.get("extra_col"),
                 "legacy-row fallback: without FIELD_DATA, every column is surfaced");
     }
 
     @Test
     @DisplayName("filterByFieldData with non-textual FIELD_DATA strips FIELD_DATA but keeps every other column")
     void filterByFieldData_nonTextualMetadata_stripsMetadataOnly() throws Exception {
-        ObjectNode row = MAPPER.createObjectNode();
-        ArrayNode fdArr = row.putArray(SpannerConstants.FIELD_DATA);
-        fdArr.add("v"); // FIELD_DATA as a JSON array node, not a textual JSON string
+        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+        row.put(SpannerConstants.FIELD_DATA, java.util.List.of("v"));
         row.put("v", 1);
         row.put("tag", "x");
         row.put("extra_col", "kept-fallback");
 
-        ObjectNode out = (ObjectNode) invokeFilter(row);
+        java.util.Map<?, ?> out = (java.util.Map<?, ?>) invokeFilter(row);
         assertNull(out.get(SpannerConstants.FIELD_DATA), "FIELD_DATA must always be stripped");
-        assertEquals(1, out.get("v").asInt());
-        assertEquals("x", out.get("tag").asText());
-        assertEquals("kept-fallback", out.get("extra_col").asText(),
+        assertEquals(1, out.get("v"));
+        assertEquals("x", out.get("tag"));
+        assertEquals("kept-fallback", out.get("extra_col"),
                 "non-textual metadata is treated as legacy-row fallback");
     }
 
     @Test
     @DisplayName("filterByFieldData with malformed FIELD_DATA (not starting with '[') strips FIELD_DATA, keeps rest")
     void filterByFieldData_malformedMetadata_stripsMetadataOnly() throws Exception {
-        ObjectNode row = MAPPER.createObjectNode();
+        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
         row.put(SpannerConstants.FIELD_DATA, "not_a_json_array");
         row.put("v", 1);
         row.put("extra_col", "kept-fallback");
 
-        ObjectNode out = (ObjectNode) invokeFilter(row);
+        java.util.Map<?, ?> out = (java.util.Map<?, ?>) invokeFilter(row);
         assertNull(out.get(SpannerConstants.FIELD_DATA));
-        assertEquals(1, out.get("v").asInt());
-        assertEquals("kept-fallback", out.get("extra_col").asText(),
+        assertEquals(1, out.get("v"));
+        assertEquals("kept-fallback", out.get("extra_col"),
                 "malformed metadata is treated as legacy-row fallback");
     }
 
     @Test
     @DisplayName("filterByFieldData with empty FIELD_DATA still preserves PK/SK")
     void filterByFieldData_emptyWhitelist_keepsOnlyPkSk() throws Exception {
-        ObjectNode row = MAPPER.createObjectNode();
+        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
         row.put(SpannerConstants.FIELD_DATA, "[]");
         row.put(SpannerConstants.FIELD_PARTITION_KEY, "pk-2");
         row.put(SpannerConstants.FIELD_SORT_KEY, "sk-2");
         row.put("extra_col", "should-go");
 
-        ObjectNode out = (ObjectNode) invokeFilter(row);
+        java.util.Map<?, ?> out = (java.util.Map<?, ?>) invokeFilter(row);
         assertNull(out.get(SpannerConstants.FIELD_DATA));
         assertNull(out.get("extra_col"));
-        assertEquals("pk-2", out.get(SpannerConstants.FIELD_PARTITION_KEY).asText(),
+        assertEquals("pk-2", out.get(SpannerConstants.FIELD_PARTITION_KEY),
                 "even with an empty FIELD_DATA whitelist, PK MUST survive");
-        assertEquals("sk-2", out.get(SpannerConstants.FIELD_SORT_KEY).asText());
+        assertEquals("sk-2", out.get(SpannerConstants.FIELD_SORT_KEY));
     }
 
     @Test
     @DisplayName("filterByFieldData passes non-object JsonNode through unchanged")
     void filterByFieldData_nonObject_passthrough() throws Exception {
-        JsonNode arr = MAPPER.createArrayNode();
+        Object arr = new java.util.ArrayList<>();
         assertSame(arr, invokeFilter(arr));
-        JsonNode txt = IntNode.valueOf(7);
+        Object txt = 7;
         assertSame(txt, invokeFilter(txt));
     }
 
@@ -272,11 +265,11 @@ class SpannerChangeFeedReaderHelpersTest {
 
     // ── Reflection helpers ──────────────────────────────────────────────────
 
-    private static JsonNode invokeFilter(JsonNode in) throws Exception {
+    private static Object invokeFilter(Object in) throws Exception {
         Method m = SpannerChangeFeedReader.class
-                .getDeclaredMethod("filterByFieldData", JsonNode.class);
+                .getDeclaredMethod("filterByFieldData", Object.class);
         m.setAccessible(true);
-        return (JsonNode) m.invoke(null, in);
+        return m.invoke(null, in);
     }
 
     private static ChangeType invokeMapModType(String s) throws Exception {

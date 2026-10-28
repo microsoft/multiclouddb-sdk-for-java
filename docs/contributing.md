@@ -108,8 +108,9 @@ mvn test -pl multiclouddb-conformance -Dtest=SpannerConformanceTest
 
 - **Java 17** language level across all modules.
 - Follow standard Java naming conventions.
-- Prefer immutable value types - use `Map.copyOf()` / `List.copyOf()` for
-  public API return values.
+- Follow each surface's ownership contract: point-read/feed containers are
+  detached and mutable; QueryPage is shallowly read-only. Do not impose a
+  universal recursive snapshot or read-only policy on document Maps.
 - Avoid Jackson or provider-specific types on the public API surface.
 - Keep the public API surface minimal.
 - Provider adapters must not bleed provider-specific details into the portable

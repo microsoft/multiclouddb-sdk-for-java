@@ -7,6 +7,39 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- Explicit neutral-value validation for Map writes: string-keyed Maps/Lists,
+  strings, booleans, null and the eight documented finite numeric types.
+  Reject unsupported objects, keys and cycles before native I/O; allow shared
+  acyclic subtrees. Preserve released numeric/depth behavior and 399 KiB semantics.
+- `ChangeEvent.hasData()` and a six-argument constructor distinguish absent
+  payloads from present null. The five-argument constructor keeps null-as-absent.
+
+### Changed
+
+- Breaking migration from beta.2: `DocumentResult.document()` returns Map
+  instead of ObjectNode; `ChangeEvent.data()` returns Object instead of JsonNode.
+  Map write signatures and QueryPage Map rows remain unchanged. Applications
+  explicitly map their DTOs; no shipped mapping interface is introduced.
+- Document the synchronous input no-mutation window and no SDK retention after
+  return. Read/feed containers are detached and mutable; QueryPage retains
+  shallow read-only containers with nested mutability.
+- API compile/runtime dependencies no longer include Jackson, but are not empty:
+  SLF4J 2.0.12 and private Gson 2.11.0 remain, plus Gson's transitive
+  `error_prone_annotations` 2.27.0 metadata dependency (static in JPMS).
+  Cursor JSON uses Gson's official `Strictness.STRICT` with public lexical
+  rejection and v1 wire/coercion/retention compatibility fixtures.
+  A leading U+FEFF is rejected like the legacy String reader; U+FEFF inside
+  string values remains valid and unchanged.
+  Logical write-size validation preserves the 399 KiB byte profile without
+  allocating serialized document JSON. Overflow reports an observed
+  byte-count lower bound at the early cutoff, not an exact full document size.
+  Cursor and size fixtures pin the released Jackson byte/coercion profile.
+- Development coordinate is `0.1.0-beta.2-SNAPSHOT`; no release is declared.
+  See [customer mapping and migration](../docs/guide.md#application-owned-mapping).
+  This is partial work related to microsoft/multiclouddb-sdk-for-java#116.
+
 ## [0.1.0-beta.2] — 2026-06-17
 
 ### Added

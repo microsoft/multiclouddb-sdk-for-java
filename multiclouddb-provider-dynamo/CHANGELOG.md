@@ -7,6 +7,19 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Map mapping (development)
+
+- Map supported values directly to AttributeValue without a Jackson tree.
+  Point reads return detached mutable Maps; feed data uses Object with explicit
+  presence. Preserve key/TTL injection, conditions, metadata and old/new images.
+- Remove direct Jackson imports/dependencies. Preserve numeric text and existing
+  dotted-number Double versus Integer/Long read behavior, including exponent and
+  overflow limitations. The legacy native binary-to-null fallback is unchanged,
+  not new portable binary support. Native SDK request encoding remains.
+- Coordinated `0.1.0-beta.2-SNAPSHOT` development API dependency; no release,
+  storage-range expansion or general provider bug fix. See
+  [mapping support and migration](../docs/guide.md#application-owned-mapping).
+
 ## [0.1.0-beta.2] — 2026-06-22
 
 > **Requires `multiclouddb-api` 0.1.0-beta.2 or later** — this release consumes API surface (change-feed cursors, `CLIENT_CLOSED` envelope, `ChangeFeedConfig.extendedRetention(...)` opt-in gating) introduced in API beta.2. The dependency is pinned in the published POM.

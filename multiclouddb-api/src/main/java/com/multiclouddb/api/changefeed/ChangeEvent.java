@@ -3,7 +3,6 @@
 
 package com.multiclouddb.api.changefeed;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.multiclouddb.api.MulticloudDbKey;
 
 import java.time.Instant;
@@ -34,7 +33,8 @@ public final class ChangeEvent {
     private final MulticloudDbKey key;
     private final ChangeType type;
     private final Instant commitTimestamp;
-    private final JsonNode data;
+    private final Object data;
+    private final boolean hasData;
     private final String providerEventId;
 
     /**
@@ -44,9 +44,9 @@ public final class ChangeEvent {
      * @param type            the {@link ChangeType} (never {@code null})
      * @param commitTimestamp the provider's authoritative ordering timestamp
      *                        (never {@code null})
-     * @param data            the new item state if the provider supplied a full image,
-     *                        otherwise {@code null}. For DELETE events this is
-     *                        typically {@code null}.
+     * @param data            the provider-selected payload, possibly partial or a
+     *                        before-image; {@code null} if no payload was supplied.
+     *                        Use the explicit-presence constructor for present-null.
      * @param providerEventId a stable provider-side identifier for this event,
      *                        suitable for deduplication; never {@code null}.
      * @throws NullPointerException if any non-nullable argument is {@code null}
@@ -54,13 +54,38 @@ public final class ChangeEvent {
     public ChangeEvent(MulticloudDbKey key,
                        ChangeType type,
                        Instant commitTimestamp,
-                       JsonNode data,
+                       Object data,
                        String providerEventId) {
+        this(key, type, commitTimestamp, data, providerEventId, data != null);
+    }
+
+    /**
+     * Constructs an event with explicit payload presence.
+     *
+     * @param key non-null document key
+     * @param type non-null change type
+     * @param commitTimestamp non-null provider ordering timestamp
+     * @param data neutral Map/List/scalar/null payload; must be null when absent
+     * @param providerEventId non-null provider event identifier
+     * @param hasData whether a payload was supplied, including explicit null
+     * @throws IllegalArgumentException if absent data is non-null
+     * @throws NullPointerException if a required argument is null
+     */
+    public ChangeEvent(MulticloudDbKey key,
+                       ChangeType type,
+                       Instant commitTimestamp,
+                       Object data,
+                       String providerEventId,
+                       boolean hasData) {
         this.key = Objects.requireNonNull(key, "key");
         this.type = Objects.requireNonNull(type, "type");
         this.commitTimestamp = Objects.requireNonNull(commitTimestamp, "commitTimestamp");
         this.providerEventId = Objects.requireNonNull(providerEventId, "providerEventId");
+        if (!hasData && data != null) {
+            throw new IllegalArgumentException("Absent change data must be null.");
+        }
         this.data = data;
+        this.hasData = hasData;
     }
 
     /** The document key the event applies to. */
@@ -82,12 +107,19 @@ public final class ChangeEvent {
     }
 
     /**
-     * New item state, when the provider supplied a full image.
-     * {@code null} when the provider does not include a post-image (e.g. DELETE
-     * events) or when configuration suppresses images.
+     * Provider-selected neutral payload. Maps and Lists are mutable and detached
+     * from retained native responses. Use {@link #hasData()} to distinguish
+     * absent data from an explicit null payload.
+     * This is not a completeness or post-image guarantee. Image selection and
+     * metadata visibility retain the provider's existing behavior.
      */
-    public JsonNode data() {
+    public Object data() {
         return data;
+    }
+
+    /** Whether a payload was supplied, including explicit null or an empty object. */
+    public boolean hasData() {
+        return hasData;
     }
 
     /**
@@ -105,7 +137,7 @@ public final class ChangeEvent {
         return "ChangeEvent{" + type + " " + key
                 + " @" + commitTimestamp
                 + " id=" + providerEventId
-                + (data != null ? " (data)" : "")
+                + (hasData ? " (data)" : "")
                 + '}';
     }
 }

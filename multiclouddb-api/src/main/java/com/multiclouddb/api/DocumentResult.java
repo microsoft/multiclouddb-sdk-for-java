@@ -3,8 +3,7 @@
 
 package com.multiclouddb.api;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
-
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -14,33 +13,41 @@ import java.util.Objects;
  * Usage:
  * <pre>{@code
  * DocumentResult result = client.read(address, key);
- * ObjectNode doc = result.document();
+ * Map<String, Object> doc = result.document();
  * DocumentMetadata meta = result.metadata(); // may be null if includeMetadata=false
  * }</pre>
  *
- * @see MulticloudDbClient#read(ResourceAddress, Key, OperationOptions)
+ * @see MulticloudDbClient#read(ResourceAddress, MulticloudDbKey, OperationOptions)
  */
 public final class DocumentResult {
 
-    private final ObjectNode document;
+    private final Map<String, Object> document;
     private final DocumentMetadata metadata;
 
-    public DocumentResult(ObjectNode document, DocumentMetadata metadata) {
+    /**
+     * Constructs a result, retaining the supplied payload.
+     * Providers supply detached mutable Maps/Lists, not views of retained native state.
+     *
+     * @param document non-null neutral document payload
+     * @param metadata optional provider metadata
+     */
+    public DocumentResult(Map<String, Object> document, DocumentMetadata metadata) {
         this.document = Objects.requireNonNull(document, "document must not be null");
         this.metadata = metadata;
     }
 
     /** Convenience constructor for results without metadata. */
-    public DocumentResult(ObjectNode document) {
+    public DocumentResult(Map<String, Object> document) {
         this(document, null);
     }
 
     /**
-     * The document payload returned by the provider.
+     * The mutable document payload returned by the provider, detached from
+     * retained native responses. Missing keys differ from present null values.
      *
      * @return non-null document
      */
-    public ObjectNode document() {
+    public Map<String, Object> document() {
         return document;
     }
 

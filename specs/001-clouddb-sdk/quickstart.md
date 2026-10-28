@@ -33,15 +33,18 @@ dependencies {
 
 ### Example (illustrative)
 
+Current development examples use `java.util.Map`; released beta point-read
+ObjectNode and feed JsonNode access requires migration to neutral data.
+
 ```java
 MulticloudDbClient client = MulticloudDbClientFactory.create(config);
 
 ResourceAddress resource = new ResourceAddress("db", "collection");
-Key key = Key.of("partitionKey-123", "sortKey-456");
-JsonNode doc = objectMapper.createObjectNode().put("id", "123").put("name", "Ada");
+MulticloudDbKey key = MulticloudDbKey.of("partitionKey-123", "sortKey-456");
+Map<String, Object> doc = Map.of("id", "123", "name", "Ada");
 
 client.upsert(resource, key, doc);
-JsonNode got = client.read(resource, key);  // returns null if not found
+DocumentResult got = client.read(resource, key);  // null if not found
 client.delete(resource, key);
 
 // Portable query expression — works on all providers without changes
@@ -293,7 +296,7 @@ OperationOptions optionsWithMeta = OperationOptions.builder()
     .build();
 
 DocumentResult result = client.read(address, key, optionsWithMeta);
-ObjectNode doc = result.document();
+Map<String, Object> doc = result.document();
 DocumentMetadata meta = result.metadata();
 if (meta != null) {
     if (meta.lastModified() != null) System.out.println("Last written: " + meta.lastModified());
@@ -306,18 +309,23 @@ if (meta != null) {
 ```java
 // Existing callers: pass OperationOptions.defaults() — no metadata overhead
 DocumentResult result = client.read(address, key, OperationOptions.defaults());
-ObjectNode doc = result.document();  // same as before
+Map<String, Object> doc = result.document();  // detached mutable payload
 ```
 
 ---
 
 ## Uniform Document Size Limit
 
-The SDK enforces a **400 KB** maximum document size across all providers (driven by DynamoDB's limit). Documents exceeding the limit are rejected at the SDK layer before any I/O.
+The SDK enforces a **399 KiB (408,576 bytes) logical JSON** maximum for create,
+update and upsert inputs across all providers. The structural counter rejects
+oversized Maps before provider delegation without creating JSON bytes.
+This retains the legacy byte-encoding profile and safety margin below DynamoDB's
+400 KiB native item limit; it is not native item accounting or a guarantee of
+native fit.
 
 ```java
 // Oversized documents are rejected before any I/O
-ObjectNode largeDoc = buildLargeDocument();  // >400 KB
+Map<String, Object> largeDoc = Map.of("body", "x".repeat(400 * 1024));
 try {
     client.create(address, key, largeDoc, OperationOptions.defaults());
 } catch (MulticloudDbException e) {

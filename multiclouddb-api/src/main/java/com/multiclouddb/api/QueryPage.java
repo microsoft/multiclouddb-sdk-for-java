@@ -27,7 +27,7 @@ public final class QueryPage {
 
     public QueryPage(List<Map<String, Object>> items, String continuationToken,
                      OperationDiagnostics diagnostics) {
-        // Defensive deep copy using a null-tolerant copy at both levels:
+        // Copy the list and row maps; nested values retain their mutability.
         // Map.copyOf() and List.copyOf() reject null entries, but schemaless
         // stores (Cosmos / Dynamo) and the Spanner provider round-trip
         // explicit null field values. Use LinkedHashMap (preserves iteration
@@ -48,8 +48,9 @@ public final class QueryPage {
      * Items in this page, each represented as an <em>unmodifiable</em> map of
      * field name to value.
      * <p>
-     * Both the list and every document map are unmodifiable; mutations throw
-     * {@link UnsupportedOperationException}.
+     * The list and top-level row maps are unmodifiable; mutations there throw
+     * {@link UnsupportedOperationException}. Nested Maps and Lists remain mutable;
+     * this constructor does not recursively copy or freeze them.
      */
     public List<Map<String, Object>> items() {
         return items;

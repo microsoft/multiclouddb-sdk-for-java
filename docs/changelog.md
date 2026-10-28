@@ -13,11 +13,37 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Added:**
 
+- Neutral Map input validation for supported Maps/Lists/scalars and finite
+  numbers; reject cycles, invalid keys and unsupported objects before I/O.
+  Preserve released numeric/depth and 399 KiB behavior.
+- `ChangeEvent.hasData()` and an explicit-presence constructor distinguish
+  absent payloads from present null without an image wrapper or classification.
 - Portable change-feed API in `com.multiclouddb.api.changefeed`: `ChangeFeedCursor` (opaque, persistable via `toToken()` / `fromToken(...)` with a `now()` live-tip sentinel), `ChangeFeedPage` (events + `nextCursor` + `hasMore`/`terminal`), `ChangeEvent` (with stable `providerEventId` for dedup), `ChangeType`, and `CursorExpiredException`. Two new entry points on `MulticloudDbClient`: `listCursors(ResourceAddress)` and `readChanges(ResourceAddress, ChangeFeedCursor[, OperationOptions])`. Provider SPI methods default to `UNSUPPORTED_CAPABILITY` so existing adapters compile unchanged. The cursor wire format is opaque, version-tagged Base64URL JSON; the 24-hour portable baseline is enforced client-side on the token''s last-issued timestamp. `OperationOptions.timeout()` is not enforced on the change-feed path in this release.
 - New error category `MulticloudDbErrorCategory.CURSOR_EXPIRED` carrying a canonical `providerDetails.reason` set (`TOKEN_AGED_OUT`, `PROVIDER_TRIMMED`, `ITERATOR_EXPIRED`, `MALFORMED`, `VERSION_UNSUPPORTED`, `PROVIDER_MISMATCH`, `RESOURCE_MISMATCH`), exported as public `CursorTokenCodec.REASON_*` constants.
 - New error category `MulticloudDbErrorCategory.CLIENT_CLOSED` surfaced by a `DefaultMulticloudDbClient` post-close guard on every public entry point (replaces provider-specific `IllegalStateException` leaks). `MulticloudDbClient.close()` is now idempotent.
 - Extended change-feed retention opt-in: `ChangeFeedConfig.extendedRetention(Duration)` (validates `> 24h`), wired into `MulticloudDbClientConfig.changeFeed(...)`, plus the new `Capability.EXTENDED_CHANGE_FEED_HISTORY`. The factory''s build-time gate refuses to instantiate a client whose provider does not declare the capability, surfacing `UNSUPPORTED_CAPABILITY(reason="extended_retention_unavailable")` before any I/O. The cursor token wire format carries an optional `"e"` field stamping the opted-in retention so a persisted cursor under a 7-day opt-in can be resumed beyond 24h up to the configured window without `TOKEN_AGED_OUT`; older tokens (no `"e"`) keep the 24h floor.
 - `OperationNames.LIST_CURSORS`, `READ_CHANGES`, `PROVISION_SCHEMA` propagated through `MulticloudDbError.operation()` and `OperationDiagnostics`.
+
+**Changed:**
+
+- Breaking migration from beta.2: point-read payloads return Map instead of
+  ObjectNode; feed data returns Object instead of JsonNode. Map writes and
+  QueryPage Map rows remain. Application mapping is explicit, with no shipped
+  mapping interface. Read/feed data is detached/mutable; QueryPage is shallowly
+  read-only. Inputs must not be mutated during a synchronous write and are not
+  retained by the SDK afterward.
+- API compile/runtime Jackson dependency removed, not all runtime dependencies:
+  SLF4J 2.0.12, private Gson 2.11.0 and its transitive `error_prone_annotations`
+  2.27.0 remain (the annotation module is static in JPMS). Gson STRICT cursor
+  parsing and the leading-U+FEFF guard preserve the tested v1 wire, lexical,
+  coercion and retention behavior against captured released fixtures.
+- Structural logical-size validation retains the 399 KiB byte profile without
+  allocating document JSON. Overflow reports the observed cutoff lower bound,
+  not an exact full size.
+- Unpublished `0.1.0-beta.2-SNAPSHOT` development coordinate; no release or
+  release-workflow change. This is partial work related to
+  microsoft/multiclouddb-sdk-for-java#116; see
+  [customer mapping and migration](guide.md#application-owned-mapping).
 
 **Documentation:**
 
@@ -69,6 +95,14 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- Use detached Map writes/point reads and neutral Object feed data with explicit
+  presence. Preserve numeric normalization, key/TTL injection, root-only
+  filtering, metadata, selected feed bodies and native SDK encoding.
+- Remove direct Jackson usage from Multicloud-owned production code; native
+  Cosmos SDK dependencies remain externally visible and still use Jackson.
+- Coordinated unpublished `0.1.0-beta.2-SNAPSHOT` API dependency; no release,
+  schema/envelope redesign or general provider bug fix. See
+  [mapping support and migration](guide.md#application-owned-mapping).
 - Cosmos clients now always use Gateway mode with HTTP/2 enabled. The
   `azure-cosmos` dependency is upgraded from 4.78.0 to 4.82.0 so account-advertised
   Gateway V2 endpoints and the SDK connectivity probe select routing automatically.
@@ -126,6 +160,14 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- Map supported values directly to/from AttributeValue without Jackson trees.
+  Point-read/feed containers are detached and mutable; feed presence is explicit.
+  Preserve numeric text/parsing limitations, key/TTL injection, conditions and
+  selected images. Remove direct Jackson imports/dependencies; native SDK
+  encoding and the legacy native binary-to-null fallback remain.
+- Coordinated unpublished `0.1.0-beta.2-SNAPSHOT` API dependency; no release,
+  storage-range expansion or general provider bug fix. See
+  [mapping support and migration](guide.md#application-owned-mapping).
 - `SORT_KEY_ASC` comparator handles numeric sort keys with type-aware comparison (Long/Integer use native compare; mixed numerics fall back to `BigDecimal`) so integers beyond `2^53` are no longer truncated.
 - `BETWEEN` translation wraps in parentheses (`(field BETWEEN ? AND ?)`) for cross-provider consistency.
 
@@ -162,6 +204,18 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- Map values directly to typed mutations and return detached mutable row Maps
+  and neutral feed data with explicit presence. Preserve FIELD_DATA, nested
+  JSON markers, update transactions and selected images.
+- Replace direct Jackson imports/dependencies with internal Gson streaming JSON
+  syntax processing. Preserve persisted JSON text, scalar dispatch and native
+  encoding; Integer/Long INT64, Float/Double FLOAT64 and top-level
+  Byte/Short/BigInteger/BigDecimal STRING behavior remain.
+- Preserve native BYTES-to-Base64 row conversion and metadata-declared scalar
+  INT64 feed normalization (see Fixed below), without new portable binary support.
+- Unpublished `0.1.0-beta.1-SNAPSHOT` against the coordinated development API;
+  no release or schema/envelope redesign. See
+  [mapping support and migration](guide.md#application-owned-mapping).
 - `upsert(address, key, document)` uses Spanner `INSERT_OR_UPDATE` (was `REPLACE`). `REPLACE` is internally delete-then-insert, which change streams surface as `mod_type=INSERT` — making a second upsert of the same key appear as `ChangeType.CREATE` instead of `ChangeType.UPDATE`. `INSERT_OR_UPDATE` matches Cosmos AVAD and DynamoDB Streams.
 - Spanner instance creation in `ensureDatabase` is gated to emulator mode. In production the instance is expected to pre-exist; only the database is created.
 - Complex container values (`Map`, `Collection`) round-trip through STRING columns using an unambiguous prefix marker (`U+0001` + `mcdb:json:`).
@@ -179,6 +233,13 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Fixed:**
 
+- Spanner change-feed scalar INT64 values are decoded from native string
+  transport using `column_types`, restoring Long values without coercing
+  numeric-looking STRINGs. Selected new/old images and FIELD_DATA filtering are
+  unchanged; invalid/overflowing declared integers fail as safe, nonretryable
+  `PROVIDER_ERROR/readChanges/invalid_document_payload`, not raw success values.
+  Missing-metadata legacy values and non-INT64 types retain their existing
+  representation; no native ARRAY decoding or write-policy change is included.
 - Default `ORDER BY` no longer fires for aggregate / `GROUP BY` queries (GoogleSQL rejects with `column not aggregated`). It also no longer duplicates primary-key columns when the caller already sorts by them, and `ORDER BY` detection ignores string literals (so `WHERE comment = ''please ORDER BY date''` is no longer a false positive).
 - Legacy / pre-`FIELD_DATA` rows preserve every column on read and `update()`. When `FIELD_DATA` is absent or malformed, the reader applies the historical "no metadata => no filtering" rule; `update()` deliberately leaves `FIELD_DATA` alone so the reader''s fallback continues to project all legacy columns. A subsequent `upsert()` or `create()` promotes the row into the metadata regime.
 - `ensureDatabase()` / `ensureContainer()` no longer leak raw `RuntimeException` on non-Spanner failures. `InterruptedException` → `TRANSIENT_FAILURE`; non-Spanner causes inside the admin `ExecutionException` → `PROVIDER_ERROR`.

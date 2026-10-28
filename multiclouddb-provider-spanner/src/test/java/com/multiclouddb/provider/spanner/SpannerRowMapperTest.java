@@ -3,7 +3,6 @@
 
 package com.multiclouddb.provider.spanner;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.google.cloud.spanner.ResultSet;
 import com.google.cloud.spanner.ResultSets;
 import com.google.cloud.spanner.Struct;
@@ -41,7 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       the row mapping — affected columns are returned without metadata
  *       filtering.</li>
  *   <li>{@link SpannerRowMapper#toMap} preserves explicitly written
- *       {@code null} values, matching {@link SpannerRowMapper#toJsonNode}
+ *       {@code null} values, matching the released null semantics
  *       and the Cosmos / DynamoDB schemaless contract.</li>
  * </ol>
  */
@@ -71,11 +70,10 @@ class SpannerRowMapperTest {
                 .build();
 
         try (ResultSet rs = singleRow(rowType, row)) {
-            JsonNode node = SpannerRowMapper.toJsonNode(rs);
-            assertTrue(node.get("custom").isObject(),
+            Map<String, Object> node = SpannerRowMapper.toMap(rs);
+            assertTrue(node.get("custom") instanceof Map<?, ?>,
                     "marker-prefixed payload must decode to JSON object");
-            assertEquals(1, node.get("custom").get("a").asInt());
-            assertEquals("x", node.get("custom").get("b").asText());
+            assertEquals(Map.of("a", 1, "b", "x"), node.get("custom"));
         }
     }
 
@@ -100,10 +98,10 @@ class SpannerRowMapperTest {
                 .build();
 
         try (ResultSet rs = singleRow(rowType, row)) {
-            JsonNode node = SpannerRowMapper.toJsonNode(rs);
-            assertTrue(node.get("note").isTextual(),
+            Map<String, Object> node = SpannerRowMapper.toMap(rs);
+            assertTrue(node.get("note") instanceof String,
                     "escape pair must decode to a plain text node, not a JSON value");
-            assertEquals(userValue, node.get("note").asText(),
+            assertEquals(userValue, node.get("note"),
                     "verbatim round-trip of user string starting with U+0001");
         }
     }
@@ -124,8 +122,8 @@ class SpannerRowMapperTest {
                 .build();
 
         try (ResultSet rs = singleRow(rowType, row)) {
-            JsonNode node = SpannerRowMapper.toJsonNode(rs);
-            assertEquals("hello world", node.get("title").asText());
+            Map<String, Object> node = SpannerRowMapper.toMap(rs);
+            assertEquals("hello world", node.get("title"));
         }
     }
 
@@ -148,9 +146,9 @@ class SpannerRowMapperTest {
                 .build();
 
         try (ResultSet rs = singleRow(rowType, row)) {
-            JsonNode node = SpannerRowMapper.toJsonNode(rs);
-            assertTrue(node.get("snippet").isTextual());
-            assertEquals("[\"not\",\"parsed\"]", node.get("snippet").asText());
+            Map<String, Object> node = SpannerRowMapper.toMap(rs);
+            assertTrue(node.get("snippet") instanceof String);
+            assertEquals("[\"not\",\"parsed\"]", node.get("snippet"));
         }
     }
 
@@ -171,10 +169,10 @@ class SpannerRowMapperTest {
                 .build();
 
         try (ResultSet rs = singleRow(rowType, row)) {
-            JsonNode node = SpannerRowMapper.toJsonNode(rs);
-            assertTrue(node.get("payload").isTextual(),
+            Map<String, Object> node = SpannerRowMapper.toMap(rs);
+            assertTrue(node.get("payload") instanceof String,
                     "corrupt payload must not crash the mapper");
-            assertEquals(stored, node.get("payload").asText());
+            assertEquals(stored, node.get("payload"));
         }
     }
 
@@ -197,8 +195,8 @@ class SpannerRowMapperTest {
                 .build();
 
         try (ResultSet rs = singleRow(rowType, row)) {
-            JsonNode node = SpannerRowMapper.toJsonNode(rs);
-            assertEquals("still visible", node.get("title").asText());
+            Map<String, Object> node = SpannerRowMapper.toMap(rs);
+            assertEquals("still visible", node.get("title"));
         }
     }
 
@@ -279,11 +277,11 @@ class SpannerRowMapperTest {
                 .build();
 
         try (ResultSet rs = singleRow(rowType, row)) {
-            JsonNode node = SpannerRowMapper.toJsonNode(rs);
-            assertEquals("still visible", node.get("title").asText());
-            assertTrue(node.has("maybe"),
+            Map<String, Object> node = SpannerRowMapper.toMap(rs);
+            assertEquals("still visible", node.get("title"));
+            assertTrue(node.containsKey("maybe"),
                     "legacy row null columns must round-trip (no metadata => no filtering)");
-            assertTrue(node.get("maybe").isNull(),
+            assertTrue(node.get("maybe") == null,
                     "legacy row null columns must surface as JSON null, not be dropped");
         }
     }
@@ -309,10 +307,10 @@ class SpannerRowMapperTest {
                 .build();
 
         try (ResultSet rs = singleRow(rowType, row)) {
-            JsonNode node = SpannerRowMapper.toJsonNode(rs);
-            assertTrue(node.has("maybe"),
+            Map<String, Object> node = SpannerRowMapper.toMap(rs);
+            assertTrue(node.containsKey("maybe"),
                     "malformed FIELD_DATA must fall back to legacy null-preserving behaviour");
-            assertTrue(node.get("maybe").isNull());
+            assertTrue(node.get("maybe") == null);
         }
     }
 }

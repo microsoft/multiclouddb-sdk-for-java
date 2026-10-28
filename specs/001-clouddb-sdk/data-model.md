@@ -44,13 +44,20 @@ Validation:
 - must include all key parts required by the configured provider and target collection schema
 
 ### Document
-Portable JSON-like payload.
+Object-shaped `Map<String, Object>` data, not a shipped Document class.
+Nested values are string-keyed Maps, Lists, Strings, Booleans, null and exactly
+Byte, Short, Integer, Long, Float, Double, BigInteger or BigDecimal. Floating
+values must be finite. Reject cycles, invalid keys and unsupported Java objects;
+shared acyclic subtrees are valid. Missing keys differ from present nulls.
+Preserve released numeric/depth behavior rather than imposing new limits.
 
-Fields:
-- `value`: JSON-like object
-
-Constraints:
-- must be serializable to a JSON-like representation
+Applications map DTOs explicitly without an SDK mapping interface. Inputs must
+not be mutated during the synchronous call; the SDK neither mutates nor retains
+them after return. Point-read/feed containers are detached and mutable.
+QueryPage retains shallow read-only Maps/list with nested mutability.
+`ChangeEvent.data()` is Object and `hasData()` distinguishes absence from
+present null. Existing provider storage formats, numeric limitations and
+selected-image semantics remain. See [mapping and migration](../../docs/guide.md#application-owned-mapping).
 
 ### Query
 Portable query request.
@@ -117,7 +124,7 @@ Fields:
 Single page of results.
 
 Fields:
-- `items`: list of Document (or row-mapped objects)
+- `items`: list of `Map<String, Object>` rows; nested scalar/array values are valid
 - `continuation_token`: optional string
 - `warnings`: optional list of portability warnings
 
@@ -222,10 +229,11 @@ Provider availability:
 Location: `multiclouddb-api/src/main/java/com/multiclouddb/api/DocumentResult.java`
 
 Fields:
-- `document: ObjectNode` (required — the document payload)
+- `document: Map<String, Object>` (required - detached mutable object payload)
 - `metadata: DocumentMetadata` — null when `OperationOptions.includeMetadata()` is false (the default)
 
-**API impact**: `MulticloudDbClient.read()` return type changed from `JsonNode` to `DocumentResult`. Existing callers use `.document()` to get the payload.
+**API impact**: `MulticloudDbClient.read()` returns `DocumentResult` (or null for
+absence); `.document()` now returns a Map rather than ObjectNode.
 
 ### OperationOptions (modified)
 
@@ -254,10 +262,10 @@ New constants added to `Capability`:
 Location: `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DocumentSizeValidator.java`
 
 Static utility:
-- `MAX_BYTES = 400 * 1024` (400 KB — DynamoDB hard limit, lowest common denominator)
-- `validate(JsonNode document, String operation)` — throws `MulticloudDbException(INVALID_REQUEST)` when serialized UTF-8 size exceeds limit
+- `MAX_BYTES = 400 * 1024 - 1024` (399 KiB logical JSON size, including the existing safety margin)
+- `validate(Map<String, Object> document, String operation)` - rejects oversized or unsupported input with `MulticloudDbException(INVALID_REQUEST)`; counts the existing byte profile without allocating document JSON.
 
-Applied in `DefaultMulticloudDbClient.create()` and `upsert()` before provider delegation.
+Applied in `DefaultMulticloudDbClient.create()`, `update()` and `upsert()` before provider delegation.
 
 ### Provider Schema Changes
 

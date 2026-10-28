@@ -7,7 +7,6 @@ import com.azure.cosmos.CosmosContainer;
 import com.azure.cosmos.CosmosException;
 import com.azure.cosmos.models.CosmosChangeFeedRequestOptions;
 import com.azure.cosmos.models.FeedRange;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.MulticloudDbException;
 import com.multiclouddb.api.ProviderId;
@@ -199,7 +198,7 @@ class CosmosAvadNotEnabledTest {
         CosmosException badRequest = mock(CosmosException.class);
         when(badRequest.getStatusCode()).thenReturn(400);
         when(badRequest.getMessage()).thenReturn("Document exceeds 2MB size limit");
-        when(container.queryChangeFeed(any(CosmosChangeFeedRequestOptions.class), eq(JsonNode.class)))
+        when(container.queryChangeFeed(any(CosmosChangeFeedRequestOptions.class), eq(Object.class)))
                 .thenThrow(badRequest);
 
         // Forcing the warmup down the throw path drives the reader into the

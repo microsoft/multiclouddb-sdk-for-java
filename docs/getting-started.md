@@ -72,9 +72,14 @@ runtime dependencies:
 
 ## 3. Write Portable Code
 
+The following examples target the coordinated development SNAPSHOT reactor,
+not the previous released beta signatures. See
+[application mapping and migration](guide.md#application-owned-mapping).
+
 ```java
 import com.multiclouddb.api.*;
-import com.fasterxml.jackson.databind.JsonNode;
+import java.util.Map;
+import java.util.Properties;
 
 // Configure - provider selected entirely by config, not code
 Properties props = new Properties();
@@ -104,7 +109,7 @@ MulticloudDbKey key = MulticloudDbKey.of("todo-1", "todo-1");
 
 client.upsert(todos, key, doc);                  // Create or replace
 DocumentResult result = client.read(todos, key); // Point read
-JsonNode document = result.document();           // The document payload
+Map<String, Object> document = result.document(); // Detached mutable payload
 client.delete(todos, key);                       // Delete
 }
 ```

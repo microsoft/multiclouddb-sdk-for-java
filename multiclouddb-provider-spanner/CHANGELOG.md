@@ -7,6 +7,20 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Map mapping (development)
+
+- Map writes directly to typed mutations and return detached mutable row Maps.
+  Feed data uses Object with explicit presence. Preserve FIELD_DATA, selected
+  images, nested JSON markers and existing update transaction/native call counts.
+- Replace direct Jackson usage/dependencies with private Gson streaming syntax
+  processing for persisted JSON only. Nested Map/List STRING encoding, metadata
+  coercion, raw fallbacks and native Protobuf/gRPC encoding remain.
+- Retain Integer/Long INT64 and Float/Double FLOAT64 dispatch, top-level
+  Byte/Short/BigInteger/BigDecimal STRING fallback, and native BYTES-to-Base64
+  row conversion. No new numeric limits, rounding or schema changes.
+- Development coordinate `0.1.0-beta.1-SNAPSHOT` against the coordinated API;
+  no release is declared. See [mapping support and migration](../docs/guide.md#application-owned-mapping).
+
 ### Added
 
 - Change-feed reader backed by Spanner change streams via the `READ_<stream>` TVF (single-use read-only transaction; 5-second bounded window per call). `listCursors` bootstraps the partition tree by calling the TVF with a `NULL` partition token and anchors each cursor''s bookmark at `max(now, childStart)` so `now()` cursors honour their live-tip contract on the emulator. `readChanges` drains a bounded window, absorbs `child_partitions_record` rows (splits/merges), rotates the partition list across partitions, and surfaces `isTerminal()=true` when a cursor''s sole partition closes without children. Each `data_change_record.mod` becomes one `ChangeEvent` with a stable `providerEventId` (`<server_transaction_id>:<commit_ts>:<record_sequence>:<mod_index>`). `INVALID_ARGUMENT` / `NOT_FOUND` / `OUT_OF_RANGE` on the TVF (most commonly a partition token outside the stream''s retention window) is mapped to `CursorExpiredException(reason=PROVIDER_TRIMMED)`.
@@ -33,6 +47,14 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Change-feed scalar INT64 columns now use native `column_types` metadata to
+  decode string-encoded signed 64-bit integers to Long values. Every retained
+  declared column is processed, including after an absent, null or filtered column.
+  Selected new/old images and FIELD_DATA filtering are preserved. Invalid or
+  overflowing declared integers fail safely as `PROVIDER_ERROR/readChanges`
+  (`invalid_document_payload`), outside the legacy raw-JSON fallback.
+  Numeric-looking STRING, missing-metadata legacy values and non-INT64 types
+  remain unchanged; this does not add native ARRAY decoding or change writes.
 - **Default `ORDER BY` no longer fires for aggregate / `GROUP BY` queries.** The provider previously appended `ORDER BY partitionKey, sortKey` to every SELECT, which GoogleSQL rejects on aggregates with `column not aggregated`. The default is now suppressed when the SQL contains an aggregate function or `GROUP BY`; caller-supplied `ORDER BY` is honoured verbatim. The default also no longer duplicates primary-key columns when the caller already sorts by them — only the missing key is appended as a tiebreaker — and `ORDER BY` detection ignores string literals so `WHERE comment = ''please ORDER BY date''` is no longer a false positive.
 - **Legacy / pre-`FIELD_DATA` rows preserve every column on read and `update()`.** When `FIELD_DATA` is absent or malformed, `SpannerRowMapper` applies the historical "no metadata => no filtering" rule including nulls; `update()` deliberately leaves `FIELD_DATA` alone so the reader''s fallback continues to project all legacy columns. A subsequent `upsert()` or `create()` promotes the row into the metadata regime by writing a complete `FIELD_DATA` stamp.
 - `ensureDatabase()` / `ensureContainer()` no longer leak raw `RuntimeException` on non-Spanner failures. `InterruptedException` surfaces as `MulticloudDbException(TRANSIENT_FAILURE, retryable=true)` (with the interrupt flag restored); non-Spanner causes inside the admin `ExecutionException` surface as `MulticloudDbException(PROVIDER_ERROR)` preserving the original cause.

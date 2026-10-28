@@ -15,7 +15,7 @@ module com.multiclouddb.provider.spanner {
     // signatures of google.cloud.spanner methods we call.
     requires gax;
     requires com.google.api.apicommon;
-    requires com.fasterxml.jackson.databind;
+    requires com.google.gson;
     requires org.slf4j;
     // ServiceLoader registration
     provides com.multiclouddb.spi.MulticloudDbProviderAdapter

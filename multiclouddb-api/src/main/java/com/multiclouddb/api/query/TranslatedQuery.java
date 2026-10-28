@@ -14,9 +14,8 @@ import java.util.Objects;
  *                        PartiQL)
  * @param whereClause     the translated WHERE clause portion only (without
  *                        SELECT/FROM prefix)
- * @param boundParameters the parameters in provider-native format (ordered list
- *                        for positional,
- *                        or named map for named-parameter providers)
+ * @param namedParameters the named parameters for named-parameter providers
+ * @param positionalParameters the ordered parameters for positional-parameter providers
  */
 public record TranslatedQuery(
         String queryString,

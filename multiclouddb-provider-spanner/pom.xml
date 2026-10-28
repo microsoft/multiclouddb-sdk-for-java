@@ -40,6 +40,10 @@
 
     <dependencies>
         <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.microsoft.multiclouddb</groupId>
             <artifactId>multiclouddb-api</artifactId>
         </dependency>

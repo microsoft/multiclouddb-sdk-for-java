@@ -10,6 +10,9 @@
  * visible to provider modules and the conformance test module, and the
  * internal package is not exported.
  */
+// Qualified-export recipients are downstream modules, absent while this API compiles.
+// Suppress only descriptor module lint; missing required modules remain compiler errors.
+@SuppressWarnings("module")
 module com.multiclouddb.api {
 
     // Public API — what app developers use
@@ -41,9 +44,6 @@ module com.multiclouddb.api {
     // ServiceLoader discovery
     uses com.multiclouddb.spi.MulticloudDbProviderAdapter;
 
-    // transitive: JsonNode appears in the public API surface (MulticloudDbClient.read(),
-    // QueryPage.items()), so app modules must be able to use it without adding their
-    // own `requires com.fasterxml.jackson.databind` directive.
-    requires transitive com.fasterxml.jackson.databind;
     requires org.slf4j;
+    requires com.google.gson;
 }

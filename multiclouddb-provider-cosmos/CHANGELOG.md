@@ -7,6 +7,19 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Map mapping (development)
+
+- Pass detached Maps to native writes and request Map point reads. Preserve
+  key/TTL injection, numeric normalization, metadata and root-only system-field
+  filtering. Query rows and selected feed bodies retain their existing shapes;
+  feed presence is explicit. Native SDK JSON encoding remains.
+- Remove direct Jackson imports/dependencies from Multicloud-owned code.
+  Unsupported native objects fail with safe `PROVIDER_ERROR` and
+  `invalid_document_payload`, not payload-bearing native causes.
+- Coordinated `0.1.0-beta.2-SNAPSHOT` development API dependency; no release,
+  schema/envelope redesign or general provider bug fix. See
+  [mapping support and migration](../docs/guide.md#application-owned-mapping).
+
 ### Changed
 
 - Cosmos clients now always use Gateway mode with HTTP/2 enabled. Upgraded

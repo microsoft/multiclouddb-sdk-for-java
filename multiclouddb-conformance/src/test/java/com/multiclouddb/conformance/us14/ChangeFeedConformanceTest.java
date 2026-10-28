@@ -147,6 +147,12 @@ public abstract class ChangeFeedConformanceTest {
                     + propagationTimeout().toMillis() + "ms");
             assertEquals(ChangeType.CREATE, ev.type(),
                     "first event for a fresh key must be CREATE");
+            assertTrue(ev.hasData());
+            Map<?, ?> data = assertInstanceOf(Map.class, ev.data(),
+                    "the fresh-key CREATE must carry the selected object payload");
+            Number value = assertInstanceOf(Number.class, data.get("v"),
+                    "the selected CREATE payload must retain the written numeric field");
+            assertEquals(1L, value.longValue(), "CREATE payload must preserve the written value");
         } finally {
             ConformanceHarness.safeDelete(client, getAddress(), key);
         }

@@ -3,46 +3,34 @@
 
 package com.multiclouddb.api.internal;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.multiclouddb.api.MulticloudDbError;
 import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.MulticloudDbException;
-import com.multiclouddb.api.OperationNames;
-
 import java.util.Map;
 
 /**
  * Validates document payload sizes against the uniform maximum defined by FR-061.
  * <p>
- * The limit is 400 KB (409_600 bytes) — the most restrictive of the three providers:
- * <ul>
- *   <li>Amazon DynamoDB: 400 KB per item (hard limit)</li>
- *   <li>Cosmos DB: 2 MB per document</li>
- *   <li>Cloud Spanner: no per-row limit</li>
- * </ul>
- * By enforcing the lowest common denominator at the SDK layer, documents remain
- * portable across all providers without surprise failures on write.
+ * The effective limit is 399 KiB (408,576 bytes) of logical JSON, counted
+ * structurally without allocating serialized bytes. It retains the legacy byte
+ * encoder profile, including numeric normalization and surrogate escaping.
  * <p>
- * A 1 KB safety margin is subtracted from the raw DynamoDB limit to account for
- * system fields injected by providers before writing ({@code partitionKey},
- * {@code sortKey}, {@code id}, {@code ttlExpiry}, etc.).  DynamoDB's 400 KB cap
- * is measured against its internal wire format, which can be slightly larger than
- * the raw JSON.  The effective validated limit is therefore 399 KB.
+ * The historical 1 KiB margin below DynamoDB's 400 KiB native item limit is
+ * retained, but logical JSON is not DynamoDB item accounting or physical storage
+ * size. Injected keys/TTL, metadata and native encoding are outside this count.
+ * Passing validation does not guarantee native fit or the final size after a
+ * provider's existing partial-update operation.
  */
 public final class DocumentSizeValidator {
 
-    /** Maximum document size in bytes — DynamoDB hard limit minus 1 KB safety margin. */
-    public static final int MAX_BYTES = 400 * 1024 - 1024; // 399 KB
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    /** Maximum logical JSON input size in bytes, retaining the historical margin. */
+    public static final int MAX_BYTES = 400 * 1024 - 1024; // 399 KiB
 
     private DocumentSizeValidator() {
     }
 
     /**
-     * Validates that the serialized size of {@code document} does not exceed
+     * Validates that the structural logical JSON size of {@code document} does not exceed
      * {@link #MAX_BYTES}.
      *
      * @param document  the document to validate
@@ -50,39 +38,23 @@ public final class DocumentSizeValidator {
      * @throws MulticloudDbException with category {@link MulticloudDbErrorCategory#INVALID_REQUEST}
      *                               if the document exceeds the size limit
      */
-    public static void validate(JsonNode document, String operation) {
-        if (document == null) {
-            return;
-        }
-        try {
-            byte[] bytes = MAPPER.writeValueAsBytes(document);
-            if (bytes.length > MAX_BYTES) {
-                throw new MulticloudDbException(new MulticloudDbError(
-                        MulticloudDbErrorCategory.INVALID_REQUEST,
-                        "Document size " + bytes.length + " bytes exceeds the maximum of "
-                                + MAX_BYTES + " bytes (399 KB). Reduce the document size to "
-                                + "maintain portability across all providers.",
-                        null,
-                        operation,
-                        false,
-                        null));
-            }
-        } catch (JsonProcessingException e) {
-            throw new MulticloudDbException(new MulticloudDbError(
-                    MulticloudDbErrorCategory.INVALID_REQUEST,
-                    "Document could not be serialised for size check: " + e.getMessage(),
-                    null,
-                    operation,
-                    false,
-                    null));
-        }
-    }
-
-    /** Overload accepting {@code Map<String, Object>} documents. */
     public static void validate(Map<String, Object> document, String operation) {
         if (document == null) {
             return;
         }
-        validate((JsonNode) MAPPER.valueToTree(document), operation);
+        try {
+            DocumentJsonSize.measure(document, MAX_BYTES);
+        } catch (DocumentJsonSize.SizeExceeded failure) {
+            throw invalid("Document logical JSON size is at least " + failure.observedBytes
+                    + " bytes (measurement stopped at the limit; not the full size)."
+                    + " Maximum logical JSON size is " + MAX_BYTES + " bytes (399 KB).", operation);
+        } catch (IllegalArgumentException | ArithmeticException failure) {
+            throw invalid("Document cannot be represented as supported neutral JSON data.", operation);
+        }
+    }
+
+    private static MulticloudDbException invalid(String message, String operation) {
+        return new MulticloudDbException(new MulticloudDbError(
+                MulticloudDbErrorCategory.INVALID_REQUEST, message, null, operation, false, null));
     }
 }

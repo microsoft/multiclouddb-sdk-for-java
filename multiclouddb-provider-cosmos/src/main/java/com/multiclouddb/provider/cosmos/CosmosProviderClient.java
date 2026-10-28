@@ -12,10 +12,6 @@ import com.multiclouddb.api.OperationNames;
 import com.multiclouddb.api.query.TranslatedQuery;
 import com.multiclouddb.spi.MulticloudDbProviderClient;
 import com.multiclouddb.spi.SdkUserAgent;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,8 +39,6 @@ import java.util.regex.Pattern;
 public class CosmosProviderClient implements MulticloudDbProviderClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(CosmosProviderClient.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private final CosmosClient cosmosClient;
     private final MulticloudDbClientConfig config;
@@ -199,14 +193,14 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         checkOpen(OperationNames.CREATE);
         try {
             CosmosContainer container = getContainer(address);
-            ObjectNode doc = toObjectNode(document);
+            Map<String, Object> doc = NativeDocuments.write(document);
             doc.put(CosmosConstants.FIELD_ID, key.sortKey() != null ? key.sortKey() : key.partitionKey());
             doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
             if (options != null && options.ttlSeconds() != null) {
                 doc.put(CosmosConstants.FIELD_TTL, options.ttlSeconds());
             }
             PartitionKey pk = resolvePartitionKey(key);
-            CosmosItemResponse<ObjectNode> response = container.createItem(doc, pk, new CosmosItemRequestOptions());
+            CosmosItemResponse<Map<String, Object>> response = container.createItem(doc, pk, new CosmosItemRequestOptions());
             logItemDiagnostics(OperationNames.CREATE, address, response);
         } catch (CosmosException e) {
             logExceptionDiagnostics(OperationNames.CREATE, address, e);
@@ -236,16 +230,10 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             PartitionKey pk = resolvePartitionKey(key);
             String cosmosId = key.sortKey() != null ? key.sortKey() : key.partitionKey();
             CosmosItemRequestOptions readOpts = new CosmosItemRequestOptions();
-            CosmosItemResponse<ObjectNode> response = container.readItem(cosmosId, pk, readOpts, ObjectNode.class);
+            CosmosItemResponse<?> response = container.readItem(cosmosId, pk, readOpts, Map.class);
             logItemDiagnostics(OperationNames.READ, address, response);
-            ObjectNode raw = response.getItem();
+            Object raw = response.getItem();
             if (raw == null) return null;
-
-            // Strip Cosmos system properties so the returned document is portable
-            // across providers (Cosmos-only fields like _rid, _self, _ts, etc. must
-            // not appear in a DocumentResult that callers compare across providers).
-            ObjectNode item = raw.deepCopy();
-            CosmosConstants.SYSTEM_FIELDS.forEach(item::remove);
 
             DocumentMetadata metadata = null;
             if (options != null && options.includeMetadata()) {
@@ -254,13 +242,13 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
                     metaBuilder.version(response.getETag());
                 }
                 // _ts is a Unix epoch second — expose as lastModified
-                JsonNode tsNode = raw.get(CosmosConstants.SYS_TIMESTAMP);
-                if (tsNode != null && tsNode.isNumber()) {
-                    metaBuilder.lastModified(Instant.ofEpochSecond(tsNode.longValue()));
+                Object timestamp = NativeDocuments.get(raw, CosmosConstants.SYS_TIMESTAMP);
+                if (timestamp instanceof Number number) {
+                    metaBuilder.lastModified(Instant.ofEpochSecond(number.longValue()));
                 }
                 metadata = metaBuilder.build();
             }
-            return new DocumentResult(item, metadata);
+            return new DocumentResult(NativeDocuments.document(raw), metadata);
         } catch (CosmosException e) {
             if (e.getStatusCode() == 404) {
                 return null;
@@ -290,7 +278,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         checkOpen(OperationNames.UPDATE);
         try {
             CosmosContainer container = getContainer(address);
-            ObjectNode doc = toObjectNode(document);
+            Map<String, Object> doc = NativeDocuments.write(document);
             String cosmosId = key.sortKey() != null ? key.sortKey() : key.partitionKey();
             doc.put(CosmosConstants.FIELD_ID, cosmosId);
             doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
@@ -298,7 +286,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
                 doc.put(CosmosConstants.FIELD_TTL, options.ttlSeconds());
             }
             PartitionKey pk = resolvePartitionKey(key);
-            CosmosItemResponse<ObjectNode> response = container.replaceItem(doc, cosmosId, pk, new CosmosItemRequestOptions());
+            CosmosItemResponse<Map<String, Object>> response = container.replaceItem(doc, cosmosId, pk, new CosmosItemRequestOptions());
             logItemDiagnostics(OperationNames.UPDATE, address, response);
         } catch (CosmosException e) {
             logExceptionDiagnostics(OperationNames.UPDATE, address, e);
@@ -324,14 +312,14 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         checkOpen(OperationNames.UPSERT);
         try {
             CosmosContainer container = getContainer(address);
-            ObjectNode doc = toObjectNode(document);
+            Map<String, Object> doc = NativeDocuments.write(document);
             doc.put(CosmosConstants.FIELD_ID, key.sortKey() != null ? key.sortKey() : key.partitionKey());
             doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
             if (options != null && options.ttlSeconds() != null) {
                 doc.put(CosmosConstants.FIELD_TTL, options.ttlSeconds());
             }
             PartitionKey pk = resolvePartitionKey(key);
-            CosmosItemResponse<ObjectNode> response = container.upsertItem(doc, pk, new CosmosItemRequestOptions());
+            CosmosItemResponse<Map<String, Object>> response = container.upsertItem(doc, pk, new CosmosItemRequestOptions());
             logItemDiagnostics(OperationNames.UPSERT, address, response);
         } catch (CosmosException e) {
             logExceptionDiagnostics(OperationNames.UPSERT, address, e);
@@ -440,17 +428,17 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             String continuationToken = null;
             java.time.Instant queryStart = java.time.Instant.now();
 
-            Iterable<FeedResponse<JsonNode>> pages;
+            Iterable<FeedResponse<Object>> pages;
             if (query.continuationToken() != null) {
-                pages = container.queryItems(sqlQuery, queryOptions, JsonNode.class)
+                pages = container.queryItems(sqlQuery, queryOptions, Object.class)
                         .iterableByPage(query.continuationToken(), pageSize);
             } else {
-                pages = container.queryItems(sqlQuery, queryOptions, JsonNode.class)
+                pages = container.queryItems(sqlQuery, queryOptions, Object.class)
                         .iterableByPage(pageSize);
             }
 
-            for (FeedResponse<JsonNode> page : pages) {
-                for (JsonNode item : page.getResults()) {
+            for (FeedResponse<Object> page : pages) {
+                for (Object item : page.getResults()) {
                     items.add(toMap(item));
                 }
                 continuationToken = page.getContinuationToken();
@@ -473,7 +461,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
     /**
      * Executes a pre-translated portable query and returns a single page of results.
      * <p>
-     * Called by {@link com.multiclouddb.api.internal.DefaultMulticloudDbClient} after
+     * Called by the internal {@code DefaultMulticloudDbClient} after
      * the portable expression has been parsed, validated, and translated into Cosmos SQL
      * by {@link CosmosExpressionTranslator}. Named parameters from
      * {@link TranslatedQuery#namedParameters()} are bound directly as
@@ -517,17 +505,17 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             String continuationToken = null;
             java.time.Instant queryStart = java.time.Instant.now();
 
-            Iterable<FeedResponse<JsonNode>> pages;
+            Iterable<FeedResponse<Object>> pages;
             if (query.continuationToken() != null) {
-                pages = container.queryItems(sqlQuery, queryOptions, JsonNode.class)
+                pages = container.queryItems(sqlQuery, queryOptions, Object.class)
                         .iterableByPage(query.continuationToken(), pageSize);
             } else {
-                pages = container.queryItems(sqlQuery, queryOptions, JsonNode.class)
+                pages = container.queryItems(sqlQuery, queryOptions, Object.class)
                         .iterableByPage(pageSize);
             }
 
-            for (FeedResponse<JsonNode> page : pages) {
-                for (JsonNode item : page.getResults()) {
+            for (FeedResponse<Object> page : pages) {
+                for (Object item : page.getResults()) {
                     items.add(toMap(item));
                 }
                 continuationToken = page.getContinuationToken();
@@ -999,28 +987,13 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
     }
 
     /**
-     * Converts a caller-supplied {@code Map<String, Object>} document into a Jackson
-     * {@link ObjectNode} suitable for Cosmos SDK write calls.
-     * Jackson is used as a private implementation detail and does not appear on the
-     * public API surface.
-     *
-     * @param document the document payload
-     * @return an {@link ObjectNode} representation of the document
-     */
-    private ObjectNode toObjectNode(Map<String, Object> document) {
-        return MAPPER.convertValue(document, ObjectNode.class);
-    }
-
-
-    /**
-     * Converts a Cosmos SDK {@link JsonNode} response item into a plain
+     * Converts a Cosmos SDK response item into a plain
      * {@code Map<String, Object>} for return on the public API surface.
      *
      * @param node the JSON node returned by the Cosmos SDK; may be {@code null}
      * @return a map representation, or {@code null} if {@code node} is {@code null}
      */
-    private Map<String, Object> toMap(JsonNode node) {
-        if (node == null) return null;
-        return MAPPER.convertValue(node, MAP_TYPE);
+    private Map<String, Object> toMap(Object node) {
+        return NativeDocuments.queryRow(node);
     }
 }

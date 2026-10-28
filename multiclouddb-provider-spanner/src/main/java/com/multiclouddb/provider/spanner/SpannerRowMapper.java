@@ -3,10 +3,6 @@
 
 package com.multiclouddb.provider.spanner;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.cloud.spanner.ResultSet;
 import com.google.cloud.spanner.Type;
 
@@ -17,7 +13,7 @@ import java.util.Set;
 import java.util.HashSet;
 
 /**
- * Maps Spanner {@link ResultSet} rows to Jackson {@link JsonNode} documents.
+ * Maps Spanner {@link ResultSet} rows to detached neutral Map documents.
  * <p>
  * Supports all common Spanner column types: STRING, INT64, FLOAT64, BOOL,
  * BYTES, TIMESTAMP, DATE, and JSON.
@@ -36,15 +32,11 @@ import java.util.HashSet;
  */
 public final class SpannerRowMapper {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
-    private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {};
-
     private SpannerRowMapper() {
     }
 
     /**
-     * Convert the current row of a {@link ResultSet} into a {@link JsonNode}.
+     * Convert the current row of a {@link ResultSet} into a mutable neutral Map.
      * The cursor must already be positioned on a valid row (i.e., after
      * {@code rs.next()} returned true).
      *
@@ -52,8 +44,8 @@ public final class SpannerRowMapper {
      * @return a JSON object node with column values mapped to appropriate JSON
      *         types
      */
-    public static JsonNode toJsonNode(ResultSet rs) {
-        ObjectNode node = MAPPER.createObjectNode();
+    public static Map<String, Object> toMap(ResultSet rs) {
+        Map<String, Object> node = new LinkedHashMap<>();
         Type type = rs.getType();
         int columnCount = rs.getColumnCount();
 
@@ -82,7 +74,7 @@ public final class SpannerRowMapper {
                 //     behaviour and emit every null column so existing callers don't
                 //     silently lose null fields on the upgrade.
                 if (writtenFields == null || writtenFields.contains(colName)) {
-                    node.putNull(colName);
+                    node.put(colName, null);
                 }
                 continue;
             }
@@ -106,8 +98,8 @@ public final class SpannerRowMapper {
                     if (s != null && s.startsWith(SpannerConstants.JSON_VALUE_MARKER)) {
                         String payload = s.substring(SpannerConstants.JSON_VALUE_MARKER.length());
                         try {
-                            node.set(colName, MAPPER.readTree(payload));
-                        } catch (Exception e) {
+                            node.put(colName, SpannerJson.read(payload));
+                        } catch (java.io.IOException | IllegalArgumentException e) {
                             // Marker present but payload corrupted — return raw string for diagnosis.
                             node.put(colName, s);
                         }
@@ -128,8 +120,8 @@ public final class SpannerRowMapper {
                 case DATE -> node.put(colName, rs.getDate(i).toString());
                 case JSON -> {
                     try {
-                        node.set(colName, MAPPER.readTree(rs.getJson(i)));
-                    } catch (Exception e) {
+                        node.put(colName, SpannerJson.read(rs.getJson(i)));
+                    } catch (java.io.IOException | IllegalArgumentException e) {
                         node.put(colName, rs.getJson(i));
                     }
                 }
@@ -138,33 +130,6 @@ public final class SpannerRowMapper {
         }
 
         return node;
-    }
-
-    /**
-     * Convert the current row of a {@link ResultSet} into a plain
-     * {@code Map<String, Object>}.
-     * The cursor must already be positioned on a valid row (i.e., after
-     * {@code rs.next()} returned true).
-     * <p>
-     * <strong>Explicit nulls are preserved.</strong> If the SDK wrote a null value
-     * to a column (recorded in the {@code FIELD_DATA} metadata column), it is
-     * returned as a {@code null} entry in the map — matching the schemaless
-     * round-trip behaviour of Cosmos / DynamoDB and keeping the two adjacent
-     * APIs ({@link #toJsonNode}, {@link #toMap}) consistent. Callers must
-     * tolerate {@code null} values when iterating the returned map.
-     *
-     * @param rs the result set positioned on a row
-     * @return a map of column name to Java value; values may be {@code null}
-     *         for explicitly-written null fields
-     */
-    public static Map<String, Object> toMap(ResultSet rs) {
-        JsonNode node = toJsonNode(rs);
-        // convertValue may return an immutable view in some configurations, so
-        // wrap the result in a fresh LinkedHashMap that preserves null entries
-        // (parity with toJsonNode's null-preservation behaviour and with
-        // schemaless stores like Cosmos / DynamoDB).
-        Map<String, Object> raw = MAPPER.convertValue(node, MAP_TYPE);
-        return new LinkedHashMap<>(raw);
     }
 
     /**
@@ -181,9 +146,9 @@ public final class SpannerRowMapper {
         String dataValue = rs.getString(dataColumnIndex);
         if (dataValue == null || !dataValue.startsWith("[")) return null;
         try {
-            List<String> fields = MAPPER.readValue(dataValue, STRING_LIST_TYPE);
-            return new HashSet<>(fields);
-        } catch (Exception e) {
+            List<String> fields = SpannerJson.fieldNames(dataValue);
+            return fields == null ? null : new HashSet<>(fields);
+        } catch (java.io.IOException | IllegalArgumentException e) {
             return null;
         }
     }

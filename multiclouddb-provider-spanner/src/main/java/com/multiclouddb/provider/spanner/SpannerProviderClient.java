@@ -3,6 +3,7 @@
 
 package com.multiclouddb.provider.spanner;
 
+
 import com.multiclouddb.api.CapabilitySet;
 import com.multiclouddb.api.DocumentMetadata;
 import com.multiclouddb.api.DocumentResult;
@@ -22,8 +23,6 @@ import com.multiclouddb.spi.SdkUserAgent;
 import com.multiclouddb.api.SortOrder;
 import com.multiclouddb.api.query.TranslatedQuery;
 import com.multiclouddb.spi.MulticloudDbProviderClient;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.cloud.spanner.DatabaseAdminClient;
 import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.DatabaseId;
@@ -231,13 +230,14 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      * @param address  the logical database + collection; the collection maps directly to
      *                 a Spanner table name
      * @param key      the document key
-     * @param document the document payload; map entries become column values
+     * @param payload the document payload; fields become column values
      * @param options  operation options (currently unused by this provider)
      * @throws com.multiclouddb.api.MulticloudDbException on any Spanner error
      */
     @Override
-    public void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> payload, OperationOptions options) {
         checkOpen(OperationNames.CREATE);
+        Map<String, Object> document = Objects.requireNonNull(payload, "document");
         validateNoReservedFields(document, OperationNames.CREATE);
         try {
             String table = address.collection();
@@ -286,15 +286,16 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      *
      * @param address  the logical database + collection
      * @param key      the document key identifying the row to update
-     * @param document the document payload; fields present here become column values,
+     * @param payload the document payload; fields present here become column values,
      *                 fields absent here keep their existing values
      * @param options  operation options (currently unused by this provider)
      * @throws com.multiclouddb.api.MulticloudDbException category {@code NOT_FOUND} if
      *         the row does not exist, or any other Spanner error
      */
     @Override
-    public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> payload, OperationOptions options) {
         checkOpen(OperationNames.UPDATE);
+        Map<String, Object> document = Objects.requireNonNull(payload, "document");
         validateNoReservedFields(document, OperationNames.UPDATE);
         try {
             String table = address.collection();
@@ -330,17 +331,16 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
                 // cause SpannerRowMapper to filter out every legacy column on the
                 // next read (silent data loss). In that case we deliberately leave
                 // FIELD_DATA alone — the reader's "no metadata => project every
-                // column" fallback (SpannerRowMapper.toJsonNode L84-95 +
+                // column" fallback (SpannerRowMapper.toMap +
                 // SpannerRowMapper.parseFieldMetadata) preserves the legacy columns.
                 boolean hadValidPriorMetadata = false;
                 if (!existing.isNull(0)) {
                     String existingJson = existing.getString(0);
                     try {
-                        List<String> parsed = JSON_MAPPER.readValue(existingJson,
-                                JSON_MAPPER.getTypeFactory().constructCollectionType(List.class, String.class));
+                        List<String> parsed = SpannerJson.fieldNames(existingJson);
                         mergedFields.addAll(parsed);
                         hadValidPriorMetadata = true;
-                    } catch (com.fasterxml.jackson.core.JsonProcessingException ignored) {
+                    } catch (java.io.IOException ignored) {
                         // Malformed FIELD_DATA on the existing row — treat the row
                         // as legacy (no trustworthy metadata). hadValidPriorMetadata
                         // stays false, so we skip the FIELD_DATA stamp below and
@@ -403,13 +403,14 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      *
      * @param address  the logical database + collection
      * @param key      the document key
-     * @param document the document payload
+     * @param payload the document payload
      * @param options  operation options (currently unused by this provider)
      * @throws com.multiclouddb.api.MulticloudDbException on any Spanner error
      */
     @Override
-    public void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> payload, OperationOptions options) {
         checkOpen(OperationNames.UPSERT);
+        Map<String, Object> document = Objects.requireNonNull(payload, "document");
         validateNoReservedFields(document, OperationNames.UPSERT);
         try {
             String table = address.collection();
@@ -524,14 +525,14 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
 
     /**
      * Serialises a list of field names for storage in the {@code FIELD_DATA}
-     * metadata column. Wraps the rare {@link com.fasterxml.jackson.core.JsonProcessingException}
+     * metadata column. Wraps a JSON encoding failure
      * as a {@link MulticloudDbException} so callers don't see a raw
      * {@code IllegalStateException}.
      */
     private static String serialiseFieldNames(List<String> fieldNames, String op) {
         try {
-            return JSON_MAPPER.writeValueAsString(fieldNames);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            return SpannerJson.write(fieldNames);
+        } catch (java.io.IOException e) {
             throw new MulticloudDbException(new MulticloudDbError(
                     MulticloudDbErrorCategory.PROVIDER_ERROR,
                     "Failed to serialise FIELD_DATA: " + e.getMessage(),
@@ -583,14 +584,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
 
             try (ResultSet rs = databaseClient.singleUse().executeQuery(statement)) {
                 if (rs.next()) {
-                    JsonNode rawItem = SpannerRowMapper.toJsonNode(rs);
-                    if (!(rawItem instanceof ObjectNode item)) {
-                        throw new MulticloudDbException(new MulticloudDbError(
-                                MulticloudDbErrorCategory.PROVIDER_ERROR,
-                                "SpannerRowMapper.toJsonNode returned a non-ObjectNode: "
-                                        + rawItem.getClass().getSimpleName(),
-                                ProviderId.SPANNER, OperationNames.READ, false, null));
-                    }
+                    Map<String, Object> item = SpannerRowMapper.toMap(rs);
 
                     DocumentMetadata metadata = null;
                     if (options != null && options.includeMetadata()) {
@@ -722,7 +716,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      * Executes a pre-translated portable query using GoogleSQL and returns a single
      * page of results.
      * <p>
-     * Called by {@link com.multiclouddb.api.internal.DefaultMulticloudDbClient} after
+     * Called by the internal {@code DefaultMulticloudDbClient} after
      * the portable expression has been parsed, validated, and translated into GoogleSQL
      * by {@link SpannerExpressionTranslator}. Named parameters from
      * {@link TranslatedQuery#namedParameters()} are bound; leading {@code @} prefixes
@@ -1478,30 +1472,16 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
     }
 
     /**
-     * Shared serialiser for the SDK's internal {@code FIELD_DATA} JSON envelope
-     * and complex value marshalling. Intentionally {@code private} so unrelated
-     * code (including tests in this package) cannot mutate its configuration
-     * and silently alter the on-the-wire format of every Spanner row.
-     */
-    private static final com.fasterxml.jackson.databind.ObjectMapper JSON_MAPPER =
-            new com.fasterxml.jackson.databind.ObjectMapper();
-
-    /**
      * Sets a single column value in a Spanner mutation builder.
      * <p>
-     * Supported Java types: {@link String}, {@link Long}, {@link Integer},
-     * {@link Boolean}, {@link Double}, {@link Float}, and {@code null}
-     * (written as {@code NULL STRING}). {@link Map} and {@link java.util.Collection}
-     * values are serialised as JSON with an unambiguous marker prefix
-     * ({@link SpannerConstants#JSON_VALUE_MARKER}); on read, the marker is detected
-     * and the value is parsed back into a JSON node. Any other type falls back to
-     * {@link Object#toString()} to preserve the prior behaviour and avoid surprise
-     * failures for types Jackson cannot handle without extra modules (e.g.,
-     * {@code java.time.Instant}).
+     * Retains the original Java-number dispatch: Integer/Long use INT64,
+     * Float/Double use FLOAT64, and other number classes use STRING.
+     * Null remains a typed NULL STRING. Containers stream to marker-prefixed
+     * JSON STRINGs without an intermediate Map/List tree.
      *
      * @param mutation the mutation builder to write the column into
      * @param column   the Spanner column name
-     * @param value    the value to write; {@code null} writes a null STRING
+     * @param value    the neutral value to write
      */
     private void setMutationValue(Mutation.WriteBuilder mutation, String column, Object value) {
         if (value == null) {
@@ -1516,33 +1496,29 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
             } else {
                 mutation.set(column).to(s);
             }
-        } else if (value instanceof Long l) {
-            mutation.set(column).to(l);
-        } else if (value instanceof Integer i) {
-            mutation.set(column).to((long) i);
-        } else if (value instanceof Boolean b) {
-            mutation.set(column).to(b);
-        } else if (value instanceof Double d) {
-            mutation.set(column).to(d);
-        } else if (value instanceof Float f) {
-            mutation.set(column).to((double) f);
-        } else if (value instanceof Map<?, ?> || value instanceof Collection<?>) {
+        } else if (value instanceof Number retained) {
+            if (retained instanceof Long || retained instanceof Integer) {
+                mutation.set(column).to(retained.longValue());
+            } else if (retained instanceof Double || retained instanceof Float) {
+                mutation.set(column).to(retained.doubleValue());
+            } else {
+                mutation.set(column).to(retained.toString());
+            }
+        } else if (value instanceof Boolean bool) {
+            mutation.set(column).to(bool);
+        } else if (value instanceof Map<?, ?> || value instanceof List<?>) {
             // Complex containers: encode as JSON with marker prefix so reads can
             // unambiguously round-trip them back to Map/List without misclassifying
             // user strings that happen to start with '{' or '['.
             try {
                 mutation.set(column).to(
-                        SpannerConstants.JSON_VALUE_MARKER + JSON_MAPPER.writeValueAsString(value));
-            } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
-                // Nested unsupported value (e.g. java.time.Instant without jsr310 module):
-                // fall back to toString() rather than failing the write.
+                        SpannerConstants.JSON_VALUE_MARKER + SpannerJson.write(value));
+            } catch (java.io.IOException ex) {
+                // Preserve the legacy plain-container fallback only on serialization failure.
                 LOG.debug("JSON serialise failed for column '{}', falling back to toString(): {}",
                         column, ex.getMessage());
                 mutation.set(column).to(value.toString());
             }
-        } else {
-            // Unknown types: preserve historical toString() fallback.
-            mutation.set(column).to(value.toString());
         }
     }
 

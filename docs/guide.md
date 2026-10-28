@@ -6,6 +6,14 @@ and architecture overview, see the [Getting Started](getting-started.md) guide. 
 portable API surface and error mapping reference, see
 [Compatibility](compatibility.md).
 
+The Map boundary accepts null, boolean, string, supported finite numbers, Lists
+and string-keyed Maps. Binary/embedded objects are not supported inputs.
+Applications may explicitly map bytes to ordinary text; the SDK does not infer
+or decode Base64. Do not mutate input containers during a synchronous write;
+the SDK neither mutates nor retains them after return. See the
+[provider mapping table](#provider-mapping-and-serialization)
+for the existing per-provider schema and numeric limitations.
+
 ---
 
 ## Table of Contents
@@ -24,6 +32,7 @@ portable API surface and error mapping reference, see
   - [Database-per-Tenant Pattern](#database-per-tenant-pattern)
   - [Provisioning Resources with provisionSchema()](#provisioning-resources-with-provisionschema)
 - [CRUD Semantics](#crud-semantics)
+  - [Application-owned mapping](#application-owned-mapping)
   - [create - Insert Only](#create---insert-only)
   - [read - Point Read](#read---point-read)
   - [update - Replace Existing](#update---replace-existing)
@@ -497,6 +506,103 @@ but the default SPI implementation works correctly for all providers.
 
 ## CRUD Semantics
 
+These examples describe the coordinated development Map API and use
+`import java.util.Map;`. Released beta callers must migrate point-read/feed
+payload access and recompile; see [application-owned mapping](#application-owned-mapping).
+Query Map/Object contracts and existing provider-specific update behavior are
+not changed by this increment.
+
+### Application-owned mapping
+
+Applications explicitly map Java objects to `Map<String, Object>` and map returned
+data back themselves. Multicloud does not discover POJOs, invoke application
+serializers or ship a mapping interface, codec hierarchy or serializer module.
+
+Against released API **0.1.0-beta.2**, write signatures remain Maps,
+`DocumentResult.document()` changes from ObjectNode to Map, and
+`ChangeEvent.data()` changes from JsonNode to Object. A missing point read still
+returns null. QueryPage remains `List<Map<String, Object>>`, including nested
+scalar/array values and existing unsupported top-level result errors.
+
+The JDK-only [PlainCustomerMapping example](../multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/PlainCustomerMapping.java)
+illustrates handwritten mapping:
+
+```java
+PlainCustomerMapping mapping = new PlainCustomerMapping();
+PlainCustomerMapping.Customer customer = new PlainCustomerMapping.Customer("Grace", 7);
+client.create(address, key, mapping.toMap(customer));
+DocumentResult result = client.read(address, key);
+if (result == null) throw new IllegalStateException("Document not found.");
+PlainCustomerMapping.Customer restored = mapping.fromMap(result.document());
+```
+
+Alternatively, Jackson is an optional **application dependency**, not an SDK
+adapter. Applications own naming, dates, generics, coercion, unknown fields,
+errors and mapper lifetime:
+
+```java
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Map;
+
+ObjectMapper mapper = applicationConfiguredMapper;
+Map<String, Object> fields = mapper.convertValue(customer,
+        new TypeReference<Map<String, Object>>() {});
+client.upsert(address, key, fields);
+DocumentResult result = client.read(address, key);
+if (result == null) throw new IllegalStateException("Document not found.");
+Customer restored = mapper.convertValue(result.document(), Customer.class);
+```
+
+Inputs allow non-null string-keyed Maps, ordered Lists, Strings, Booleans, null,
+and exactly Byte, Short, Integer, Long, Float, Double, BigInteger and BigDecimal.
+Float/Double must be finite. Cycles, arrays, sets, arbitrary POJOs, invalid keys
+and other Number implementations fail with `INVALID_REQUEST` before native I/O.
+Shared acyclic subtrees are valid. Missing keys differ from present nulls; use
+`containsKey`. Equality follows JDK Map/List/Number semantics.
+
+Callers must not mutate inputs or nested containers during the **entire
+synchronous write**. The SDK neither mutates them nor retains them after return.
+Point-read/feed Maps and Lists are detached and mutable. QueryPage retains an
+unmodifiable list and top-level row Maps, with nested mutability. Released
+numeric/depth behavior and the [399 KiB logical size check](#document-size-enforcement)
+remain; supported input numbers do not promise identical database round trips.
+
+ChangeEvent data may be partial, a before-image, an array, a scalar or null.
+The five-argument constructor treats null as absent; the six-argument form adds
+explicit presence. `hasData() == false` requires null data; present null and empty
+objects are valid. Inspect the selected payload rather than assume a full DTO.
+
+#### Provider mapping and serialization
+
+| Provider | Multicloud mapping | Encoding and limitations retained |
+|---|---|---|
+| Cosmos | Detached request Maps; `Map.class` point reads; root-only system-field filtering | Native Cosmos JSON/wire encoding, key/id/TTL overwrite and decimal normalization. Feed bodies do not use point-read filtering |
+| DynamoDB | Direct Map/List/scalar to AttributeValue and back | Native encoding; dotted N values read as Double, others as Integer then Long. Existing exponent/overflow limitations and unsupported native binary null fallback remain |
+| Spanner | Typed mutations/rows; nested Map/List values use marked JSON STRINGs; FIELD_DATA selects visible fields | Protobuf/gRPC and required persisted JSON. Integer/Long use INT64, Float/Double use FLOAT64; root Byte/Short/BigInteger/BigDecimal retain STRING fallback. Native BYTES rows retain Base64 text conversion |
+
+Spanner's JSON marker, FIELD_DATA and update transaction are existing storage
+contracts, not redundant serialization to remove. In change feeds, `column_types`
+identifies every retained scalar INT64 field after FIELD_DATA filtering; an
+absent, null or filtered earlier column does not skip later fields. In-range integer
+strings and integral numbers become Long without rounding; null/absence remain.
+Missing/null/empty type metadata retains legacy representation. Malformed
+declarations or invalid/overflowing declared INT64 values report
+`PROVIDER_ERROR/readChanges/invalid_document_payload`. Other types and nested
+numeric-looking strings are not inferred to be integers.
+
+The API runtime uses SLF4J and Gson for internal cursor JSON, not Jackson.
+Spanner uses Gson only for necessary persisted JSON syntax, never POJO mapping.
+Native SDK dependencies remain externally visible: Cosmos still uses Jackson,
+and Dynamo includes AWS's `third-party-jackson-core`. This change does not isolate
+application/native dependency versions. JPMS applications require
+`com.multiclouddb.api`; opening DTO packages to an application mapper is the
+application's responsibility.
+
+`CustomerObjectMappingTest` and provider-local `CosmosMapContractTest` exercise
+handwritten/custom-Jackson CRUD/query/feed workflows with native calls mocked.
+These are not live-service or performance guarantees.
+
 ### create - Insert Only
 
 `create()` inserts a new document. If a document with the same key already
@@ -506,9 +612,7 @@ insert-only semantics with duplicate detection.
 ```java
 ResourceAddress addr = new ResourceAddress("mydb", "orders");
 MulticloudDbKey key = MulticloudDbKey.of("customer-456", "order-123");
-Map<String, Object> doc = new LinkedHashMap<>();
-doc.put("total", 99.95);
-doc.put("status", "pending");
+Map<String, Object> doc = Map.of("total", 99.95, "status", "pending");
 
 client.create(addr, key, doc);   // Fails if document already exists
 ```
@@ -525,12 +629,12 @@ client.create(addr, key, doc);   // Fails if document already exists
 ### read - Point Read
 
 `read()` performs a single-document read using the full key. Returns a
-`DocumentResult` wrapping the document as an `ObjectNode`, or `null` if not found.
+`DocumentResult` wrapping a detached mutable Map, or `null` if not found.
 
 ```java
 DocumentResult result = client.read(addr, MulticloudDbKey.of("customer-456", "order-123"));
 if (result != null) {
-    String status = result.document().path("status").asText();
+    String status = (String) result.document().get("status");
 }
 ```
 
@@ -547,14 +651,14 @@ can go directly to the partition/item without scanning.
 
 ### update - Replace Existing
 
-`update()` replaces an existing document. If the document does **not** exist,
+`update()` modifies an existing document. Cosmos and DynamoDB replace its body;
+Spanner retains its existing partial-update transaction and FIELD_DATA merge.
+If the document does **not** exist,
 the operation **fails** with a not-found error. Use this when you need strict
 update-only semantics.
 
 ```java
-Map<String, Object> updated = new LinkedHashMap<>();
-updated.put("total", 109.95);
-updated.put("status", "shipped");
+Map<String, Object> updated = Map.of("total", 109.95, "status", "shipped");
 
 client.update(addr, MulticloudDbKey.of("customer-456", "order-123"), updated);   // Fails if not exists
 ```
@@ -564,7 +668,7 @@ client.update(addr, MulticloudDbKey.of("customer-456", "order-123"), updated);  
 | Behavior | Cosmos DB | DynamoDB | Spanner |
 |----------|-----------|----------|---------|
 | Operation | `replaceItem()` | `putItem()` with `attribute_exists` condition | `newUpdateBuilder` mutation |
-| If exists | Replace | Replace | Replace |
+| If exists | Replace | Replace | Update supplied fields |
 | If not exists | Throws NOT_FOUND | Throws NOT_FOUND | Throws NOT_FOUND |
 | Return value | None (void) | None (void) | None (void) |
 
@@ -576,9 +680,7 @@ the same key. It is an insert-or-update in all providers.
 ```java
 ResourceAddress addr = new ResourceAddress("mydb", "orders");
 MulticloudDbKey key = MulticloudDbKey.of("customer-456", "order-123");
-Map<String, Object> doc = new LinkedHashMap<>();
-doc.put("total", 99.95);
-doc.put("status", "pending");
+Map<String, Object> doc = Map.of("total", 99.95, "status", "pending");
 
 client.upsert(addr, key, doc);   // Creates or replaces the document
 ```
@@ -629,9 +731,7 @@ fields into the document** automatically. You don't need to manually set `"id"`
 or `"partitionKey"` in your JSON - the provider handles this:
 
 ```java
-Map<String, Object> doc = new LinkedHashMap<>();
-doc.put("name", "Alpha Fund");
-doc.put("type", "EQUITY");
+Map<String, Object> doc = Map.of("name", "Alpha Fund", "type", "EQUITY");
 
 // No need to set "id" or "partitionKey" in doc - injected by provider
 client.upsert(addr, MulticloudDbKey.of("acme", "port-1"), doc);
@@ -1639,13 +1739,16 @@ system properties (`_ts`, `_etag`, `_rid`, `_self`, `_attachments`, `partitionKe
 
 ## Document Size Enforcement
 
-The SDK enforces a **399 KB** (408,576 bytes) maximum document size before any
-data leaves the client. This limit applies to `create()`, `upsert()`, and
-`update()` on all providers.
+The SDK enforces a **399 KiB** (408,576 bytes) logical JSON input limit before
+provider delegation. The structural counter does not allocate serialized JSON
+bytes. This limit applies to `create()`, `upsert()`, and `update()` on all providers.
 
-### Why 399 KB, not 400 KB?
+### Why 399 KiB, not 400 KiB?
 
-Providers inject additional fields (`partitionKey`, `sortKey`, `id`, `ttlExpiry`) before writing. DynamoDB measures its 400 KB limit against the internal wire format, which can be larger than raw JSON bytes. The 1 KB safety margin prevents valid-looking documents from exceeding the wire limit after field injection.
+The historical 1 KiB margin below DynamoDB's 400 KiB native item limit is
+retained. Logical JSON is not native item accounting, however: injected
+keys/TTL, metadata and provider encoding are outside this count. The margin does
+not guarantee native fit, nor the final size after an existing partial update.
 
 ### Validation Behaviour
 
