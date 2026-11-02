@@ -38,8 +38,8 @@ class ChangeFeedCursorTest {
     @DisplayName("toToken round-trips through fromToken into an equal CursorToken")
     void toTokenRoundTrip() {
         ChangeFeedCursor original = ChangeFeedCursor.now();
-        String wire = original.toToken();
-        ChangeFeedCursor decoded = ChangeFeedCursor.fromToken(wire);
+        String wire = original.toToken(com.multiclouddb.api.TestJson::write);
+        ChangeFeedCursor decoded = ChangeFeedCursor.fromToken(wire, com.multiclouddb.api.TestJson::read);
         assertEquals(original.token().providerId(), decoded.token().providerId());
         assertEquals(original.token().anchor(), decoded.token().anchor());
         assertEquals(original.token().partitions(), decoded.token().partitions());
@@ -49,7 +49,7 @@ class ChangeFeedCursorTest {
     @Test
     @DisplayName("fromToken on garbage raises CursorExpiredException")
     void fromTokenGarbageThrows() {
-        assertThrows(CursorExpiredException.class, () -> ChangeFeedCursor.fromToken("not-a-real-token"));
+        assertThrows(CursorExpiredException.class, () -> ChangeFeedCursor.fromToken("not-a-real-token", com.multiclouddb.api.TestJson::read));
     }
 
     @Test

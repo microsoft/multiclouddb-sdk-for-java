@@ -7,21 +7,12 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
-### Map mapping (development)
-
-- Pass detached Maps to native writes and request Map point reads. Preserve
-  key/TTL injection, numeric normalization, metadata and root-only system-field
-  filtering. Query rows and selected feed bodies retain their existing shapes;
-  feed presence is explicit. Native SDK JSON encoding remains.
-- Remove direct Jackson imports/dependencies from Multicloud-owned code.
-  Unsupported native objects fail with safe `PROVIDER_ERROR` and
-  `invalid_document_payload`, not payload-bearing native causes.
-- Coordinated `0.1.0-beta.2-SNAPSHOT` development API dependency; no release,
-  schema/envelope redesign or general provider bug fix. See
-  [mapping support and migration](../docs/guide.md#application-owned-mapping).
-
 ### Changed
 
+- Use detached Maps for Cosmos writes and point reads, and Object change-feed
+  payloads with explicit presence; native Cosmos serialization remains.
+  **Breaking result-type migration:** see the [migration guide](../docs/guide.md#migrating-from-beta2).
+  ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 - Cosmos clients now always use Gateway mode with HTTP/2 enabled. Upgraded
   `azure-cosmos` from 4.78.0 to 4.82.0 so account-advertised Gateway V2
   endpoints and the SDK connectivity probe can select routing automatically.

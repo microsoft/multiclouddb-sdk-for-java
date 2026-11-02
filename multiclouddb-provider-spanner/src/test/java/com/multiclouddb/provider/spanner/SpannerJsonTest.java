@@ -24,9 +24,10 @@ class SpannerJsonTest {
     }
 
     @Test
-    void preservesPersistedStringEncodingRatherThanGsonHtmlOrSeparatorEscapes() throws Exception {
-        String text = "<>&='\u2028\u2029\\u2028\ud800";
-        assertEquals("\"" + "<>&='\u2028\u2029\\\\u2028\ud800" + "\"", SpannerJson.write(text));
+    void preservesReleasedPersistedStringAndNumericEncoding() throws Exception {
+        String text = "<>&='\u2028\u2029\\u2028\uD55C\uAE00\uD83D\uDE00";
+        assertEquals("\"" + "<>&='\u2028\u2029\\\\u2028\uD55C\uAE00\uD83D\uDE00" + "\"",
+                SpannerJson.write(text));
         assertEquals(text, SpannerJson.read(SpannerJson.write(text)));
         assertEquals("{\"key\\n\":null}", SpannerJson.write(java.util.Collections.singletonMap("key\n", null)));
         assertEquals("\"\\u000B\\u000E\\u001F\\\\u000b\"",
@@ -37,10 +38,28 @@ class SpannerJsonTest {
     }
 
     @Test
+    void strictUnicodeAcceptsValidPairsButRejectsRawAndEscapedLoneSurrogates() throws Exception {
+        String valid = "\uD55C\uAE00\uD83D\uDE00";
+        assertEquals(valid, SpannerJson.read("\"\\ud55c\\uae00\\ud83d\\ude00\""));
+        assertEquals(Map.of(valid, valid), SpannerJson.read(SpannerJson.write(Map.of(valid, valid))));
+        assertEquals(List.of(valid), SpannerJson.fieldNames(SpannerJson.write(List.of(valid))));
+        for (String invalid : List.of("\ud800", "\udc00", "\\ud800", "\\udc00")) {
+            assertThrows(IOException.class, () -> SpannerJson.read("\"" + invalid + "\""));
+            assertThrows(IOException.class, () -> SpannerJson.read("{\"" + invalid + "\":1}"));
+            assertThrows(IOException.class, () -> SpannerJson.fieldNames("[\"" + invalid + "\"]"));
+        }
+        // Writing is unchanged; strict read rejection is not an escaping workaround.
+        assertEquals("\"\ud800\"", SpannerJson.write("\ud800"));
+        assertEquals("\"\udc00\"", SpannerJson.write("\udc00"));
+    }
+
+    @Test
     void keepsLegacyMetadataScalarToStringCoercion() throws Exception {
         assertEquals(Arrays.asList("x", "2", "true", null), SpannerJson.fieldNames("[\"x\",2,true,null]"));
         assertEquals(List.of("2.00", "1e+03", "-0"), SpannerJson.fieldNames("[2.00,1e+03,-0]"));
         assertThrows(IOException.class, () -> SpannerJson.fieldNames("[{}]"));
+        assertThrows(IOException.class, () -> SpannerJson.fieldNames(""));
+        assertThrows(IOException.class, () -> SpannerJson.fieldNames("  "));
         assertThrows(IOException.class, () -> SpannerJson.read("\uFEFF{}"));
         assertThrows(IOException.class, () -> SpannerJson.read("{bad}"));
         assertThrows(IOException.class, () -> SpannerJson.read("[1,]"));
@@ -49,8 +68,18 @@ class SpannerJsonTest {
 
     @Test
     void readsPastRemovedModelDepthButRetainsNativeParserLimit() throws Exception {
-        String atLimit = "[".repeat(1000) + "0" + "]".repeat(1000);
-        assertNotNull(SpannerJson.read(atLimit));
-        assertThrows(IOException.class, () -> SpannerJson.read("[" + atLimit + "]"));
+        for (int depth : List.of(256, 1000)) {
+            Object arrays = SpannerJson.read("[".repeat(depth) + "0" + "]".repeat(depth));
+            Object objects = SpannerJson.read("{\"x\":".repeat(depth) + "0" + "}".repeat(depth));
+            for (int i = 0; i < depth; i++) {
+                arrays = assertInstanceOf(List.class, arrays).get(0);
+                objects = assertInstanceOf(Map.class, objects).get("x");
+            }
+            assertEquals(0, arrays);
+            assertEquals(0, objects);
+        }
+        assertThrows(IOException.class, () -> SpannerJson.read("[".repeat(1001) + "0" + "]".repeat(1001)));
+        assertThrows(IOException.class,
+                () -> SpannerJson.read("{\"x\":".repeat(1001) + "0" + "}".repeat(1001)));
     }
 }

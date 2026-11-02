@@ -17,7 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Internal persisted-JSON syntax with the released numeric and string profile. */
+/** Internal persisted JSON with legacy numeric conversions and strict Unicode parsing. */
 final class SpannerJson {
     private SpannerJson() {
     }
@@ -26,6 +26,7 @@ final class SpannerJson {
         if (!json.isEmpty() && json.charAt(0) == '\uFEFF') throw new IOException("Unexpected JSON BOM.");
         try (JsonReader reader = new JsonReader(new StringReader(json))) {
             reader.setStrictness(Strictness.STRICT);
+            reader.setNestingLimit(1000);
             if (reader.peek() == JsonToken.END_DOCUMENT) return null;
             return read(reader, 0);
         }
@@ -57,10 +58,23 @@ final class SpannerJson {
                 return text;
             case NUMBER:
                 String token = reader.nextString();
-                if (token.length() - (token.startsWith("-") ? 1 : 0) > 1000) {
+                // Released Jackson counts digits rather than punctuation. Its
+                // zero-leading slow path counts an absent fraction/exponent as -1.
+                int digits = 0;
+                for (int i = 0; i < token.length(); i++) {
+                    if (token.charAt(i) >= '0' && token.charAt(i) <= '9') digits++;
+                }
+                boolean fractional = token.indexOf('.') >= 0;
+                boolean exponential = token.indexOf('e') >= 0 || token.indexOf('E') >= 0;
+                int firstDigit = token.startsWith("-") ? 1 : 0;
+                if ((fractional || exponential) && token.charAt(firstDigit) == '0') {
+                    if (!fractional) digits--;
+                    if (!exponential) digits--;
+                }
+                if (digits > 1000) {
                     throw new IOException("JSON number limit.");
                 }
-                if (token.indexOf('.') >= 0 || token.indexOf('e') >= 0 || token.indexOf('E') >= 0) {
+                if (fractional || exponential) {
                     return Double.valueOf(token);
                 }
                 BigInteger integer = new BigInteger(token);
@@ -81,6 +95,7 @@ final class SpannerJson {
         if (!json.isEmpty() && json.charAt(0) == '\uFEFF') throw new IOException("Unexpected JSON BOM.");
         try (JsonReader reader = new JsonReader(new StringReader(json))) {
             reader.setStrictness(Strictness.STRICT);
+            reader.setNestingLimit(1000);
             if (reader.peek() == JsonToken.NULL) {
                 reader.nextNull();
                 return null;

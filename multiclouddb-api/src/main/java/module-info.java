@@ -45,5 +45,4 @@ module com.multiclouddb.api {
     uses com.multiclouddb.spi.MulticloudDbProviderAdapter;
 
     requires org.slf4j;
-    requires com.google.gson;
 }

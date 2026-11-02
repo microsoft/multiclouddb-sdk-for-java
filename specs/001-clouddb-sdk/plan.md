@@ -69,13 +69,13 @@ The SDK is fully implemented with CRUD + query + paging + conformance tests (47 
 ## Technical Context
 
 **Language/Version**: Java 17 LTS (Eclipse Adoptium Temurin-17.0.10.7-hotspot)
-**Primary Dependencies**: API: Gson 2.11.0 for internal cursor JSON and SLF4J 2.0.12; no Jackson. Providers: Azure Cosmos SDK 4.82.0, Azure Identity 1.18.2, AWS SDK v2 2.34.0, Google Cloud Spanner 6.62.0. Spanner also uses Gson for persisted JSON. Native SDK dependencies remain externally visible.
+**Primary Dependencies**: API: SLF4J 2.0.12, without a direct JSON-library dependency. Providers: Azure Cosmos SDK 4.82.0, Azure Identity 1.18.2, AWS SDK v2 2.34.0, Google Cloud Spanner 6.62.0. Cursor persistence takes explicit application JSON functions; Spanner uses its own explicit Gson dependency for internal stored/change-stream JSON. No client requires JSON callbacks at construction. Native SDK dependencies remain externally visible and can still include Gson/Jackson.
 **Storage**: Cosmos DB (NoSQL), DynamoDB, Spanner (via provider SDKs)
 **Testing**: JUnit 5.10.2, Mockito 5.11.0, Maven Surefire/Failsafe
 **Target Platform**: JVM 17+ (server-side)
 **Project Type**: Multi-module Maven library (7 modules)
 **Performance Goals**: Expression translation overhead < 1ms per query (thin wrapper principle)
-**Constraints**: Map/Object public payloads and application-owned mapping; internal Gson is limited to cursor/persisted JSON syntax. Size validation is structural. The query-expression parser remains hand-written (no ANTLR/grammar-generator dependency). See [current data contracts](data-model.md#document).
+**Constraints**: Map/Object public payloads and application-owned mapping. Cursor JSON callbacks use JDK Function/BiFunction with neutral Object targets, distinct from POJO mapping and Spanner's internal Gson processing. Preserve JSON cursor tokens using the [application-owned compatibility profile](../../docs/guide.md#application-owned-json-processing); no binary codec or API-selected JSON fallback. Spanner retains its storage formats and legacy corruption handling. Size validation is structural. The query-expression parser remains hand-written (no ANTLR/grammar-generator dependency). See [current data contracts](data-model.md#document).
 **Scale/Scope**: ~25 new/modified Java source files, ~30 new test cases for expression translation, provisioning API across 7 files, cloud authentication (DefaultAzureCredential + ARM management SDK) in Cosmos provider
 
 ## Constitution Check
@@ -190,7 +190,7 @@ Three primitives on `MulticloudDbClient`:
 2. `ChangeFeedPage readChanges(ResourceAddress addr, ChangeFeedCursor cursor)` — drains one bounded page (events + a refreshed cursor + `hasMore` + `isTerminal`).
 3. `readChanges(ResourceAddress addr, ChangeFeedCursor cursor, OperationOptions opts)` — accepts `OperationOptions` for forward-compatibility; **v1 providers do not honour any option field**.
 
-Plus two cursor factories: `ChangeFeedCursor.now()` (live-tip sentinel) and `ChangeFeedCursor.fromToken(String)` (resume from a previously persisted token). Tokens are opaque Base64URL JSON carrying provider id, resource binding, anchor, partition list, and an `issuedAt` epoch-ms with a 24h portable age cap (CursorTokenCodec.MAX_TOKEN_AGE_MILLIS).
+Plus two cursor factories: `ChangeFeedCursor.now()` (live-tip sentinel) and `ChangeFeedCursor.fromToken(token, deserialize)` (resume from a previously persisted token). Tokens are opaque Base64URL JSON carrying provider id, resource binding, anchor, partition list, and an `issuedAt` epoch-ms with a 24h portable age cap (CursorTokenCodec.MAX_TOKEN_AGE_MILLIS).
 
 ### Per-provider mapping
 
@@ -207,7 +207,7 @@ Plus two cursor factories: `ChangeFeedCursor.now()` (live-tip sentinel) and `Cha
 - live-tip semantics (`now()` ignores prior events)
 - ordering within a partition
 - DELETE event surface (Cosmos AVAD + Dynamo + Spanner; Cosmos LatestVersion is *waived* — see FR-068 deferral)
-- continuation resume across re-bootstrap (`toToken()` → persist → `fromToken()`)
+- continuation resume across re-bootstrap (`toToken(serialize)` → persist → `fromToken(token, deserialize)`)
 - expired-token diagnostics (`CursorExpiredException` with `reason=PROVIDER_TRIMMED` from a 24h-old token, plus the codec-side `TOKEN_AGED_OUT` aged-token path)
 - per-partition cursor mint (`listCursors` returns ≥1 cursor)
 - error normalization (capability missing, provider trimmed, unsupported resource)

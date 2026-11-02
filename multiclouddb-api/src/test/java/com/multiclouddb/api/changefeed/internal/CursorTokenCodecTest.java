@@ -37,8 +37,8 @@ class CursorTokenCodecTest {
         CursorToken original = token(COSMOS, ADDR, 1_700_000_000_000L,
                 CursorAnchor.CONTINUING, parts);
 
-        String wire = CursorTokenCodec.encode(original);
-        CursorToken decoded = CursorTokenCodec.decode(wire, 1_700_000_000_000L);
+        String wire = CursorTokenCodec.encode(original, com.multiclouddb.api.TestJson::write);
+        CursorToken decoded = CursorTokenCodec.decode(wire, 1_700_000_000_000L, com.multiclouddb.api.TestJson::read);
 
         assertEquals(original, decoded);
     }
@@ -48,8 +48,8 @@ class CursorTokenCodecTest {
     void roundTripSentinel() {
         CursorToken sentinel = token(ProviderId.fromId("multicloud"), null,
                 System.currentTimeMillis(), CursorAnchor.NOW, List.of());
-        String wire = CursorTokenCodec.encode(sentinel);
-        CursorToken decoded = CursorTokenCodec.decode(wire);
+        String wire = CursorTokenCodec.encode(sentinel, com.multiclouddb.api.TestJson::write);
+        CursorToken decoded = CursorTokenCodec.decode(wire, com.multiclouddb.api.TestJson::read);
         assertNull(decoded.resource(), "sentinel must keep null resource binding");
         assertEquals(CursorAnchor.NOW, decoded.anchor());
         assertTrue(decoded.partitions().isEmpty());
@@ -59,7 +59,7 @@ class CursorTokenCodecTest {
     @DisplayName("decode: null/blank token raises MALFORMED")
     void decodeBlankMalformed() {
         CursorExpiredException ex = assertThrows(CursorExpiredException.class,
-                () -> CursorTokenCodec.decode(""));
+                () -> CursorTokenCodec.decode("", com.multiclouddb.api.TestJson::read));
         assertEquals(MulticloudDbErrorCategory.CURSOR_EXPIRED, ex.error().category());
         assertEquals(CursorTokenCodec.REASON_MALFORMED,
                 ex.error().providerDetails().get("reason"));
@@ -69,7 +69,7 @@ class CursorTokenCodecTest {
     @DisplayName("decode: garbage base64 raises MALFORMED")
     void decodeGarbageMalformed() {
         CursorExpiredException ex = assertThrows(CursorExpiredException.class,
-                () -> CursorTokenCodec.decode("!!!not-base64!!!"));
+                () -> CursorTokenCodec.decode("!!!not-base64!!!", com.multiclouddb.api.TestJson::read));
         assertEquals(CursorTokenCodec.REASON_MALFORMED,
                 ex.error().providerDetails().get("reason"));
     }
@@ -80,7 +80,7 @@ class CursorTokenCodecTest {
         String wire = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString("hello world".getBytes(StandardCharsets.UTF_8));
         CursorExpiredException ex = assertThrows(CursorExpiredException.class,
-                () -> CursorTokenCodec.decode(wire));
+                () -> CursorTokenCodec.decode(wire, com.multiclouddb.api.TestJson::read));
         assertEquals(CursorTokenCodec.REASON_MALFORMED,
                 ex.error().providerDetails().get("reason"));
     }
@@ -94,7 +94,7 @@ class CursorTokenCodecTest {
         String wire = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(json.getBytes(StandardCharsets.UTF_8));
         CursorExpiredException ex = assertThrows(CursorExpiredException.class,
-                () -> CursorTokenCodec.decode(wire, 1_700_000_000_000L));
+                () -> CursorTokenCodec.decode(wire, 1_700_000_000_000L, com.multiclouddb.api.TestJson::read));
         assertEquals(CursorTokenCodec.REASON_VERSION_UNSUPPORTED,
                 ex.error().providerDetails().get("reason"));
     }
@@ -106,9 +106,9 @@ class CursorTokenCodecTest {
         long now = issuedAt + CursorTokenCodec.MAX_TOKEN_AGE_MILLIS + 1;
         CursorToken old = token(COSMOS, ADDR, issuedAt, CursorAnchor.CONTINUING,
                 List.of(new PartitionPosition("p0", "c")));
-        String wire = CursorTokenCodec.encode(old);
+        String wire = CursorTokenCodec.encode(old, com.multiclouddb.api.TestJson::write);
         CursorExpiredException ex = assertThrows(CursorExpiredException.class,
-                () -> CursorTokenCodec.decode(wire, now));
+                () -> CursorTokenCodec.decode(wire, now, com.multiclouddb.api.TestJson::read));
         assertEquals(CursorTokenCodec.REASON_TOKEN_AGED_OUT,
                 ex.error().providerDetails().get("reason"));
     }
@@ -120,9 +120,9 @@ class CursorTokenCodecTest {
         long now = issuedAt + CursorTokenCodec.MAX_TOKEN_AGE_MILLIS; // exactly at boundary, not >
         CursorToken at = token(COSMOS, ADDR, issuedAt, CursorAnchor.CONTINUING,
                 List.of(new PartitionPosition("p0", null)));
-        String wire = CursorTokenCodec.encode(at);
+        String wire = CursorTokenCodec.encode(at, com.multiclouddb.api.TestJson::write);
         // Should NOT throw at the exact 24h boundary (boundary is strictly >)
-        assertDoesNotThrow(() -> CursorTokenCodec.decode(wire, now));
+        assertDoesNotThrow(() -> CursorTokenCodec.decode(wire, now, com.multiclouddb.api.TestJson::read));
     }
 
     @Test
@@ -178,7 +178,7 @@ class CursorTokenCodecTest {
         String wire = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(missingP.getBytes(StandardCharsets.UTF_8));
         CursorExpiredException ex = assertThrows(CursorExpiredException.class,
-                () -> CursorTokenCodec.decode(wire, 1_700_000_000_000L));
+                () -> CursorTokenCodec.decode(wire, 1_700_000_000_000L, com.multiclouddb.api.TestJson::read));
         assertEquals(CursorTokenCodec.REASON_MALFORMED,
                 ex.error().providerDetails().get("reason"));
     }
@@ -192,7 +192,7 @@ class CursorTokenCodecTest {
         String wire = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(bad.getBytes(StandardCharsets.UTF_8));
         CursorExpiredException ex = assertThrows(CursorExpiredException.class,
-                () -> CursorTokenCodec.decode(wire, 1_700_000_000_000L));
+                () -> CursorTokenCodec.decode(wire, 1_700_000_000_000L, com.multiclouddb.api.TestJson::read));
         assertEquals(CursorTokenCodec.REASON_MALFORMED,
                 ex.error().providerDetails().get("reason"));
     }
@@ -217,8 +217,8 @@ class CursorTokenCodecTest {
                 CursorAnchor.CONTINUING,
                 List.of(new PartitionPosition("p0", "c")),
                 sevenDaysMs);
-        String wire = CursorTokenCodec.encode(original);
-        CursorToken decoded = CursorTokenCodec.decode(wire, 1_700_000_000_000L);
+        String wire = CursorTokenCodec.encode(original, com.multiclouddb.api.TestJson::write);
+        CursorToken decoded = CursorTokenCodec.decode(wire, 1_700_000_000_000L, com.multiclouddb.api.TestJson::read);
         assertEquals(sevenDaysMs, decoded.effectiveRetentionMillis(),
                 "decoder must thread the extendedRetention field back through");
         assertEquals(original, decoded);
@@ -235,9 +235,9 @@ class CursorTokenCodecTest {
                 CursorAnchor.CONTINUING,
                 List.of(new PartitionPosition("p0", "c")),
                 sevenDaysMs);
-        String wire = CursorTokenCodec.encode(minted);
+        String wire = CursorTokenCodec.encode(minted, com.multiclouddb.api.TestJson::write);
         // 5d > 24h baseline but < 7d configured window — must NOT throw.
-        assertDoesNotThrow(() -> CursorTokenCodec.decode(wire, now),
+        assertDoesNotThrow(() -> CursorTokenCodec.decode(wire, now, com.multiclouddb.api.TestJson::read),
                 "token within the encoded retention window must decode");
     }
 
@@ -252,9 +252,9 @@ class CursorTokenCodecTest {
                 CursorAnchor.CONTINUING,
                 List.of(new PartitionPosition("p0", "c")),
                 sevenDaysMs);
-        String wire = CursorTokenCodec.encode(minted);
+        String wire = CursorTokenCodec.encode(minted, com.multiclouddb.api.TestJson::write);
         CursorExpiredException ex = assertThrows(CursorExpiredException.class,
-                () -> CursorTokenCodec.decode(wire, now));
+                () -> CursorTokenCodec.decode(wire, now, com.multiclouddb.api.TestJson::read));
         assertEquals(CursorTokenCodec.REASON_TOKEN_AGED_OUT,
                 ex.error().providerDetails().get("reason"));
     }
@@ -272,7 +272,7 @@ class CursorTokenCodecTest {
         String wire = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(json.getBytes(StandardCharsets.UTF_8));
         CursorExpiredException ex = assertThrows(CursorExpiredException.class,
-                () -> CursorTokenCodec.decode(wire, now));
+                () -> CursorTokenCodec.decode(wire, now, com.multiclouddb.api.TestJson::read));
         assertEquals(CursorTokenCodec.REASON_TOKEN_AGED_OUT,
                 ex.error().providerDetails().get("reason"));
     }
@@ -292,7 +292,7 @@ class CursorTokenCodecTest {
                 + "\"e\":" + oneHourMs + ",\"s\":[{\"id\":\"p0\",\"c\":\"c\"}]}";
         String wire = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(json.getBytes(StandardCharsets.UTF_8));
-        assertDoesNotThrow(() -> CursorTokenCodec.decode(wire, now),
+        assertDoesNotThrow(() -> CursorTokenCodec.decode(wire, now, com.multiclouddb.api.TestJson::read),
                 "a too-small 'e' must clamp up to the 24h portable floor");
     }
 
@@ -305,7 +305,7 @@ class CursorTokenCodecTest {
         String wire = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(json.getBytes(StandardCharsets.UTF_8));
         CursorExpiredException ex = assertThrows(CursorExpiredException.class,
-                () -> CursorTokenCodec.decode(wire, 1_700_000_000_000L));
+                () -> CursorTokenCodec.decode(wire, 1_700_000_000_000L, com.multiclouddb.api.TestJson::read));
         assertEquals(CursorTokenCodec.REASON_MALFORMED,
                 ex.error().providerDetails().get("reason"));
     }
@@ -319,7 +319,7 @@ class CursorTokenCodecTest {
         String wire = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(json.getBytes(StandardCharsets.UTF_8));
         CursorExpiredException ex = assertThrows(CursorExpiredException.class,
-                () -> CursorTokenCodec.decode(wire, 1_700_000_000_000L));
+                () -> CursorTokenCodec.decode(wire, 1_700_000_000_000L, com.multiclouddb.api.TestJson::read));
         assertEquals(CursorTokenCodec.REASON_MALFORMED,
                 ex.error().providerDetails().get("reason"));
     }
@@ -334,7 +334,7 @@ class CursorTokenCodecTest {
         CursorToken baseline = new CursorToken(COSMOS, ADDR, 1_700_000_000_000L,
                 CursorAnchor.CONTINUING,
                 List.of(new PartitionPosition("p0", "c")));
-        String wire = CursorTokenCodec.encode(baseline);
+        String wire = CursorTokenCodec.encode(baseline, com.multiclouddb.api.TestJson::write);
         String json = new String(Base64.getUrlDecoder().decode(wire),
                 StandardCharsets.UTF_8);
         assertFalse(json.contains("\"e\""),

@@ -45,6 +45,99 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * </ol>
  */
 class SpannerRowMapperTest {
+    @Test
+    void malformedUnicodeRetainsMarkedNativeJsonAndMetadataFallbacks() {
+        for (String invalid : List.of("\ud800", "\udc00", "\\ud800", "\\udc00")) {
+            String json = "{\"s\":\"" + invalid + "\"}";
+            assertEquals(SpannerConstants.JSON_VALUE_MARKER + json, markedValue(json));
+            Struct row = Struct.newBuilder()
+                    .set("payload").to(com.google.cloud.spanner.Value.json(json))
+                    .set("data").to("[\"payload\",\"" + invalid + "\"]")
+                    .set("unlisted").to("retained")
+                    .set("missing").to((String) null).build();
+            try (ResultSet rs = singleRow(row.getType(), row)) {
+                Map<String, Object> mapped = SpannerRowMapper.toMap(rs);
+                assertEquals(json, mapped.get("payload"));
+                assertEquals("retained", mapped.get("unlisted"));
+                assertTrue(mapped.containsKey("missing"));
+                assertNull(mapped.get("missing"));
+                assertFalse(mapped.containsKey("data"));
+            }
+        }
+        String valid = "\uD55C\uAE00\uD83D\uDE00";
+        assertEquals(Map.of("s", valid), markedValue("{\"s\":\"" + valid + "\"}"));
+        assertEquals(Map.of("s", valid), markedValue("{\"s\":\"\\ud55c\\uae00\\ud83d\\ude00\"}"));
+    }
+
+    @Test
+    void markedJsonUsesItsOwnRootDepthAndKeepsOverLimitRawFallback() {
+        for (int depth : List.of(256, 1000)) {
+            Object value = markedValue("[".repeat(depth) + "0" + "]".repeat(depth));
+            for (int i = 0; i < depth; i++) {
+                value = org.junit.jupiter.api.Assertions.assertInstanceOf(List.class, value).get(0);
+            }
+            assertEquals(0, value);
+        }
+        String rejected = "[".repeat(1001) + "0" + "]".repeat(1001);
+        assertEquals(SpannerConstants.JSON_VALUE_MARKER + rejected, markedValue(rejected));
+    }
+
+    @Test
+    void nativeJsonUsesInternalReaderAndCorruptPayloadReturnsRawText() {
+        for (String text : List.of("{\"a\":[1,null]}", "{bad}")) {
+            Struct row = Struct.newBuilder().set("payload").to(com.google.cloud.spanner.Value.json(text)).build();
+            try (ResultSet rs = singleRow(row.getType(), row)) {
+                Object value = SpannerRowMapper.toMap(rs).get("payload");
+                assertEquals(text.equals("{bad}") ? text : Map.of("a", java.util.Arrays.asList(1, null)), value);
+            }
+        }
+    }
+
+    @Test
+    void typedMetadataPreservesLexicalNames() {
+        Struct row = Struct.newBuilder().set("data").to("[2.00,1e+03,-0]")
+                .set("2.00").to("a").set("1e+03").to("b").set("-0").to("c").set("drop").to("d").build();
+        try (ResultSet rs = singleRow(row.getType(), row)) {
+            assertEquals(Map.of("2.00", "a", "1e+03", "b", "-0", "c"), SpannerRowMapper.toMap(rs));
+        }
+    }
+    @Test
+    void releasedLongDecimalsAndExponentsRemainStructuredThroughMarkedRows() throws Exception {
+        var released = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (String number : List.of("0." + "9".repeat(999), "-0." + "9".repeat(999),
+                "0." + "9".repeat(1000), "-0." + "9".repeat(1000),
+                "1" + "0".repeat(998) + "e+1", "-1" + "0".repeat(998) + "e-1",
+                "1e+" + "0".repeat(998) + "1", "-1e-" + "0".repeat(998) + "1",
+                "1".repeat(1000), "-" + "1".repeat(1000), "1e999", "-0.0")) {
+            String json = "{\"n\":[" + number + "]}";
+            var expected = released.readTree(json).get("n").get(0);
+            Map<?, ?> mapped = org.junit.jupiter.api.Assertions.assertInstanceOf(
+                    Map.class, markedValue(json), number);
+            Object value = ((List<?>) mapped.get("n")).get(0);
+            assertEquals(expected.numberValue().getClass(), value.getClass(), number);
+            assertEquals(expected.numberValue(), value, number);
+        }
+    }
+
+    @Test
+    void releasedRejectedNumericBoundariesRetainDeclaredParseFailureFallback() {
+        for (String number : List.of("1".repeat(1001), "-" + "1".repeat(1001),
+                "0." + "9".repeat(1001), "-0." + "9".repeat(1001),
+                "1" + "0".repeat(999) + "e+1", "-1" + "0".repeat(999) + "e-1",
+                "1e+" + "0".repeat(999) + "1", "-1e-" + "0".repeat(999) + "1")) {
+            String json = "{\"n\":[" + number + "]}";
+            org.junit.jupiter.api.Assertions.assertThrows(com.fasterxml.jackson.core.JsonProcessingException.class,
+                    () -> new com.fasterxml.jackson.databind.ObjectMapper().readTree(json));
+            assertEquals(SpannerConstants.JSON_VALUE_MARKER + json, markedValue(json));
+        }
+    }
+
+    private static Object markedValue(String json) {
+        Struct row = Struct.newBuilder().set("payload").to(SpannerConstants.JSON_VALUE_MARKER + json).build();
+        try (ResultSet rs = singleRow(row.getType(), row)) {
+            return SpannerRowMapper.toMap(rs).get("payload");
+        }
+    }
 
     private static ResultSet singleRow(Type rowType, Struct row) {
         ResultSet rs = ResultSets.forRows(rowType, List.of(row));

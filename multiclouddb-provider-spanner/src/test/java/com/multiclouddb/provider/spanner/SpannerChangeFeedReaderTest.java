@@ -73,8 +73,42 @@ class SpannerChangeFeedReaderTest {
 
     @Test
     void acceptsReleasedDepthBeyondRemovedModelLimit() {
-        String json = "{\"nested\":" + "[".repeat(128) + "null" + "]".repeat(128) + "}";
-        assertTrue(readValues("UPDATE", json, null).hasData());
+        for (int depth : List.of(256, 1000)) {
+            String json = "{\"nested\":" + "[".repeat(depth - 1) + "null" + "]".repeat(depth - 1) + "}";
+            ChangeEvent event = readValues("UPDATE", json, null);
+            assertTrue(event.hasData());
+            Object value = org.junit.jupiter.api.Assertions.assertInstanceOf(Map.class, event.data()).get("nested");
+            for (int i = 1; i < depth; i++) {
+                value = org.junit.jupiter.api.Assertions.assertInstanceOf(List.class, value).get(0);
+            }
+            assertNull(value);
+        }
+        String rejected = "{\"nested\":" + "[".repeat(1000) + "null" + "]".repeat(1000) + "}";
+        assertEquals(Map.of("raw", rejected), readValues("UPDATE", rejected, null).data());
+        assertSafePayloadFailure(() -> readValues("UPDATE", rejected, null, List.of(column("v", "INT64"))));
+    }
+
+    @Test
+    void strictUnicodeRetainsImageMetadataAndEmbeddedMarkerPolicies() throws Exception {
+        String valid = "\uD55C\uAE00\uD83D\uDE00";
+        assertEquals(Map.of("s", valid), readValues("INSERT", "{\"s\":\"" + valid + "\"}", null).data());
+        assertEquals(Map.of("s", valid),
+                readValues("INSERT", "{\"s\":\"\\ud55c\\uae00\\ud83d\\ude00\"}", null).data());
+        for (String invalid : List.of("\ud800", "\udc00", "\\ud800", "\\udc00")) {
+            String json = "{\"s\":\"" + invalid + "\"}";
+            ChangeEvent event = readValues("UPDATE", json, null);
+            assertEquals(Map.of("raw", json), event.data());
+            assertTrue(event.hasData());
+            assertSafePayloadFailure(() -> readValues("UPDATE", json, null, List.of(column("v", "INT64"))));
+        }
+        for (String invalid : List.of("\\ud800", "\\udc00")) {
+            String metadataImage = SpannerJson.write(Map.of("data", "[\"" + invalid + "\"]", "s", 1, "extra", 2));
+            assertEquals(Map.of("s", 1, "extra", 2), readValues("UPDATE", metadataImage, null).data());
+        }
+        String marker = SpannerConstants.JSON_VALUE_MARKER + "{\"s\":\"\\ud800\"}";
+        assertEquals(Map.of("nested", marker),
+                readValues("UPDATE", SpannerJson.write(Map.of("nested", marker)), null).data(),
+                "change images do not recursively decode JSON marker strings");
     }
 
     @Test
@@ -219,7 +253,8 @@ class SpannerChangeFeedReaderTest {
         assertEquals(Map.of("v", 1L),
                 readValues("INSERT", "{\"v\":\"1\"}", null,
                         List.of(columnType("v", Value.string("{\"code\":\"INT64\"}")))).data());
-        for (String invalid : List.of("not-json", "null", "{}", "{\"code\":1}")) {
+        for (String invalid : List.of("not-json", "null", "{}", "{\"code\":1}",
+                "{\"code\":\"\\ud800\"}", "{\"code\":\"\\udc00\"}")) {
             assertSafePayloadFailure(() -> readValues("INSERT", "{\"v\":\"1\"}", null,
                     List.of(columnType("v", Value.json(invalid)))));
         }

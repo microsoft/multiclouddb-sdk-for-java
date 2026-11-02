@@ -27,11 +27,11 @@ class CursorWireCompatibilityTest {
         CursorToken baseline = token(List.of(new PartitionPosition("p0", "c"),
                 new PartitionPosition("p1", null)));
         assertEquals(PREFIX + "\"s\":[{\"id\":\"p0\",\"c\":\"c\"},{\"id\":\"p1\"}]}",
-                json(CursorTokenCodec.encode(baseline)));
+                json(CursorTokenCodec.encode(baseline, com.multiclouddb.api.TestJson::write)));
         CursorToken extended = new CursorToken(baseline.providerId(), baseline.resource(),
                 NOW, baseline.anchor(), baseline.partitions(), 604_800_000);
         assertEquals(PREFIX + "\"e\":604800000,\"s\":[{\"id\":\"p0\",\"c\":\"c\"},{\"id\":\"p1\"}]}",
-                json(CursorTokenCodec.encode(extended)));
+                json(CursorTokenCodec.encode(extended, com.multiclouddb.api.TestJson::write)));
     }
 
     @Test
@@ -41,20 +41,20 @@ class CursorWireCompatibilityTest {
         String oldJson = PREFIX + "\"s\":[{\"id\":\"p0\",\"c\":"
                 + "\"slash/ quote\\\" backslash\\\\ controls\\b\\f\\n\\r\\t "
                 + "\\u2028\\u2029 \\u00e9 \\ud83d\\ude00 isolated:\\ud800\"}]}";
-        assertEquals(text, CursorTokenCodec.decode(wire(oldJson), NOW).partitions().get(0).continuation());
+        assertEquals(text, CursorTokenCodec.decode(wire(oldJson), NOW, com.multiclouddb.api.TestJson::read).partitions().get(0).continuation());
         CursorToken original = token(List.of(new PartitionPosition("p0", text)));
-        assertEquals(original, CursorTokenCodec.decode(CursorTokenCodec.encode(original), NOW));
+        assertEquals(original, CursorTokenCodec.decode(CursorTokenCodec.encode(original, com.multiclouddb.api.TestJson::write), NOW, com.multiclouddb.api.TestJson::read));
     }
 
     @Test
     void retainsAcceptedFieldCoercionsAndLastDuplicateValue() {
         String json = "{\"v\":99,\"v\":\"1.0\",\"p\":\"cosmos\",\"i\":\"1700000000000\","
                 + "\"a\":\"CONTINUING\",\"e\":86400000.9,\"s\":[{\"id\":12,\"c\":true}]}";
-        CursorToken decoded = CursorTokenCodec.decode(wire(json), NOW);
+        CursorToken decoded = CursorTokenCodec.decode(wire(json), NOW, com.multiclouddb.api.TestJson::read);
         assertEquals(NOW, decoded.issuedAtEpochMillis());
         assertEquals(CursorTokenCodec.MAX_TOKEN_AGE_MILLIS, decoded.effectiveRetentionMillis());
         assertEquals(List.of(new PartitionPosition("12", "true")), decoded.partitions());
-        assertEquals(decoded, CursorTokenCodec.decode(wire(json + " true"), NOW));
+        assertEquals(decoded, CursorTokenCodec.decode(wire(json + " true"), NOW, com.multiclouddb.api.TestJson::read));
     }
 
     @Test
@@ -65,7 +65,7 @@ class CursorWireCompatibilityTest {
                 "{\"v\":1,\"p\":true,\"i\":1700000000000,\"a\":\"NOW\",\"s\":[]}",
                 "{\"v\":1,\"p\":\"cosmos\",\"i\":1700000000000,\"a\":\"NOW\",\"e\":\"86400000\",\"s\":[]}")) {
             CursorExpiredException ex = assertThrows(CursorExpiredException.class,
-                    () -> CursorTokenCodec.decode(wire(json), NOW));
+                    () -> CursorTokenCodec.decode(wire(json), NOW, com.multiclouddb.api.TestJson::read));
             assertEquals(CursorTokenCodec.REASON_MALFORMED, ex.error().providerDetails().get("reason"));
         }
     }
@@ -85,7 +85,7 @@ class CursorWireCompatibilityTest {
                 json.replace("normal", "escaped\\'quote"), json.replace("normal", "escaped\\\nline"))
                 .stream().<org.junit.jupiter.api.function.Executable>map(invalid -> () -> {
                     CursorExpiredException failure = assertThrows(CursorExpiredException.class,
-                            () -> ChangeFeedCursor.fromToken(wire(invalid)));
+                            () -> ChangeFeedCursor.fromToken(wire(invalid), com.multiclouddb.api.TestJson::read));
                     assertEquals(CursorTokenCodec.REASON_MALFORMED, failure.error().providerDetails().get("reason"));
                 }));
     }
@@ -94,7 +94,7 @@ class CursorWireCompatibilityTest {
     void publicDecoderKeepsEscapesDuplicateLastWinsTrailingRootsAndCoercion() {
         String json = "{\"v\":99,\"v\":true,\"p\":\"cosmos\",\"i\":" + System.currentTimeMillis()
                 + ",\"a\":\"CONTINUING\",\"s\":[{\"id\":12,\"c\":\"line\\nbreak\\ttab\"}]} false";
-        ChangeFeedCursor cursor = ChangeFeedCursor.fromToken(wire(json));
+        ChangeFeedCursor cursor = ChangeFeedCursor.fromToken(wire(json), com.multiclouddb.api.TestJson::read);
         assertEquals(List.of(new PartitionPosition("12", "line\nbreak\ttab")), cursor.token().partitions());
     }
 
@@ -104,14 +104,15 @@ class CursorWireCompatibilityTest {
 
     @Test
     void publicDecoderRejectsLeadingBomLikeLegacyStringReaderAndHandlesEmptyInput() throws Exception {
-        String valid = json(ChangeFeedCursor.now().toToken());
-        assertNotNull(CursorJson.read(valid));
+        String valid = json(ChangeFeedCursor.now().toToken(com.multiclouddb.api.TestJson::write));
+        assertNotNull(JsonSupport.read(valid, com.multiclouddb.api.TestJson.DESERIALIZE));
         String withBom = "\uFEFF" + valid;
-        assertThrows(java.io.IOException.class, () -> CursorJson.read(withBom));
-        assertThrows(java.io.IOException.class, () -> CursorJson.read(""));
+        assertThrows(java.io.IOException.class, () -> JsonSupport.read(
+                withBom, com.multiclouddb.api.TestJson.DESERIALIZE));
+        assertNull(JsonSupport.read("", com.multiclouddb.api.TestJson.DESERIALIZE));
         for (String invalid : List.of(withBom, "")) {
             CursorExpiredException failure = assertThrows(CursorExpiredException.class,
-                    () -> ChangeFeedCursor.fromToken(wire(invalid)));
+                    () -> ChangeFeedCursor.fromToken(wire(invalid), com.multiclouddb.api.TestJson::read));
             assertEquals(CursorTokenCodec.REASON_MALFORMED, failure.error().providerDetails().get("reason"));
         }
     }
@@ -122,9 +123,9 @@ class CursorWireCompatibilityTest {
         for (String content : List.of(expected, "\\uFEFFinside\\uFEFF")) {
             String json = "{\"v\":1,\"p\":\"cosmos\",\"i\":" + System.currentTimeMillis()
                     + ",\"a\":\"CONTINUING\",\"s\":[{\"id\":\"p0\",\"c\":\"" + content + "\"}]}";
-            ChangeFeedCursor cursor = ChangeFeedCursor.fromToken(wire(json));
+            ChangeFeedCursor cursor = ChangeFeedCursor.fromToken(wire(json), com.multiclouddb.api.TestJson::read);
             assertEquals(expected, cursor.token().partitions().get(0).continuation());
-            assertEquals(cursor.token(), ChangeFeedCursor.fromToken(cursor.toToken()).token());
+            assertEquals(cursor.token(), ChangeFeedCursor.fromToken(cursor.toToken(com.multiclouddb.api.TestJson::write), com.multiclouddb.api.TestJson::read).token());
         }
     }
 

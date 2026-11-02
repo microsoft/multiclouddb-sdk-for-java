@@ -708,7 +708,7 @@ RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use sing
 
 ## Phase 19: User Story 14 — Portable Change Feed (Priority: P2)
 
-**Goal**: Deliver a portable pull-mode change feed across Cosmos / Dynamo / Spanner. Three primitives: `ChangeFeedCursor.now()`, `ChangeFeedCursor.fromToken(String)`, and `MulticloudDbClient.readChanges(addr, cursor)`. See `plan.md` → *Change Feed (US14) — Planning Addendum* for the per-provider mapping and the deferred-work register.
+**Goal**: Deliver a portable pull-mode change feed across Cosmos / Dynamo / Spanner. Three primitives: `ChangeFeedCursor.now()`, `ChangeFeedCursor.fromToken(token, deserialize)`, and `MulticloudDbClient.readChanges(addr, cursor)`. See `plan.md` → *Change Feed (US14) — Planning Addendum* for the per-provider mapping and the deferred-work register.
 
 - [x] T162 [US14] Public API types in `multiclouddb-api`: `ChangeFeedCursor`, `ChangeFeedPage`, `ChangeEvent`, `ChangeType`, `CursorExpiredException`.
   Files: `multiclouddb-api/src/main/java/com/multiclouddb/api/changefeed/*.java`

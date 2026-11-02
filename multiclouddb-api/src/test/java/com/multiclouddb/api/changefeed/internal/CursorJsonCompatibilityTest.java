@@ -3,12 +3,10 @@
 
 package com.multiclouddb.api.changefeed.internal;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
+import com.multiclouddb.api.TestJson;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -42,7 +40,7 @@ class CursorJsonCompatibilityTest {
                 new Coercion("\"Infinity\"", 2147483647, 9223372036854775807L, "Infinity", false),
                 new Coercion("[]", -9, -9L, "", false),
                 new Coercion("{}", -9, -9L, "", false))) {
-            JsonElement next = CursorJson.read(fixture.json());
+            Object next = JsonSupport.read(fixture.json(), TestJson.DESERIALIZE);
             assertEquals(fixture.integer(), CursorJson.asInt(next, -9), "int: " + fixture.json());
             assertEquals(fixture.longValue(), CursorJson.asLong(next, -9), "long: " + fixture.json());
             assertEquals(fixture.text(), CursorJson.text(next, null), "text: " + fixture.json());
@@ -52,10 +50,11 @@ class CursorJsonCompatibilityTest {
 
     @Test
     void strictSyntaxAndDuplicateTrailingBehaviorMatchTheEstablishedBaseline() throws IOException {
-        assertEquals(2, CursorJson.read("{\"v\":1,\"v\":2} true").getAsJsonObject().get("v").getAsInt());
+        assertEquals(2, ((java.util.Map<?, ?>) JsonSupport.read(
+                "{\"v\":1,\"v\":2} true", TestJson.DESERIALIZE)).get("v"));
         for (String invalid : List.of("{'v':1}", "{v:1}", "{\"v\":NaN}",
                 "{\"v\":1,}", "{\"v\":01}", "{/*comment*/\"v\":1}")) {
-            assertThrows(IOException.class, () -> CursorJson.read(invalid), invalid);
+            assertThrows(IOException.class, () -> JsonSupport.read(invalid, TestJson.DESERIALIZE), invalid);
         }
     }
 
@@ -63,21 +62,21 @@ class CursorJsonCompatibilityTest {
     void writerAndReaderPreserveOpaqueUnicodeData() throws IOException {
         for (String value : List.of("normal ASCII", "</>&", "\b\f\n\r\t", "\u2028\u2029",
                 "\u00e9 \ud83d\ude00", "\ud800", "\udc00", "\\uD800")) {
-            JsonObject object = new JsonObject();
-            object.addProperty("c", value);
-            String json = CursorJson.write(object);
-            String utf8 = new String(json.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
-            assertEquals(value, CursorJson.read(utf8).getAsJsonObject().get("c").getAsString());
+            CursorToken original = new CursorToken(com.multiclouddb.api.ProviderId.COSMOS, null,
+                    0, CursorAnchor.NOW, List.of(new PartitionPosition("p", value)));
+            String wire = CursorTokenCodec.encode(original, TestJson.SERIALIZE);
+            assertEquals(value, CursorTokenCodec.decode(wire, 0, TestJson.DESERIALIZE)
+                    .partitions().get(0).continuation());
         }
     }
 
     @Test
     void preservesExistingParserDepthAndIntegerLimits() throws IOException {
         String atDepth = "[".repeat(1000) + "null" + "]".repeat(1000);
-        assertNotNull(CursorJson.read(atDepth));
+        assertNotNull(JsonSupport.read(atDepth, TestJson.DESERIALIZE));
         for (String invalid : List.of("[" + atDepth + "]", "1".repeat(1001),
                 "-" + "1".repeat(1001))) {
-            assertThrows(IOException.class, () -> CursorJson.read(invalid));
+            assertThrows(IOException.class, () -> JsonSupport.read(invalid, TestJson.DESERIALIZE));
         }
     }
 }

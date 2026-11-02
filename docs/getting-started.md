@@ -225,6 +225,10 @@ Subscribe to inserts, updates and deletes with three primitives —
 `ChangeFeedCursor` (opaque, persistable position), `listCursors` (one cursor
 per provider partition), and `readChanges` (one page at a time).
 
+For persistence, use `serialize` from the
+[JSON callback example](guide.md#application-owned-json-processing);
+in-memory cursors do not require JSON configuration.
+
 ```java
 ResourceAddress orders = new ResourceAddress("appdb", "orders");
 
@@ -240,7 +244,7 @@ while (true) {
     }
 
     cursor = page.nextCursor();
-    persist(cursor.toToken()); // resume from this point on restart
+    persist(cursor.toToken(serialize)); // resume from this point on restart
 
     if (!page.hasMore()) Thread.sleep(500);
 }

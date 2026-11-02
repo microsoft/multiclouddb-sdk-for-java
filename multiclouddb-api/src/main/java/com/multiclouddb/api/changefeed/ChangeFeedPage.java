@@ -39,7 +39,7 @@ import java.util.Objects;
  * </ul>
  *
  * <h3>Persistence rule</h3>
- * Persist {@link #nextCursor()}{@code .toToken()} <em>after</em> processing
+ * Persist {@link #nextCursor()}{@code .toToken(serializer)} <em>after</em> processing
  * the events. Persisting before {@code process()} returns risks losing events
  * on crash. This is the at-least-once contract.
  */

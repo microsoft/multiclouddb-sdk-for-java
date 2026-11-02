@@ -105,7 +105,7 @@ The raw HTTP or gRPC status code is also available via `error.statusCode()`.
 ## Change-Feed History Retention
 
 The portable change-feed read path guarantees a **24-hour** history floor on
-every provider out of the box — a cursor token minted by `ChangeFeedCursor#toToken()`
+every provider out of the box — a cursor token minted by `ChangeFeedCursor#toToken(serialize)`
 can be replayed for 24 hours regardless of which provider produced it.
 
 To request a longer server-side retention window, opt in via

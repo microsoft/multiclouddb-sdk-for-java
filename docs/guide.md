@@ -515,29 +515,14 @@ not changed by this increment.
 ### Application-owned mapping
 
 Applications explicitly map Java objects to `Map<String, Object>` and map returned
-data back themselves. Multicloud does not discover POJOs, invoke application
-serializers or ship a mapping interface, codec hierarchy or serializer module.
+data back themselves. Multicloud does not discover POJOs, invoke a POJO mapper
+or ship a mapping interface, codec hierarchy or serializer module. Separate
+[JSON syntax callbacks](#application-owned-json-processing) handle cursor
+persistence, not POJO mapping or provider storage encoding.
 
-Against released API **0.1.0-beta.2**, write signatures remain Maps,
-`DocumentResult.document()` changes from ObjectNode to Map, and
-`ChangeEvent.data()` changes from JsonNode to Object. A missing point read still
-returns null. QueryPage remains `List<Map<String, Object>>`, including nested
-scalar/array values and existing unsupported top-level result errors.
-
-The JDK-only [PlainCustomerMapping example](../multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/PlainCustomerMapping.java)
-illustrates handwritten mapping:
-
-```java
-PlainCustomerMapping mapping = new PlainCustomerMapping();
-PlainCustomerMapping.Customer customer = new PlainCustomerMapping.Customer("Grace", 7);
-client.create(address, key, mapping.toMap(customer));
-DocumentResult result = client.read(address, key);
-if (result == null) throw new IllegalStateException("Document not found.");
-PlainCustomerMapping.Customer restored = mapping.fromMap(result.document());
-```
-
-Alternatively, Jackson is an optional **application dependency**, not an SDK
-adapter. Applications own naming, dates, generics, coercion, unknown fields,
+For example, use an application-configured Jackson mapper to save and read a
+customer. Jackson is an optional **application dependency**, not an SDK requirement
+or adapter. Applications own naming, dates, generics, coercion, unknown fields,
 errors and mapper lifetime:
 
 ```java
@@ -554,24 +539,74 @@ if (result == null) throw new IllegalStateException("Document not found.");
 Customer restored = mapper.convertValue(result.document(), Customer.class);
 ```
 
+Keep these points in mind:
+
+- Check for a null result before mapping a missing point read; see
+  [migration details](#migrating-from-beta2).
+- Accepted numeric input types do not guarantee identical precision across
+  providers; see [supported values and numeric precision](#supported-values-and-numeric-precision).
+- Do not mutate inputs during a synchronous write; see
+  [input and result ownership](#input-and-result-ownership).
+
+#### Manual mapping
+
+The JDK-only [PlainCustomerMapping example](../multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/PlainCustomerMapping.java)
+illustrates handwritten mapping:
+
+```java
+PlainCustomerMapping mapping = new PlainCustomerMapping();
+PlainCustomerMapping.Customer customer = new PlainCustomerMapping.Customer("Grace", 7);
+client.create(address, key, mapping.toMap(customer));
+DocumentResult result = client.read(address, key);
+if (result == null) throw new IllegalStateException("Document not found.");
+PlainCustomerMapping.Customer restored = mapping.fromMap(result.document());
+```
+
+#### Supported values and numeric precision
+
 Inputs allow non-null string-keyed Maps, ordered Lists, Strings, Booleans, null,
 and exactly Byte, Short, Integer, Long, Float, Double, BigInteger and BigDecimal.
+These are accepted Java input types, not a guarantee of identical numeric
+precision or returned Java types across providers. If exact large integer or
+decimal values must be preserved across providers, explicitly map them to strings
+in the application and convert them back on read. String storage changes numeric
+comparison, ordering, and aggregation semantics.
+
 Float/Double must be finite. Cycles, arrays, sets, arbitrary POJOs, invalid keys
 and other Number implementations fail with `INVALID_REQUEST` before native I/O.
 Shared acyclic subtrees are valid. Missing keys differ from present nulls; use
 `containsKey`. Equality follows JDK Map/List/Number semantics.
+
+#### Input and result ownership
 
 Callers must not mutate inputs or nested containers during the **entire
 synchronous write**. The SDK neither mutates them nor retains them after return.
 Point-read/feed Maps and Lists are detached and mutable. QueryPage retains an
 unmodifiable list and top-level row Maps, with nested mutability. Released
 numeric/depth behavior and the [399 KiB logical size check](#document-size-enforcement)
-remain; supported input numbers do not promise identical database round trips.
+remain.
+
+#### Change-feed payloads
 
 ChangeEvent data may be partial, a before-image, an array, a scalar or null.
 The five-argument constructor treats null as absent; the six-argument form adds
 explicit presence. `hasData() == false` requires null data; present null and empty
 objects are valid. Inspect the selected payload rather than assume a full DTO.
+
+#### Migrating from beta.2
+
+Against released API **0.1.0-beta.2**, write signatures remain Maps,
+`DocumentResult.document()` changes from ObjectNode to Map, and
+`ChangeEvent.data()` changes from JsonNode to Object. A missing point read still
+returns null. QueryPage remains `List<Map<String, Object>>`, including nested
+scalar/array values and existing unsupported top-level result errors.
+
+Cursor persistence now takes explicit callbacks: `cursor.toToken(serialize)`
+and `ChangeFeedCursor.fromToken(token, deserialize)`. Existing v1 JSON tokens
+remain readable with a compatible adapter; no binary format or legacy decoder
+is introduced. No client requires JSON callback configuration for construction,
+CRUD, queries or in-memory cursor use. Spanner's stored/change-stream JSON is
+handled internally by its provider, not application callbacks.
 
 #### Provider mapping and serialization
 
@@ -591,10 +626,12 @@ declarations or invalid/overflowing declared INT64 values report
 `PROVIDER_ERROR/readChanges/invalid_document_payload`. Other types and nested
 numeric-looking strings are not inferred to be integers.
 
-The API runtime uses SLF4J and Gson for internal cursor JSON, not Jackson.
-Spanner uses Gson only for necessary persisted JSON syntax, never POJO mapping.
-Native SDK dependencies remain externally visible: Cosmos still uses Jackson,
-and Dynamo includes AWS's `third-party-jackson-core`. This change does not isolate
+The API runtime uses SLF4J; it no longer directly depends on a JSON library.
+Spanner explicitly depends on Gson for necessary stored/change-stream JSON
+syntax internally; it does not use Gson to discover or map customer POJOs.
+Native SDK dependencies remain externally visible and can still include Gson
+or Jackson; Cosmos uses Jackson, and Dynamo includes AWS's
+`third-party-jackson-core`. This change does not isolate
 application/native dependency versions. JPMS applications require
 `com.multiclouddb.api`; opening DTO packages to an application mapper is the
 application's responsibility.
@@ -602,6 +639,146 @@ application's responsibility.
 `CustomerObjectMappingTest` and provider-local `CosmosMapContractTest` exercise
 handwritten/custom-Jackson CRUD/query/feed workflows with native calls mocked.
 These are not live-service or performance guarantees.
+
+##### Spanner JSON Unicode compatibility
+
+Spanner's internal Gson 2.15 reader uses strict parsing and rejects **unpaired
+UTF-16 surrogates**, whether present as raw Java code units or JSON escapes such
+as `\uD800` or `\uDC00`. These are malformed UTF-16, not ordinary Korean text,
+valid emoji surrogate pairs, or a string-length limitation. Valid Unicode
+continues to be supported. This does not add a common Map-input restriction or
+change Cosmos/DynamoDB data paths, and does not establish that their services
+preserve malformed Unicode.
+
+**Existing data can be affected.** In point-read and query results, legacy
+marked JSON STRINGs containing escaped lone surrogates now use the existing
+parse-failure fallback: the entire raw marker-prefixed text (including the
+leading U+0001 and `mcdb:json:` prefix) is returned instead of a Map/List or
+other decoded value. Native JSON-column parse failures return the original JSON
+text. Plain, unmarked STRING columns are not parsed by this reader; native
+UTF-8 transport can still reject or replace malformed Java strings, so their
+round-trip preservation is not guaranteed.
+
+Other existing parse-failure policies remain in force:
+
+- Invalid `FIELD_DATA` metadata disables field filtering on row reads, including
+  the legacy null-column behavior; updates retain the incomplete-metadata policy.
+  Change-feed metadata failures strip `FIELD_DATA` but keep the other fields.
+- Change-feed image JSON failures return `{"raw": originalImageJson}` when no
+  INT64 columns are declared; with INT64 declarations they fail with
+  `PROVIDER_ERROR/readChanges/invalid_document_payload`. Key JSON failures use
+  `malformed_envelope`, and invalid column-type declarations use
+  `invalid_document_payload`. Nested marker STRINGs are not recursively decoded
+  in change-feed images, so this is not a universal rejection of every event
+  containing such stored text.
+
+Inspect and correct affected stored values and metadata before upgrading; do not
+assume all existing data is unaffected. Escaping a lone surrogate as `\uXXXX`
+does not make it acceptable to the strict reader. Prefer valid Unicode at the
+application boundary rather than relying on parser or transport replacement.
+
+Both internal JSON readers explicitly retain a **1000-container nesting limit**,
+rather than Gson's default 255. This counts from each parsed JSON root, separately
+from the common write validator's total document depth, which includes the outer
+document Map. The metadata reader still requires a flat field-name array.
+Native database limits remain separate: Spanner's native JSON-column nesting
+limit does not apply to JSON encoded inside the SDK's marked STRING columns.
+
+### Application-owned JSON processing
+
+For common cursor persistence, this is **JSON to/from neutral values**, separate
+from the optional POJO mapping above. Supply `Function<Object, String> serialize` and
+`BiFunction<String, Class<?>, Object> deserialize`. The SDK requests only
+`Object.class` (string-keyed Map, List, supported numbers, String, Boolean or
+null). No POJO target is requested. The SDK detaches and validates returned
+neutral structures, then checks the cursor fields.
+
+Both functions must be thread-safe, deterministic, and must not mutate or retain
+their arguments. Pass the corresponding function explicitly to each persistence
+call; the cursor does not retain it, and there is no global registry or client
+callback configuration. Every provider can use independent application functions.
+Only persistence/restoration needs them; `now()`, `listCursors`, client
+construction and in-memory cursor use need none.
+Even persisting a `now()` sentinel explicitly requires the corresponding function.
+
+The application selects and configures its JSON library. This example uses
+Jackson 2.18.6 as an **application dependency** with the released compatibility
+profile; it is not an SDK fallback or a promise about arbitrary mapper defaults:
+
+```java
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.StreamReadConstraints;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.util.function.BiFunction;
+import java.util.function.Function;
+
+ObjectMapper json = new ObjectMapper(JsonFactory.builder()
+        .streamReadConstraints(StreamReadConstraints.builder()
+                .maxNestingDepth(1000).maxNumberLength(1000)
+                .maxStringLength(20_000_000).maxNameLength(50_000).build())
+        .build())
+        .disable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+        .disable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+        .disable(DeserializationFeature.USE_BIG_INTEGER_FOR_INTS)
+        .disable(DeserializationFeature.USE_LONG_FOR_INTS);
+Function<Object, String> serialize = value -> {
+    try {
+        return json.writeValueAsString(value);
+    } catch (IOException failure) {
+        throw new UncheckedIOException(failure);
+    }
+};
+BiFunction<String, Class<?>, Object> deserialize = (text, target) -> {
+    if (target != Object.class) {
+        throw new IllegalArgumentException("Unsupported JSON target.");
+    }
+    try (var parser = json.createParser(text)) {
+        if (parser.nextToken() == null) return null;
+        return json.readValue(parser, target);
+    } catch (IOException failure) {
+        throw new UncheckedIOException(failure);
+    }
+};
+
+String saved = cursor.toToken(serialize);
+ChangeFeedCursor resumed = ChangeFeedCursor.fromToken(saved, deserialize);
+```
+
+Keep this mapper separate from DTO-specific modules, coercions and polymorphic
+typing. The compatibility profile has these deliberately specific behaviors:
+
+- Object roots, arrays, scalars and null are supported. Integer tokens use
+  Integer, Long, then BigInteger by range; floating tokens use Double (including
+  overflow to infinity on read and negative zero). This does **not** relax finite
+  Float/Double write validation or promise decimal fidelity across providers.
+- Duplicate object keys keep the last value. One root is consumed; trailing
+  content is ignored, and empty Object input produces null before cursor-shape checks.
+  Comments, single quotes, unquoted names, leading-zero numbers, raw control
+  characters and nonnumeric literals such as `NaN` are rejected. The SDK rejects
+  a leading BOM, but permits one inside a string.
+- Use the shown released parser constraints and its numeric-length accounting,
+  not a total-token-character cap: decimal points, signs and exponent syntax
+  do not all count like integer digits.
+- Writers preserve keys, nulls, numeric values and string contents without type
+  metadata. The SDK escapes isolated UTF-16 surrogates in cursor JSON before
+  UTF-8/Base64URL encoding. Required JSON/wire encoding still occurs.
+
+Signal **JSON processing failures** with `UncheckedIOException`. Cursor parse
+failures become `CURSOR_EXPIRED/MALFORMED`.
+Other callback exceptions, invalid result structures or a null serialized string
+fail explicitly rather than being classified as corrupted JSON. Callback
+failure details are sanitized; keep application-side diagnostics if needed.
+
+Spanner uses its own internal Gson reader/writer, independently of these cursor
+functions. FIELD_DATA retains scalar lexical names (for example `2.00`, `1e+03`
+and `-0`), and the marker, null handling and legacy corruption fallbacks remain:
+invalid marked/native JSON can return raw text, invalid field metadata falls
+back to legacy projection, and failed marked-container serialization retains the
+logged textual fallback. These are storage compatibility rules, not a
+universally portable JSON specification.
 
 ### create - Insert Only
 
@@ -1364,15 +1541,15 @@ point-in-time read of a whole collection, use `query()`.
 
 | Type / Method | Purpose |
 |---|---|
-| `ChangeFeedCursor` | An opaque, immutable position in the stream. Persist via `cursor.toToken()` / `ChangeFeedCursor.fromToken(String)`; the token wire format is intentionally opaque and may evolve across SDK versions. |
+| `ChangeFeedCursor` | An opaque, immutable position in the stream. Persist via `cursor.toToken(serialize)` / `ChangeFeedCursor.fromToken(token, deserialize)`; the token wire format is intentionally opaque and may evolve across SDK versions. |
 | `ChangeFeedCursor.now()` | A provider-agnostic sentinel meaning "the live tip at the time of the next read". The first `readChanges` call hydrates it. |
 | `client.listCursors(address)` | Discovers the current set of provider-side partitions and returns one cursor per partition, each positioned at the live tip. Use this to seed a multi-threaded reader. On Cosmos this fetches the feed ranges and runs a one-item warmup query per range to capture a live-tip continuation, so the RU cost scales with the partition count; cache the cursors for the lifetime of your reader rather than calling `listCursors` per page. |
 | `client.readChanges(address, cursor)` | Drains **one page** of events from `cursor` and returns a `ChangeFeedPage` carrying `events`, `nextCursor`, `hasMore`, and `terminal` flags. |
 | `CursorExpiredException` | Thrown when the SDK detects that a cursor can no longer be honoured (provider trimmed events, client-side 24h age cap, malformed/wrong-provider/wrong-resource token). |
 
 Cursors are **opaque to your application**. Persist them as the
-`String` returned by `cursor.toToken()` and restore them with
-`ChangeFeedCursor.fromToken(String)` — do not introspect the token
+`String` returned by `cursor.toToken(serialize)` and restore them with
+`ChangeFeedCursor.fromToken(token, deserialize)` — do not introspect the token
 structure.
 
 Check capability before you call:
@@ -1431,7 +1608,7 @@ while (true) {
     }
 
     cursor = page.nextCursor();
-    persist(cursor.toToken()); // save after every successful batch
+    persist(cursor.toToken(serialize)); // save after every successful batch
 
     if (!page.hasMore()) {
         // Caught up. Sleep briefly to avoid hot-spinning the provider.
@@ -1442,18 +1619,21 @@ while (true) {
 
 ### Persisting cursors across restarts
 
+Use the `serialize` and `deserialize` functions from
+[application-owned JSON processing](#application-owned-json-processing).
+
 `ChangeFeedCursor` is engineered so a single `String` is the complete state.
-Persist `cursor.toToken()` after **every successful** batch — typically in the
+Persist `cursor.toToken(serialize)` after **every successful** batch — typically in the
 same transaction as the downstream side-effect to guarantee at-least-once
 delivery:
 
 ```java
-String token = cursor.toToken();
+String token = cursor.toToken(serialize);
 saveTokenToDurableStore(workerId, token);
 
 // On restart:
 ChangeFeedCursor restored = ChangeFeedCursor.fromToken(
-        loadTokenFromDurableStore(workerId));
+        loadTokenFromDurableStore(workerId), deserialize);
 ```
 
 The token carries:
@@ -1522,7 +1702,7 @@ while (!Thread.currentThread().isInterrupted()) {
     ChangeFeedPage page = client.readChanges(address, cursor);
     for (ChangeEvent ev : page.events()) apply(ev);
     cursor = page.nextCursor();
-    persistPerWorker(workerId, cursor.toToken());
+    persistPerWorker(workerId, cursor.toToken(serialize));
     if (!page.hasMore()) Thread.sleep(500);
 }
 ```

@@ -108,9 +108,15 @@ mvn test -pl multiclouddb-conformance -Dtest=SpannerConformanceTest
 
 - **Java 17** language level across all modules.
 - Follow standard Java naming conventions.
-- Follow each surface's ownership contract: point-read/feed containers are
-  detached and mutable; QueryPage is shallowly read-only. Do not impose a
-  universal recursive snapshot or read-only policy on document Maps.
+- Preserve the document ownership contracts:
+  - Write operations must not modify caller-provided Maps or Lists, or retain
+    references to them after the synchronous call returns. Callers must not
+    modify these inputs while the call is in progress.
+  - Point-read and change-feed results must be detached from provider-owned
+    data so callers can modify them without affecting SDK or provider state.
+  - QueryPage must expose an unmodifiable list and unmodifiable top-level
+    row Maps; nested Maps and Lists remain mutable.
+  See [the user guide](guide.md#application-owned-mapping) for usage details.
 - Avoid Jackson or provider-specific types on the public API surface.
 - Keep the public API surface minimal.
 - Provider adapters must not bleed provider-specific details into the portable
