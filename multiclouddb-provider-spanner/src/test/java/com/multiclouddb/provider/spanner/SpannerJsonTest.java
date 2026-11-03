@@ -67,6 +67,29 @@ class SpannerJsonTest {
     }
 
     @Test
+    void metadataNumbersMatchReleasedLexicalLimitsWithoutChangingSpelling() throws Exception {
+        var released = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (String token : List.of("1".repeat(1000), "-" + "1".repeat(1000),
+                "0." + "9".repeat(1000), "-0." + "9".repeat(1000),
+                "1" + "0".repeat(998) + "e+1", "1e+" + "0".repeat(998) + "1",
+                "2.00", "1e+03", "-0", "0e+1")) {
+            String json = "[" + token + "]";
+            assertEquals(List.of(token), Arrays.asList(released.readValue(json, String[].class)));
+            assertEquals(List.of(token), SpannerJson.fieldNames(json));
+        }
+        for (String token : List.of("1".repeat(1001), "-" + "1".repeat(1001),
+                "0." + "9".repeat(1001), "-0." + "9".repeat(1001),
+                "1" + "0".repeat(999) + "e+1", "1e+" + "0".repeat(999) + "1")) {
+            String json = "[\"kept\"," + token + "]";
+            assertThrows(IOException.class, () -> released.readValue(json, String[].class));
+            assertThrows(IOException.class, () -> SpannerJson.fieldNames(json));
+        }
+        String text = "1".repeat(1001);
+        assertEquals(List.of(text), SpannerJson.fieldNames("[\"" + text + "\"]"),
+                "numeric-looking strings are not numeric tokens");
+    }
+
+    @Test
     void readsPastRemovedModelDepthButRetainsNativeParserLimit() throws Exception {
         for (int depth : List.of(256, 1000)) {
             Object arrays = SpannerJson.read("[".repeat(depth) + "0" + "]".repeat(depth));

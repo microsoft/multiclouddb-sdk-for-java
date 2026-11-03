@@ -15,6 +15,32 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class JsonSupportTest {
     @Test
+    void sequentialListsDetachInOrderWithoutIndexedReadsAndStillRejectCycles() throws IOException {
+        var source = new java.util.LinkedList<Object>() {
+            @Override
+            public Object get(int index) {
+                throw new AssertionError("Sequential list must not be accessed by index");
+            }
+        };
+        var shared = new java.util.LinkedList<Object>(List.of("nested"));
+        for (int i = 0; i < 2048; i++) source.add(i);
+        source.add(shared);
+        source.add(null);
+        source.add(shared);
+        List<?> result = assertInstanceOf(List.class, JsonSupport.read("[]", (s, t) -> source));
+        assertEquals(2051, result.size());
+        for (int i = 0; i < 2048; i++) assertEquals(i, result.get(i));
+        assertEquals(List.of("nested"), result.get(2048));
+        assertNull(result.get(2049));
+        assertEquals(List.of("nested"), result.get(2050));
+        assertNotSame(result.get(2048), result.get(2050));
+        shared.clear();
+        assertEquals(List.of("nested"), result.get(2048));
+        source.add(source);
+        assertThrows(IllegalStateException.class, () -> JsonSupport.read("[]", (s, t) -> source));
+    }
+
+    @Test
     void compatibilityProfilePreservesStringContentAndRejectsUnsupportedSyntax() throws IOException {
         assertEquals("\uFEFF", JsonSupport.read("\"\\uFEFF\"", TestJson.DESERIALIZE));
         assertThrows(IOException.class, () -> JsonSupport.read("\"raw\ncontrol\"", TestJson.DESERIALIZE));

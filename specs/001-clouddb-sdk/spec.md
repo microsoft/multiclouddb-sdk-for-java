@@ -1082,7 +1082,7 @@ The following operators and functions form the portable query subset, available 
 - **SC-020**: A query specifying ORDER BY with a descending sort direction returns items in reverse order on all providers that support ORDER BY. Providers that do not support ORDER BY produce a clear, actionable error.
 - **SC-021**: A document created with a TTL of T seconds is automatically removed after approximately T seconds on all providers that support row-level TTL.
 - **SC-022**: Reading a document returns write timestamp metadata on all providers that support it, enabling applications to determine data freshness within 1 second of accuracy.
-- **SC-023**: A document within the SDK's uniform size limit can be stored and retrieved identically on all supported providers. A document exceeding the uniform limit is rejected with a clear, consistent error on every provider, regardless of individual provider native limits.
+- **SC-023**: Supported inputs at or below 399 KiB (408,576 logical JSON bytes) pass SDK size validation on all providers; native schema/item limits and numeric behavior still apply, so this is not a native-fit or identical-persistence guarantee. Inputs exceeding the logical limit are rejected consistently before provider delegation.
 - **SC-024**: When a provider-specific quota limit is reached (e.g., partition size exceeded), the SDK surfaces a provider-neutral error with clear categorization and actionable guidance, consistent across all providers.
 - **SC-025**: Every Java source file (main and test) across all modules carries the standard Microsoft copyright header (`// Copyright (c) Microsoft Corporation. All rights reserved.` / `// Licensed under the MIT License.`) as its first two lines. A `LICENSE` file exists at the repository root with the full MIT license text. Both are verifiable by inspection of any file in the repository.
 - **SC-026**: A change feed consumer can receive a chronologically ordered stream of create and update events from a collection on all providers that support change feed, by changing configuration only.
@@ -1256,7 +1256,7 @@ This checklist is used to accept the feature as “done” at the spec level.
 
 ### Uniform Document Size and Quota Limits
 
-- [ ] A document within the SDK's uniform size limit is accepted and persisted on every supported provider.
+- [ ] Supported inputs at or below 399 KiB (408,576 logical JSON bytes) pass SDK size validation on every provider; native schema/item limits and numeric behavior remain applicable, without a native-fit or identical-persistence guarantee.
 - [ ] A document exceeding the SDK's uniform size limit is rejected with a clear, consistent error on every provider, even if the provider's native limit is larger.
 - [ ] The SDK's uniform document size limit and quota limits are exposed programmatically for application pre-validation.
 - [ ] When a provider-specific quota limit is reached, the SDK surfaces a provider-neutral error with clear categorization and actionable guidance.

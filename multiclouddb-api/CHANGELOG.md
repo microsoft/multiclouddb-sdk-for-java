@@ -17,6 +17,9 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - **Breaking:** Replace Jackson payload types with Map/Object in point-read
   and change-feed results; applications own object mapping. Cursor persistence
   now requires explicit JSON callbacks, retaining existing JSON token compatibility.
+  Writes reject null roots, non-finite numbers and formerly implicitly serialized
+  values outside the supported Map/List/scalar vocabulary; applications map them
+  explicitly and declare their own Jackson dependencies/JPMS requirements if used.
   See the [migration guide](../docs/guide.md#migrating-from-beta2).
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 

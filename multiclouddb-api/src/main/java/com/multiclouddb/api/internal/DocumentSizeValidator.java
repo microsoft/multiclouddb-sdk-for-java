@@ -36,11 +36,11 @@ public final class DocumentSizeValidator {
      * @param document  the document to validate
      * @param operation the operation name used for error reporting
      * @throws MulticloudDbException with category {@link MulticloudDbErrorCategory#INVALID_REQUEST}
-     *                               if the document exceeds the size limit
+     *                               if the document is null, unsupported, or exceeds the size limit
      */
     public static void validate(Map<String, Object> document, String operation) {
         if (document == null) {
-            return;
+            throw invalid("Document must not be null.", operation);
         }
         try {
             DocumentJsonSize.measure(document, MAX_BYTES);

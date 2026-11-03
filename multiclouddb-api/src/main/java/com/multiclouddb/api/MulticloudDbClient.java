@@ -25,7 +25,9 @@ import java.util.Map;
  * Write documents contain string-keyed Maps, Lists, Strings, Booleans,
  * {@code null}, and exactly Byte, Short, Integer, Long, Float, Double,
  * java.math.BigInteger or java.math.BigDecimal numbers. Floating-point numbers
- * must be finite. Cycles, null/non-string keys, arrays, sets, arbitrary Java
+ * must be finite. A null document root is rejected with {@code INVALID_REQUEST}
+ * before provider delegation by create, update and upsert; empty Maps and
+ * nested null values remain valid. Cycles, null/non-string keys, arrays, sets, arbitrary Java
  * objects and other Number implementations are rejected with
  * {@link MulticloudDbErrorCategory#INVALID_REQUEST} before native I/O.
  * Shared acyclic subtrees are permitted. Applications explicitly map their

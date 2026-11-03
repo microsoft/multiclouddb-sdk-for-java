@@ -46,6 +46,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class SpannerRowMapperTest {
     @Test
+    void overLimitNumericMetadataRetainsUnlistedAndNullColumns() {
+        Struct row = Struct.newBuilder().set("data").to("[\"kept\"," + "1".repeat(1001) + "]")
+                .set("kept").to("a").set("unlisted").to("b").set("missing").to((String) null).build();
+        try (ResultSet rs = singleRow(row.getType(), row)) {
+            Map<String, Object> mapped = SpannerRowMapper.toMap(rs);
+            assertEquals("a", mapped.get("kept"));
+            assertEquals("b", mapped.get("unlisted"));
+            assertTrue(mapped.containsKey("missing"));
+            assertNull(mapped.get("missing"));
+            assertFalse(mapped.containsKey("data"));
+        }
+    }
+
+    @Test
     void malformedUnicodeRetainsMarkedNativeJsonAndMetadataFallbacks() {
         for (String invalid : List.of("\ud800", "\udc00", "\\ud800", "\\udc00")) {
             String json = "{\"s\":\"" + invalid + "\"}";

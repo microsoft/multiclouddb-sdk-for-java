@@ -89,6 +89,18 @@ class SpannerChangeFeedReaderTest {
     }
 
     @Test
+    void overLimitNumericMetadataKeepsUnlistedFieldsBeforeInt64Normalization() throws Exception {
+        String json = SpannerJson.write(Map.of("data", "[\"kept\"," + "1".repeat(1001) + "]",
+                "kept", "a", "unlisted", "b", "v", "2"));
+        for (String operation : List.of("INSERT", "UPDATE", "DELETE")) {
+            assertEquals(Map.of("kept", "a", "unlisted", "b", "v", "2"),
+                    readValues(operation, json, json).data());
+            assertEquals(Map.of("kept", "a", "unlisted", "b", "v", 2L),
+                    readValues(operation, json, json, List.of(column("v", "INT64"))).data());
+        }
+    }
+
+    @Test
     void strictUnicodeRetainsImageMetadataAndEmbeddedMarkerPolicies() throws Exception {
         String valid = "\uD55C\uAE00\uD83D\uDE00";
         assertEquals(Map.of("s", valid), readValues("INSERT", "{\"s\":\"" + valid + "\"}", null).data());

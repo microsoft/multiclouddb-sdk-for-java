@@ -11,6 +11,7 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 - Use detached Maps for Cosmos writes and point reads, and Object change-feed
   payloads with explicit presence; native Cosmos serialization remains.
+  Common write validation now rejects null document roots before native I/O.
   **Breaking result-type migration:** see the [migration guide](../docs/guide.md#migrating-from-beta2).
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 - Cosmos clients now always use Gateway mode with HTTP/2 enabled. Upgraded

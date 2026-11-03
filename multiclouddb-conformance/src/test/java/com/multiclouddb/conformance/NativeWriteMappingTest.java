@@ -166,7 +166,8 @@ class NativeWriteMappingTest {
                     var before = new LinkedHashMap<>(input);
                     for (var key : KEYS) for (var operationOptions : OPTIONS) {
                         for (String op : List.of("create", "update", "upsert")) {
-                            for (String metadata : Arrays.asList("[\"prior\",\"n0\"]", "[]", "malformed", "", "  ", null)) {
+                            for (String metadata : Arrays.asList("[\"prior\",\"n0\"]", "[]", "malformed",
+                                    "[\"prior\"," + "1".repeat(1001) + "]", "", "  ", null)) {
                                 clearInvocations(sdk, runner, txn);
                                 prior.set(Struct.newBuilder().set("data").to(metadata).build());
                                 write(client, op, key, input, operationOptions);

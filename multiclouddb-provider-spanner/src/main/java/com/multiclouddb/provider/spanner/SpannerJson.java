@@ -58,23 +58,8 @@ final class SpannerJson {
                 return text;
             case NUMBER:
                 String token = reader.nextString();
-                // Released Jackson counts digits rather than punctuation. Its
-                // zero-leading slow path counts an absent fraction/exponent as -1.
-                int digits = 0;
-                for (int i = 0; i < token.length(); i++) {
-                    if (token.charAt(i) >= '0' && token.charAt(i) <= '9') digits++;
-                }
-                boolean fractional = token.indexOf('.') >= 0;
-                boolean exponential = token.indexOf('e') >= 0 || token.indexOf('E') >= 0;
-                int firstDigit = token.startsWith("-") ? 1 : 0;
-                if ((fractional || exponential) && token.charAt(firstDigit) == '0') {
-                    if (!fractional) digits--;
-                    if (!exponential) digits--;
-                }
-                if (digits > 1000) {
-                    throw new IOException("JSON number limit.");
-                }
-                if (fractional || exponential) {
+                validateNumberLength(token);
+                if (token.indexOf('.') >= 0 || token.indexOf('e') >= 0 || token.indexOf('E') >= 0) {
                     return Double.valueOf(token);
                 }
                 BigInteger integer = new BigInteger(token);
@@ -105,7 +90,12 @@ final class SpannerJson {
             reader.beginArray();
             while (reader.hasNext()) {
                 switch (reader.peek()) {
-                    case STRING, NUMBER:
+                    case NUMBER:
+                        String token = reader.nextString();
+                        validateNumberLength(token);
+                        names.add(token);
+                        break;
+                    case STRING:
                         names.add(reader.nextString());
                         break;
                     case BOOLEAN:
@@ -122,6 +112,23 @@ final class SpannerJson {
             reader.endArray();
             return names;
         }
+    }
+
+    private static void validateNumberLength(String token) throws IOException {
+        // Released Jackson counts digits rather than punctuation. Its
+        // zero-leading slow path counts an absent fraction/exponent as -1.
+        int digits = 0;
+        for (int i = 0; i < token.length(); i++) {
+            if (token.charAt(i) >= '0' && token.charAt(i) <= '9') digits++;
+        }
+        boolean fractional = token.indexOf('.') >= 0;
+        boolean exponential = token.indexOf('e') >= 0 || token.indexOf('E') >= 0;
+        int firstDigit = token.startsWith("-") ? 1 : 0;
+        if ((fractional || exponential) && token.charAt(firstDigit) == '0') {
+            if (!fractional) digits--;
+            if (!exponential) digits--;
+        }
+        if (digits > 1000) throw new IOException("JSON number limit.");
     }
 
     static Map<String, Object> object(Map<?, ?> value) {

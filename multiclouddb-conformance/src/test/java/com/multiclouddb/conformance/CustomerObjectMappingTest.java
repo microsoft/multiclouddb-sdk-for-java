@@ -49,6 +49,20 @@ class CustomerObjectMappingTest {
     @JsonIgnoreProperties(ignoreUnknown = true)
     record Batch<T>(String batchName, LocalDate createdOn, List<T> items, int quantity, double ratio) {}
 
+    @Test
+    void cosmosValidationRejectsInvalidWritesBeforeNativeAccess() throws Exception {
+        var sdk = mock(com.azure.cosmos.CosmosClient.class);
+        try (var builders = mockConstruction(com.azure.cosmos.CosmosClientBuilder.class,
+                withSettings().defaultAnswer(RETURNS_SELF),
+                (builder, context) -> when(builder.buildClient()).thenReturn(sdk));
+             MulticloudDbClient client = MulticloudDbClientFactory.create(MulticloudDbClientConfig.builder()
+                     .provider(ProviderId.COSMOS)
+                     .connection(Map.of("endpoint", "https://example.documents.azure.com:443/", "key", "dGVzdA=="))
+                     .build())) {
+            assertValidationBeforeNativeOperation(client, sdk);
+        }
+    }
+
 
     @Test
     void dynamoCustomerMappingThroughActualClientAndProvider() throws Exception {
@@ -242,6 +256,10 @@ class CustomerObjectMappingTest {
         detached.clear();
         assertEquals(List.of("original"), client.read(ADDRESS, KEY).document().get("nested"),
                 "returned containers must be mutable and detached from the native response");
+        R beforeNull = captured.get();
+        assertThrows(MulticloudDbException.class, () -> client.upsert(ADDRESS, KEY, null));
+        assertSame(beforeNull, captured.get(), "null upsert must not issue a replacement write");
+        assertEquals(List.of("original"), client.read(ADDRESS, KEY).document().get("nested"));
     }
 
     private static void assertNeutralFields(Map<String, Object> expected, Map<String, Object> actual) {
@@ -279,6 +297,19 @@ class CustomerObjectMappingTest {
 
     private static void assertValidationBeforeNativeOperation(MulticloudDbClient client, Object nativeBoundary) {
         clearInvocations(nativeBoundary);
+        for (String operation : List.of("create", "update", "upsert")) {
+            MulticloudDbException failure = assertThrows(MulticloudDbException.class, () -> {
+                switch (operation) {
+                    case "create" -> client.create(ADDRESS, KEY, null);
+                    case "update" -> client.update(ADDRESS, KEY, null);
+                    case "upsert" -> client.upsert(ADDRESS, KEY, null);
+                    default -> throw new AssertionError(operation);
+                }
+            });
+            assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, failure.error().category());
+            assertEquals(operation, failure.error().operation());
+            verifyNoInteractions(nativeBoundary);
+        }
         Map<String, Object> oversized = Map.of("body", "x".repeat(400 * 1024));
         assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, assertThrows(MulticloudDbException.class,
                 () -> client.upsert(ADDRESS, KEY, oversized)).error().category());

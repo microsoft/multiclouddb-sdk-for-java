@@ -103,9 +103,10 @@ public final class JsonSupport {
                 var copy = new ArrayList<Object>(java.util.Collections.nCopies(list.size(), null));
                 step.accept().accept(copy);
                 pending.push(new Copy(value, ignored -> {}, true));
-                for (int i = list.size() - 1; i >= 0; i--) {
-                    int index = i;
-                    pending.push(new Copy(list.get(i), item -> copy.set(index, item), false));
+                var iterator = list.listIterator(list.size());
+                while (iterator.hasPrevious()) {
+                    int index = iterator.previousIndex();
+                    pending.push(new Copy(iterator.previous(), item -> copy.set(index, item), false));
                 }
             } else if (value == null || value instanceof String || value instanceof Boolean
                     || value instanceof Byte || value instanceof Short || value instanceof Integer

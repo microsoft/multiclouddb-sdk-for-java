@@ -94,6 +94,89 @@ public abstract class CrudConformanceTests {
 
     // ── CRUD tests ────────────────────────────────────────────────────────────
 
+    @Test
+    void invalidNeutralInputsFailWithOperationSpecificErrors() {
+        MulticloudDbKey key = MulticloudDbKey.of("conf-neutral-invalid", UUID.randomUUID().toString());
+        Map<String, Object> cycle = new LinkedHashMap<>();
+        cycle.put("self", cycle);
+        Map<Object, Object> nullKey = new LinkedHashMap<>();
+        nullKey.put(null, "value");
+        List<Object> cyclicList = new java.util.ArrayList<>();
+        cyclicList.add(cyclicList);
+        List<Map<String, Object>> invalid = new java.util.ArrayList<>();
+        invalid.add(null);
+        invalid.add(cycle);
+        for (Object value : List.of(Set.of("x"), new Object[]{"x"}, new Object(),
+                Double.NaN, Double.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY,
+                Map.of(1, "value"), nullKey, cyclicList, new java.util.concurrent.atomic.AtomicInteger(1))) {
+            invalid.add(Map.of("nested", List.of(value)));
+        }
+        for (String operation : List.of("create", "update", "upsert")) {
+            for (Map<String, Object> document : invalid) {
+                MulticloudDbException failure = assertThrows(MulticloudDbException.class,
+                        () -> write(operation, key, document));
+                assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, failure.error().category());
+                assertEquals(operation, failure.error().operation());
+            }
+        }
+    }
+
+    @Test
+    void emptyMapsNestedNullsAndDetachedMutableResultsRemainSupported() {
+        MulticloudDbKey key = MulticloudDbKey.of("conf-neutral-ownership", UUID.randomUUID().toString());
+        try {
+            client.create(getAddress(), key, Map.of());
+            assertNotNull(client.read(getAddress(), key));
+            client.update(getAddress(), key, Map.of());
+            client.upsert(getAddress(), key, Map.of());
+            assertNotNull(client.read(getAddress(), key));
+            for (String operation : List.of("create", "update", "upsert")) {
+                if (operation.equals("create")) safeDelete(key);
+                Map<String, Object> inner = new LinkedHashMap<>();
+                inner.put("nullable", null);
+                inner.put("text", "original");
+                List<Object> nested = new java.util.ArrayList<>(List.of(inner));
+                Map<String, Object> input = new LinkedHashMap<>(Map.of("arrayField", nested));
+                write(operation, key, input);
+                assertEquals("original", inner.get("text"));
+                assertTrue(inner.containsKey("nullable"));
+                inner.clear();
+                nested.clear();
+                input.clear();
+                Map<String, Object> first = client.read(getAddress(), key).document();
+                List<?> returned = org.junit.jupiter.api.Assertions.assertInstanceOf(List.class, first.get("arrayField"));
+                Map<?, ?> returnedInner = org.junit.jupiter.api.Assertions.assertInstanceOf(Map.class, returned.get(0));
+                assertEquals("original", returnedInner.get("text"));
+                assertTrue(returnedInner.containsKey("nullable"));
+                assertNull(returnedInner.get("nullable"));
+                returnedInner.clear();
+                returned.clear();
+                first.clear();
+                Map<String, Object> second = client.read(getAddress(), key).document();
+                List<?> again = org.junit.jupiter.api.Assertions.assertInstanceOf(List.class, second.get("arrayField"));
+                Map<?, ?> againInner = org.junit.jupiter.api.Assertions.assertInstanceOf(Map.class, again.get(0));
+                assertTrue(againInner.containsKey("nullable"));
+                assertNull(againInner.get("nullable"));
+                assertEquals("original", againInner.get("text"));
+                assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, assertThrows(MulticloudDbException.class,
+                        () -> client.upsert(getAddress(), key, null)).error().category());
+                assertEquals(second, client.read(getAddress(), key).document(),
+                        "rejected null upsert must leave the stored document unchanged");
+            }
+        } finally {
+            safeDelete(key);
+        }
+    }
+
+    private void write(String operation, MulticloudDbKey key, Map<String, Object> document) {
+        switch (operation) {
+            case "create" -> client.create(getAddress(), key, document);
+            case "update" -> client.update(getAddress(), key, document);
+            case "upsert" -> client.upsert(getAddress(), key, document);
+            default -> throw new AssertionError(operation);
+        }
+    }
+
     @Test @Order(1)
     @DisplayName("upsert + read roundtrip")
     void upsertAndRead() {

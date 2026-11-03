@@ -550,7 +550,7 @@ Keep these points in mind:
 
 #### Manual mapping
 
-The JDK-only [PlainCustomerMapping example](../multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/PlainCustomerMapping.java)
+The JDK-only [PlainCustomerMapping example](https://github.com/microsoft/multiclouddb-sdk-for-java/blob/b2c58ff1a277d8918b4497bea699410c3a2ad746/multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/PlainCustomerMapping.java)
 illustrates handwritten mapping:
 
 ```java
@@ -564,7 +564,9 @@ PlainCustomerMapping.Customer restored = mapping.fromMap(result.document());
 
 #### Supported values and numeric precision
 
-Inputs allow non-null string-keyed Maps, ordered Lists, Strings, Booleans, null,
+The document root must be a non-null Map; create, update and upsert reject a null
+root with `INVALID_REQUEST` before native I/O. Empty Maps and nested null values
+remain supported. Values allow non-null string-keyed Maps, ordered Lists, Strings, Booleans, null,
 and exactly Byte, Short, Integer, Long, Float, Double, BigInteger and BigDecimal.
 These are accepted Java input types, not a guarantee of identical numeric
 precision or returned Java types across providers. If exact large integer or
@@ -600,6 +602,19 @@ Against released API **0.1.0-beta.2**, write signatures remain Maps,
 `ChangeEvent.data()` changes from JsonNode to Object. A missing point read still
 returns null. QueryPage remains `List<Map<String, Object>>`, including nested
 scalar/array values and existing unsupported top-level result errors.
+
+**Breaking input validation:** values previously implicitly serialized by a
+provider mapper (sets, arrays, POJOs, enums, UUIDs, dates and custom Number
+implementations) and non-finite floating-point values are now rejected with
+`INVALID_REQUEST`. Explicitly map them to the supported Map/List/scalar vocabulary
+in the application; there is no implicit `toString()` fallback. A null document
+root is also invalid for create/update/upsert; empty Maps and nested nulls remain valid.
+
+The API no longer supplies Jackson transitively for compilation or through JPMS.
+Applications that use Jackson must declare their own Jackson dependencies and
+appropriate `requires` directives (for example, `requires com.fasterxml.jackson.databind;`).
+Spanner now declares its explicit internal Gson 2.15 dependency; this does not add a
+JSON-library requirement to the common API.
 
 Cursor persistence now takes explicit callbacks: `cursor.toToken(serialize)`
 and `ChangeFeedCursor.fromToken(token, deserialize)`. Existing v1 JSON tokens
