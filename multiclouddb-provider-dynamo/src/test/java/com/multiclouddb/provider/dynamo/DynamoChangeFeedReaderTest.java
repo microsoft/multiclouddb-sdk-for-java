@@ -94,19 +94,18 @@ class DynamoChangeFeedReaderTest {
         var current = readRecord(record(OperationType.INSERT, newer, older));
         assertEquals(ChangeType.CREATE, current.type());
         assertEquals(Map.of("nested", java.util.Arrays.asList(null, Map.of("n", 2))), current.data());
-        assertTrue(current.hasData());
+        assertNotNull(current.data());
         assertEquals(current.data(), readRecord(record(OperationType.MODIFY, newer, older)).data());
         var deleted = readRecord(record(OperationType.REMOVE, newer, older));
         assertEquals(ChangeType.DELETE, deleted.type());
         assertEquals(Map.of("old", true), deleted.data());
         assertEquals(Map.of(), readRecord(record(OperationType.MODIFY, Map.of(), older)).data());
         org.junit.jupiter.api.Assertions.assertNull(readRecord(record(OperationType.MODIFY, null, older)).data());
-        assertFalse(readRecord(record(OperationType.MODIFY, null, older)).hasData());
         Record absentSdkImages = Record.builder().eventName(OperationType.MODIFY).dynamodb(
                 StreamRecord.builder().keys(Map.of("partitionKey", AttributeValue.builder().s("tenant").build()))
                         .sequenceNumber("1").build()).build();
-        assertEquals(Map.of(), readRecord(absentSdkImages).data(),
-                "the native SDK represents absent image maps as empty maps, not Java null");
+        org.junit.jupiter.api.Assertions.assertNull(readRecord(absentSdkImages).data(),
+                "native hasNewImage distinguishes an absent auto-constructed map from a supplied empty map");
         AttributeValue binary = AttributeValue.builder()
                 .b(software.amazon.awssdk.core.SdkBytes.fromByteArray(new byte[]{1, 2})).build();
         assertEquals(java.util.Collections.singletonMap("bytes", null),
@@ -118,7 +117,7 @@ class DynamoChangeFeedReaderTest {
     void retainsReleasedDepthAndNumericParsingFailuresWithoutModelCaps() {
         AttributeValue deep = AttributeValue.builder().s("private-value").build();
         for (int i = 0; i < 128; i++) deep = AttributeValue.builder().l(deep).build();
-        assertTrue(readRecord(record(OperationType.MODIFY, Map.of("nested", deep), Map.of())).hasData());
+        assertNotNull(readRecord(record(OperationType.MODIFY, Map.of("nested", deep), Map.of())).data());
         for (AttributeValue invalid : List.of(AttributeValue.fromN("1E+3"),
                 AttributeValue.fromN("9223372036854775808"))) {
             org.junit.jupiter.api.Assertions.assertThrows(NumberFormatException.class,
@@ -128,16 +127,32 @@ class DynamoChangeFeedReaderTest {
 
     private static Record record(OperationType operation, Map<String, AttributeValue> newer,
                                  Map<String, AttributeValue> older) {
-        StreamRecord data = mock(StreamRecord.class);
-        when(data.keys()).thenReturn(Map.of("partitionKey", AttributeValue.builder().s("tenant").build(),
-                "sortKey", AttributeValue.builder().s("record").build()));
-        when(data.sequenceNumber()).thenReturn("1");
-        when(data.newImage()).thenReturn(newer);
-        when(data.oldImage()).thenReturn(older);
-        Record record = mock(Record.class);
-        when(record.eventName()).thenReturn(operation);
-        when(record.dynamodb()).thenReturn(data);
-        return record;
+        StreamRecord data = StreamRecord.builder()
+                .keys(Map.of("partitionKey", AttributeValue.fromS("tenant"), "sortKey", AttributeValue.fromS("record")))
+                .sequenceNumber("1").approximateCreationDateTime(java.time.Instant.EPOCH)
+                .newImage(newer).oldImage(older).build();
+        return Record.builder().eventName(operation).eventID("event-1").dynamodb(data).build();
+    }
+
+    @Test
+    void nativePresenceDistinguishesMissingEmptyAndNullValuedImagesForEveryOperation() {
+        for (OperationType operation : List.of(OperationType.INSERT, OperationType.MODIFY, OperationType.REMOVE)) {
+            for (Map<String, AttributeValue> image : java.util.Arrays.<Map<String, AttributeValue>>asList(
+                    null, Map.of(), Map.of("nullable", AttributeValue.fromNul(true)))) {
+                Record record = record(operation, operation == OperationType.REMOVE ? Map.of("other", AttributeValue.fromS("v")) : image,
+                        operation == OperationType.REMOVE ? image : Map.of("other", AttributeValue.fromS("v")));
+                assertEquals(image != null, operation == OperationType.REMOVE
+                        ? record.dynamodb().hasOldImage() : record.dynamodb().hasNewImage());
+                ChangeEvent event = readRecord(record);
+                assertEquals(operation == OperationType.INSERT ? ChangeType.CREATE
+                        : operation == OperationType.REMOVE ? ChangeType.DELETE : ChangeType.UPDATE, event.type());
+                assertEquals(com.multiclouddb.api.MulticloudDbKey.of("tenant", "record"), event.key());
+                assertEquals(java.time.Instant.EPOCH, event.commitTimestamp());
+                assertEquals("event-1", event.providerEventId());
+                assertEquals(image == null ? null : image.isEmpty() ? Map.of()
+                        : java.util.Collections.singletonMap("nullable", null), event.data());
+            }
+        }
     }
 
     private static ChangeEvent readRecord(Record record) {

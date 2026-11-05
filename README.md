@@ -121,9 +121,9 @@ mvn clean install -DskipTests
 
 ### 3. Write portable code
 
-This example targets the coordinated development Map API. Released beta
-callers must migrate and recompile; see
-[application mapping, dependencies and migration](docs/guide.md#application-owned-mapping).
+This example uses the Map-based API. See
+[application mapping and migration](docs/guide.md#application-owned-mapping)
+for mapping examples, dependency requirements, and migration guidance.
 The API runtime is Jackson-free; native providers may still depend on Jackson.
 
 ```java
@@ -563,23 +563,17 @@ if (meta != null) {
 
 ## Document Size Enforcement
 
-All write operations are validated against a **399 KB** limit before any network
-call is made. Documents that exceed the limit are rejected with
-`MulticloudDbErrorCategory.INVALID_REQUEST`:
+The SDK no longer estimates or enforces a common document byte limit. Native
+SDKs/services decide size acceptance, so the same input can succeed on one
+provider and fail on another. Such failures may involve network calls and cost;
+do not blindly retry an unchanged oversized write.
 
-```java
-try {
-    client.create(address, key, largeDoc);
-} catch (MulticloudDbException e) {
-    if (e.error().category() == MulticloudDbErrorCategory.INVALID_REQUEST) {
-        System.out.println("Document exceeds 399 KB limit");
-    }
-}
-```
-
-The limit is 399 KB (not 400 KB) because providers inject additional fields
-before writing — see [Developer Guide](docs/guide.md#document-size-enforcement)
-for details.
+Create, update and upsert still validate neutral values and **32 nested Map/List
+levels below the root Map** before provider delegation. Root depth is zero;
+empty containers count and scalar values do not add a level. Passing these
+checks does not guarantee storage success. See the
+[Developer Guide](docs/guide.md#document-size-enforcement) for native accounting,
+partial-update limitations and the depth contract.
 
 ---
 

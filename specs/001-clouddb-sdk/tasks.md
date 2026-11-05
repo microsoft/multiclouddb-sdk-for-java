@@ -684,18 +684,28 @@ RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use sing
 
 ---
 
-## Phase 17: User Story 7 — Uniform Document Size and Quota Limits (Priority: P2)
+## Phase 17: User Story 7 — Exact Write Validation and Native Size Limits (Priority: P2)
 
-**Goal**: The SDK enforces a 400 KB maximum document size across all providers before sending any I/O. Oversized documents are rejected with `INVALID_REQUEST`.
+**Goal**: Replace the earlier common size estimate with exact neutral-input and
+32-level nesting validation; native SDKs/services determine size acceptance.
+The former 400 KB task premise is superseded, not a future offload/chunk threshold.
 
-- [x] T158 [P] [US7] Create `DocumentSizeValidator` utility class with `MAX_BYTES = 400 * 1024` and `validate(JsonNode document, String operation)` method that serializes to UTF-8 bytes via `ObjectMapper.writeValueAsBytes()` and throws `MulticloudDbException(INVALID_REQUEST)` when byte length exceeds the limit.
-  File: `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DocumentSizeValidator.java`
+- [x] T158 [P] [US7] Replace `DocumentSizeValidator` and `DocumentJsonSize` with
+  internal `DocumentValidator`. Remove byte accounting and size-only normalization;
+  preserve type/key/finite/cycle validation with root depth zero, nested 32 accepted
+  and 33 rejected, empty containers counted, shared acyclic subtrees allowed.
+  File: `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DocumentValidator.java`
 
-- [x] T159 [US7] Update `DefaultMulticloudDbClient` to call `DocumentSizeValidator.validate(document, operation)` at the start of `create()` and `upsert()` before the provider delegation block.
+- [x] T159 [US7] Apply `DocumentValidator.validate(document, operation)` in
+  `create()`, `update()` and `upsert()` after closed-client checks and before
+  provider delegation, preserving non-retryable `INVALID_REQUEST` and enrichment.
   File: `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DefaultMulticloudDbClient.java`
 
-- [x] T160 [US7] Create `DocumentSizeConformanceTest.java` with tests: document within limit is accepted; document exceeding 400 KB is rejected on upsert with INVALID_REQUEST; document exceeding 400 KB is rejected on create with INVALID_REQUEST.
-  File: `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us7/DocumentSizeConformanceTest.java`
+- [x] T160 [US7] Replace size conformance with explicitly mocked SPI tests for all
+  providers and writes: root zero/31/32 accepted, 33 rejected without delegation,
+  former 399 KiB boundaries and larger valid inputs delegated. Native mapping
+  fixtures capture depths 31/32 and known native error normalization without cloud I/O.
+  File: `multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/us7/DocumentValidationConformanceTest.java`
 
 ---
 

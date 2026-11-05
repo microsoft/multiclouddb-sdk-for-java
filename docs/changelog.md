@@ -13,8 +13,6 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Added:**
 
-- Add explicit payload-presence tracking with `ChangeEvent.hasData()`.
-  ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 - Portable change-feed API in `com.multiclouddb.api.changefeed`: `ChangeFeedCursor` (opaque, persistable via `toToken(serialize)` / `fromToken(token, deserialize)` with a `now()` live-tip sentinel), `ChangeFeedPage` (events + `nextCursor` + `hasMore`/`terminal`), `ChangeEvent` (with stable `providerEventId` for dedup), `ChangeType`, and `CursorExpiredException`. Two new entry points on `MulticloudDbClient`: `listCursors(ResourceAddress)` and `readChanges(ResourceAddress, ChangeFeedCursor[, OperationOptions])`. Provider SPI methods default to `UNSUPPORTED_CAPABILITY` so existing adapters compile unchanged. The cursor wire format is opaque, version-tagged Base64URL JSON; the 24-hour portable baseline is enforced client-side on the token''s last-issued timestamp. `OperationOptions.timeout()` is not enforced on the change-feed path in this release.
 - New error category `MulticloudDbErrorCategory.CURSOR_EXPIRED` carrying a canonical `providerDetails.reason` set (`TOKEN_AGED_OUT`, `PROVIDER_TRIMMED`, `ITERATOR_EXPIRED`, `MALFORMED`, `VERSION_UNSUPPORTED`, `PROVIDER_MISMATCH`, `RESOURCE_MISMATCH`), exported as public `CursorTokenCodec.REASON_*` constants.
 - New error category `MulticloudDbErrorCategory.CLIENT_CLOSED` surfaced by a `DefaultMulticloudDbClient` post-close guard on every public entry point (replaces provider-specific `IllegalStateException` leaks). `MulticloudDbClient.close()` is now idempotent.
@@ -23,6 +21,25 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- Keep invalid cursor retention values out of error messages and sanitize runtime
+  failures while accessing callback results. Malformed retention fields retain
+  `MALFORMED`; callback contract/access failures use `IllegalStateException`
+  without original messages, causes or suppressed exceptions.
+  ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
+- Normalize unavailable change-feed images to `data() == null` rather than
+  synthesizing an empty object or returning a Cosmos transport envelope.
+  Alongside the JsonNode-to-Object migration, callers use `data() != null` for
+  payload availability; empty Maps and null-valued fields remain distinct.
+  The earlier API already allowed null data; this changes image normalization,
+  not whether null is legal. Event metadata remains available.
+  ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
+- **Breaking:** Remove the existing 399 KiB logical JSON size gate in favor of
+  native SDK/service size enforcement; identical input may succeed on one provider
+  and fail on another. Common create/update/upsert validation permits 32 nested
+  Map/List levels below the root Map (depth zero), with neutral-type, key,
+  finite-number and cycle checks retained. Cosmos HTTP 413 is normalized as
+  non-retryable `INVALID_REQUEST`.
+  ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 - **Breaking:** Replace Jackson payload types with Map/Object in point-read
   and change-feed results; applications own object mapping. Cursor persistence
   now requires explicit JSON callbacks, retaining existing JSON token compatibility.
@@ -83,7 +100,12 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 **Changed:**
 
 - Use detached Maps for Cosmos writes and point reads, and Object change-feed
-  payloads with explicit presence; native Cosmos serialization remains.
+  payloads with null meaning no available image; native Cosmos serialization remains.
+  Preserve supplied empty AVAD bodies and envelope/metadata identity fallback,
+  but do not expose the transport envelope as a missing image.
+  The API no longer supplies/pins application Jackson, but the native Cosmos
+  SDK still depends on Jackson. The resolved version depends on each
+  application's dependency management; this change does not add shading.
   Common write validation now rejects null document roots before native I/O.
   **Breaking result-type migration:** see the [migration guide](guide.md#migrating-from-beta2).
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
@@ -146,6 +168,8 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 - Map supported values directly to/from DynamoDB AttributeValue without Jackson
   trees, preserving existing numeric conversions and selected change-feed images.
+  Use native image-presence flags: absent images become null, supplied empty
+  images remain empty Maps, and native NULL attributes remain null-valued fields.
   Common write validation now rejects null document roots before native I/O.
   **Breaking result-type migration:** see the [migration guide](guide.md#migrating-from-beta2).
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
@@ -188,6 +212,9 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - Map values to Spanner typed mutations and detached row Maps, preserving
   existing storage formats and numeric conversions. Keep JSON processing
   internal to the provider and correct numeric lexical-length accounting.
+  Normalize missing/null change-feed images to null and respect capture mode:
+  NEW_VALUES/NEW_ROW deletes have no payload; collected empty images and
+  null-valued fields remain preserved.
   Add direct `com.google.code.gson:gson:2.15.0` and JPMS `requires com.google.gson`.
   Common write validation now rejects null document roots before native I/O.
   **Breaking result-type migration:** see the [migration guide](guide.md#migrating-from-beta2).

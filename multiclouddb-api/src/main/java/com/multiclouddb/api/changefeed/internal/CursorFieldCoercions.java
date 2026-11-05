@@ -5,9 +5,15 @@ package com.multiclouddb.api.changefeed.internal;
 
 import java.math.BigInteger;
 
-/** The v1 cursor field-coercion profile, independent of JSON syntax processing. */
-final class CursorJson {
-    private CursorJson() {}
+/**
+ * Text, int, long and retention-field coercions for the SDK v1 cursor envelope
+ * after an application JSON callback has decoded it. This is not a general JSON
+ * parser or value converter. Persisted tokens may be malformed or user-supplied;
+ * schema, version and age validation remain in the codec, and binding validation
+ * remains at the existing codec/client boundaries.
+ */
+final class CursorFieldCoercions {
+    private CursorFieldCoercions() {}
 
     static String text(Object value, String nullValue) {
         if (value == null) return nullValue;

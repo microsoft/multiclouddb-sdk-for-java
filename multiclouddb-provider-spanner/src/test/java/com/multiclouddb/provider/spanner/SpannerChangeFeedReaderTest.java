@@ -62,11 +62,10 @@ class SpannerChangeFeedReaderTest {
         assertEquals(ChangeType.DELETE, deleted.type());
         assertEquals(Map.of("old", true), deleted.data());
         assertNull(readValues("UPDATE", "null", null).data());
-        assertTrue(readValues("UPDATE", "null", null).hasData());
         assertEquals(Map.of("bytes", "AQI="),
                 readValues("UPDATE", "{\"bytes\":\"AQI=\"}", null).data(),
                 "native change-stream JSON text is not inferred to be binary");
-        assertEquals(Map.of(), readValues("UPDATE", null, null).data());
+        assertNull(readValues("UPDATE", null, null).data());
         assertEquals(Map.of(), readValues("UPDATE", "{}", older).data());
         assertEquals(Map.of("old", true), readValues("UPDATE", null, older).data());
     }
@@ -76,7 +75,7 @@ class SpannerChangeFeedReaderTest {
         for (int depth : List.of(256, 1000)) {
             String json = "{\"nested\":" + "[".repeat(depth - 1) + "null" + "]".repeat(depth - 1) + "}";
             ChangeEvent event = readValues("UPDATE", json, null);
-            assertTrue(event.hasData());
+            assertNotNull(event.data());
             Object value = org.junit.jupiter.api.Assertions.assertInstanceOf(Map.class, event.data()).get("nested");
             for (int i = 1; i < depth; i++) {
                 value = org.junit.jupiter.api.Assertions.assertInstanceOf(List.class, value).get(0);
@@ -110,7 +109,7 @@ class SpannerChangeFeedReaderTest {
             String json = "{\"s\":\"" + invalid + "\"}";
             ChangeEvent event = readValues("UPDATE", json, null);
             assertEquals(Map.of("raw", json), event.data());
-            assertTrue(event.hasData());
+            assertNotNull(event.data());
             assertSafePayloadFailure(() -> readValues("UPDATE", json, null, List.of(column("v", "INT64"))));
         }
         for (String invalid : List.of("\\ud800", "\\udc00")) {
@@ -228,7 +227,7 @@ class SpannerChangeFeedReaderTest {
                 readValues("INSERT", "{\"v\":null}", null, columns).data());
         assertNull(readValues("UPDATE", "null", null, columns).data());
         assertEquals(Map.of(), readValues("INSERT", "{}", "{\"v\":\"2\"}", columns).data());
-        assertEquals(Map.of(), readValues("UPDATE", null, null, columns).data());
+        assertNull(readValues("UPDATE", null, null, columns).data());
         assertEquals(Map.of("v", 2L),
                 readValues("UPDATE", null, "{\"v\":\"2\"}", columns).data());
         assertEquals(Map.of("v", 3L),
@@ -302,14 +301,63 @@ class SpannerChangeFeedReaderTest {
     }
 
     private static ChangeEvent readValues(String operation, String newer, String older, List<Struct> columns) {
+        return readValues(operation, newer, older, columns, null, false);
+    }
+
+    @Test
+    void captureModeSeparatesUncollectedImagesFromSuppliedEmptyPayloads() {
+        for (String mode : List.of("NEW_VALUES", "NEW_ROW", "OLD_AND_NEW_VALUES", "NEW_ROW_AND_OLD_VALUES")) {
+            boolean newOnly = mode.equals("NEW_VALUES") || mode.equals("NEW_ROW");
+            for (String operation : List.of("INSERT", "UPDATE", "DELETE")) {
+                for (String json : java.util.Arrays.asList(null, "null", "{}", "{\"nullable\":null}",
+                        "{\"v\":\"7\",\"data\":\"[\\\"v\\\"]\",\"stale\":true}", "{\"data\":\"[]\",\"stale\":true}",
+                        "[]", "\"scalar\"")) {
+                    boolean delete = operation.equals("DELETE");
+                    ChangeEvent event = readValues(operation, delete ? "{}" : json, delete ? json : "{}",
+                            List.of(column("v", "INT64")), mode, false);
+                    Object expected = json == null || json.equals("null") || delete && newOnly ? null
+                            : json.equals("{}") || json.startsWith("{\"data\":") ? Map.of()
+                            : json.equals("{\"nullable\":null}") ? java.util.Collections.singletonMap("nullable", null)
+                            : json.equals("[]") ? List.of()
+                            : json.equals("\"scalar\"") ? "scalar" : Map.of("v", 7L);
+                    // For UPDATE, collected old values remain the existing fallback for a SQL-null new image.
+                    if (operation.equals("UPDATE") && !newOnly && json == null) expected = Map.of();
+                    assertEquals(expected, event.data(), mode + "/" + operation + "/" + json);
+                    assertEquals(delete ? ChangeType.DELETE
+                            : operation.equals("INSERT") ? ChangeType.CREATE : ChangeType.UPDATE, event.type());
+                    assertEquals(com.multiclouddb.api.MulticloudDbKey.of("tenant", "record"), event.key());
+                    assertNotNull(event.commitTimestamp());
+                    assertTrue(event.providerEventId().startsWith("txn:"));
+                    assertTrue(event.providerEventId().endsWith(":1:0"));
+                }
+                assertNull(readValues(operation, null, null, List.of(), mode, true).data(),
+                        "missing value fields do not synthesize an empty payload");
+            }
+        }
+        assertNull(readValues("INSERT", null, "{\"old\":1}", List.of(), "OLD_AND_NEW_VALUES", false).data(),
+                "INSERT has no collected before-image");
+        assertNull(readValues("DELETE", "{\"new\":1}", null, List.of(), "OLD_AND_NEW_VALUES", false).data(),
+                "DELETE has no collected after-image");
+        assertEquals(Map.of("old", 1),
+                readValues("UPDATE", null, "{\"old\":1}", List.of(), "FUTURE_MODE", false).data(),
+                "unknown capture metadata retains the legacy field-selection fallback");
+    }
+
+    private static ChangeEvent readValues(String operation, String newer, String older, List<Struct> columns,
+                                          String captureType, boolean omitValueFields) {
         Timestamp now = Timestamp.now();
         String keys = "{\"partitionKey\":\"tenant\",\"sortKey\":\"record\"}";
-        Struct mod = Struct.newBuilder().set("keys").to(columns == null ? Value.string(keys) : Value.json(keys))
-                .set("new_values").to(columns == null ? Value.string(newer) : Value.json(newer))
-                .set("old_values").to(columns == null ? Value.string(older) : Value.json(older)).build();
+        Struct.Builder modBuilder = Struct.newBuilder().set("keys")
+                .to(columns == null ? Value.string(keys) : Value.json(keys));
+        if (!omitValueFields) {
+            modBuilder.set("new_values").to(columns == null ? Value.string(newer) : Value.json(newer))
+                    .set("old_values").to(columns == null ? Value.string(older) : Value.json(older));
+        }
+        Struct mod = modBuilder.build();
         Struct.Builder record = Struct.newBuilder().set("commit_timestamp").to(now)
                 .set("record_sequence").to("1").set("server_transaction_id").to("txn")
                 .set("mod_type").to(operation).set("mods").toStructArray(mod.getType(), List.of(mod));
+        if (captureType != null) record.set("value_capture_type").to(captureType);
         if (columns != null) {
             record.set("column_types").toStructArray(
                     columns.isEmpty() ? column("v", "INT64").getType() : columns.get(0).getType(), columns);
@@ -327,8 +375,13 @@ class SpannerChangeFeedReaderTest {
         ChangeFeedCursor cursor = new ChangeFeedCursor(new CursorToken(ProviderId.SPANNER, ADDR,
                 System.currentTimeMillis(), CursorAnchor.CONTINUING,
                 List.of(new PartitionPosition("partition", now + "|0|0"))));
-        return new SpannerChangeFeedReader(ProviderId.SPANNER, db, Map.of())
-                .readChanges(ADDR, cursor, OperationOptions.defaults()).events().get(0);
+        var page = new SpannerChangeFeedReader(ProviderId.SPANNER, db, Map.of())
+                .readChanges(ADDR, cursor, OperationOptions.defaults());
+        assertEquals(1, page.events().size(), "lack of payload must not discard the event");
+        ChangeEvent event = page.events().get(0);
+        assertEquals(java.time.Instant.ofEpochSecond(now.getSeconds(), now.getNanos()), event.commitTimestamp());
+        assertEquals("txn:" + now + ":1:0", event.providerEventId());
+        return event;
     }
 
     @Test

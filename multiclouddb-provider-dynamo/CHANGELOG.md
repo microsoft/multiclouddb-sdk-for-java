@@ -11,6 +11,8 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 - Map supported values directly to/from DynamoDB AttributeValue without Jackson
   trees, preserving existing numeric conversions and selected change-feed images.
+  Use native image-presence flags: absent images become null, supplied empty
+  images remain empty Maps, and native NULL attributes remain null-valued fields.
   Common write validation now rejects null document roots before native I/O.
   **Breaking result-type migration:** see the [migration guide](../docs/guide.md#migrating-from-beta2).
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))

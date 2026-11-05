@@ -114,6 +114,30 @@ class CustomerObjectMappingTest {
                 assertNull(client.read(ADDRESS, KEY).document().get("legacyBinary"),
                         "existing native B fallback happens before neutral conversion and is unchanged");
                 assertValidationBeforeNativeOperation(client, nativeClient);
+                var nativeSizeFailure = DynamoDbException.builder().statusCode(400)
+                        .message("Item size exceeded").requestId("dynamo-size-request")
+                        .awsErrorDetails(software.amazon.awssdk.awscore.exception.AwsErrorDetails.builder()
+                                .errorCode("ValidationException").serviceName("DynamoDB")
+                                .errorMessage("Item size exceeded").build()).build();
+                when(nativeClient.putItem(any(PutItemRequest.class))).thenThrow(nativeSizeFailure);
+                var failure = assertThrows(MulticloudDbException.class,
+                        () -> client.upsert(ADDRESS, KEY, Map.of("body", "x".repeat(409600))));
+                assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, failure.error().category());
+                assertFalse(failure.error().retryable());
+                assertEquals(400, failure.error().statusCode());
+                assertEquals("ValidationException", failure.error().providerDetails().get("errorCode"));
+                assertEquals(nativeSizeFailure.getMessage(), failure.getMessage());
+                assertEquals(nativeSizeFailure.getMessage(), failure.error().message());
+                assertTrue(failure.getMessage().contains("Item size exceeded"));
+                assertSame(nativeSizeFailure, failure.getCause());
+                assertEquals(ProviderId.DYNAMO, failure.error().provider());
+                assertEquals("upsert", failure.error().operation());
+                assertEquals("DynamoDB", failure.error().providerDetails().get("serviceName"));
+                assertEquals("dynamo-size-request", failure.error().providerDetails().get("requestId"));
+                assertEquals("dynamo-size-request", failure.diagnostics().requestId());
+                assertEquals(ProviderId.DYNAMO, failure.diagnostics().provider());
+                assertEquals("upsert", failure.diagnostics().operation());
+                verify(nativeClient).putItem(any(PutItemRequest.class));
             }
         }
         verify(nativeClient).close();
@@ -174,6 +198,27 @@ class CustomerObjectMappingTest {
                 assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, assertThrows(MulticloudDbException.class,
                         () -> client.upsert(ADDRESS, KEY, reserved)).error().category());
                 verifyNoInteractions(nativeClient);
+                var nativeSizeFailure = SpannerExceptionFactory.newSpannerException(
+                        ErrorCode.INVALID_ARGUMENT, "Mutation size exceeded");
+                doThrow(nativeSizeFailure).when(nativeClient).write(any());
+                var failure = assertThrows(MulticloudDbException.class,
+                        () -> client.upsert(ADDRESS, KEY, Map.of("body", "x".repeat(409600))));
+                assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, failure.error().category());
+                assertFalse(failure.error().retryable());
+                assertEquals(3, failure.error().statusCode());
+                assertEquals("INVALID_ARGUMENT", failure.error().providerDetails().get("grpcStatus"));
+                assertEquals(nativeSizeFailure.getMessage(), failure.getMessage());
+                assertEquals(nativeSizeFailure.getMessage(), failure.error().message());
+                assertTrue(failure.getMessage().contains("Mutation size exceeded"));
+                assertSame(nativeSizeFailure, failure.getCause());
+                assertEquals(ProviderId.SPANNER, failure.error().provider());
+                assertEquals("upsert", failure.error().operation());
+                assertEquals(nativeSizeFailure.getMessage(), failure.error().providerDetails().get("errorMessage"));
+                assertFalse(failure.error().providerDetails().containsKey("requestId"));
+                assertNull(failure.diagnostics().requestId());
+                assertEquals(ProviderId.SPANNER, failure.diagnostics().provider());
+                assertEquals("upsert", failure.diagnostics().operation());
+                verify(nativeClient).write(any());
             }
         }
         verify(spanner).close();
@@ -207,9 +252,9 @@ class CustomerObjectMappingTest {
         R upsert = captured.get();
         readFixture.accept(upsert);
         Map<String, Object> upsertRead = client.read(ADDRESS, KEY).document();
-        Map<String, Object> before = upsertRead;
+        JsonNode before = mapper.valueToTree(upsertRead);
         assertEquals(source, mapper.convertValue(upsertRead, BATCH));
-        assertEquals(before, upsertRead);
+        assertEquals(before, mapper.valueToTree(upsertRead));
         client.upsert(ADDRESS, KEY, baseline);
         assertEquals(comparable.apply(upsert), comparable.apply(captured.get()));
 
@@ -310,15 +355,38 @@ class CustomerObjectMappingTest {
             assertEquals(operation, failure.error().operation());
             verifyNoInteractions(nativeBoundary);
         }
-        Map<String, Object> oversized = Map.of("body", "x".repeat(400 * 1024));
-        assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, assertThrows(MulticloudDbException.class,
-                () -> client.upsert(ADDRESS, KEY, oversized)).error().category());
-        verifyNoInteractions(nativeBoundary);
+        for (String shape : List.of("map", "list", "mixed")) {
+            Object nested = Map.of();
+            for (int i = 1; i < 33; i++) {
+                nested = shape.equals("map") || shape.equals("mixed") && i % 2 == 0
+                        ? Map.of("child", nested) : List.of(nested);
+            }
+            Map<String, Object> tooDeep = Map.of("field", nested);
+            for (String operation : List.of("create", "update", "upsert")) {
+                MulticloudDbException failure = assertThrows(MulticloudDbException.class, () -> {
+                    switch (operation) {
+                        case "create" -> client.create(ADDRESS, KEY, tooDeep);
+                        case "update" -> client.update(ADDRESS, KEY, tooDeep);
+                        case "upsert" -> client.upsert(ADDRESS, KEY, tooDeep);
+                        default -> throw new AssertionError(operation);
+                    }
+                });
+                assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, failure.error().category());
+                assertEquals(operation, failure.error().operation());
+                assertFalse(failure.error().retryable());
+                assertTrue(failure.getMessage().contains("depth 33 exceeds maximum 32 (root Map depth 0)"));
+                verifyNoInteractions(nativeBoundary);
+            }
+        }
         for (Object unsupported : List.of(Double.NaN, new byte[]{1}, java.nio.ByteBuffer.wrap(new byte[]{1}),
                 Set.of("value"), new Object(), new java.util.concurrent.atomic.AtomicInteger(1))) {
             MulticloudDbException failure = assertThrows(MulticloudDbException.class,
                     () -> client.upsert(ADDRESS, KEY, Map.of("nested", List.of(unsupported))));
             assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, failure.error().category());
+            assertTrue(failure.getMessage().contains(unsupported.getClass().getName()));
+            assertTrue(failure.getMessage().contains(unsupported instanceof Double ? "must be finite" : "expected"));
+            assertEquals(failure.error().message(), failure.getMessage());
+            assertNull(failure.getCause());
             verifyNoInteractions(nativeBoundary);
         }
         Map<String, Object> cycle = new LinkedHashMap<>();

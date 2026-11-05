@@ -7,10 +7,21 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- Normalize native HTTP 413 (request too large) as non-retryable
+  `INVALID_REQUEST` rather than `PROVIDER_ERROR`; preserve native status/details.
+  ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
+
 ### Changed
 
 - Use detached Maps for Cosmos writes and point reads, and Object change-feed
-  payloads with explicit presence; native Cosmos serialization remains.
+  payloads with null meaning no available image; native Cosmos serialization remains.
+  Preserve supplied empty AVAD bodies and envelope/metadata identity fallback,
+  but do not expose the transport envelope as a missing image.
+  The API no longer supplies/pins application Jackson, but the native Cosmos
+  SDK still depends on Jackson. The resolved version depends on each
+  application's dependency management; this change does not add shading.
   Common write validation now rejects null document roots before native I/O.
   **Breaking result-type migration:** see the [migration guide](../docs/guide.md#migrating-from-beta2).
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))

@@ -7,13 +7,26 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
-### Added
-
-- Add explicit payload-presence tracking with `ChangeEvent.hasData()`.
-  ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
-
 ### Changed
 
+- Keep invalid cursor retention values out of error messages and sanitize runtime
+  failures while accessing callback results. Malformed retention fields retain
+  `MALFORMED`; callback contract/access failures use `IllegalStateException`
+  without original messages, causes or suppressed exceptions.
+  ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
+- Normalize unavailable change-feed images to `data() == null` rather than
+  synthesizing an empty object or returning a Cosmos transport envelope.
+  Alongside the JsonNode-to-Object migration, callers use `data() != null` for
+  payload availability; an empty Map and null-valued fields remain distinct.
+  The earlier API already allowed null data; this changes image normalization,
+  not whether null is legal. Events retain their metadata without a payload.
+  ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
+- **Breaking:** Remove the existing 399 KiB logical JSON size gate; native
+  SDKs/services decide size acceptance, which can differ across providers.
+  Common create/update/upsert validation now permits 32 nested Map/List levels
+  below the root Map (depth zero), retaining neutral-type, key, finite-number
+  and cycle checks. Input validation does not guarantee native storage success.
+  ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 - **Breaking:** Replace Jackson payload types with Map/Object in point-read
   and change-feed results; applications own object mapping. Cursor persistence
   now requires explicit JSON callbacks, retaining existing JSON token compatibility.

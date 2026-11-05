@@ -147,12 +147,30 @@ public abstract class ChangeFeedConformanceTest {
                     + propagationTimeout().toMillis() + "ms");
             assertEquals(ChangeType.CREATE, ev.type(),
                     "first event for a fresh key must be CREATE");
-            assertTrue(ev.hasData());
+            assertNotNull(ev.data());
             Map<?, ?> data = assertInstanceOf(Map.class, ev.data(),
                     "the fresh-key CREATE must carry the selected object payload");
             Number value = assertInstanceOf(Number.class, data.get("v"),
                     "the selected CREATE payload must retain the written numeric field");
             assertEquals(1L, value.longValue(), "CREATE payload must preserve the written value");
+        } finally {
+            ConformanceHarness.safeDelete(client, getAddress(), key);
+        }
+    }
+
+    @Test
+    @Order(3)
+    @DisplayName("FR-cf-003: a collected null-valued field remains present in the payload")
+    void nullValuedFieldRemainsPresent() throws Exception {
+        ChangeFeedCursor[] cursors = client.listCursors(getAddress()).toArray(new ChangeFeedCursor[0]);
+        MulticloudDbKey key = ConformanceHarness.uniqueKey("cf-null-field");
+        try {
+            client.upsert(getAddress(), key, java.util.Collections.singletonMap("v", null));
+            ChangeEvent event = waitForEventByKey(cursors, key, propagationTimeout());
+            assertNotNull(event, "expected the null-field event for key " + key);
+            Map<?, ?> data = assertInstanceOf(Map.class, event.data());
+            assertTrue(data.containsKey("v"), "a collected null-valued field must not become absent");
+            assertNull(data.get("v"));
         } finally {
             ConformanceHarness.safeDelete(client, getAddress(), key);
         }

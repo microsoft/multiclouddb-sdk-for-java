@@ -58,9 +58,10 @@ class NativeWriteMappingTest {
         var wide = new LinkedHashMap<String, Object>();
         for (int i = 0; i < 256; i++) wide.put("f" + i, List.of(i, "v" + i));
         Object deep = "leaf";
-        for (int i = 0; i < 127; i++) deep = List.of(deep);
+        for (int i = 0; i < 31; i++) deep = i % 2 == 0 ? List.of(deep) : Map.of("child", deep);
         return List.of(Map.of(), fields, wide,
-                Map.of("deep", deep), Map.of("large", "x".repeat(408500)));
+                Map.of("deep", deep), Map.of("deep", List.of(deep)),
+                Map.of("large", "x".repeat(409600)));
     }
 
     private static void write(MulticloudDbClient client, String operation, MulticloudDbKey key,
@@ -103,6 +104,14 @@ class NativeWriteMappingTest {
                             verify(sdk).putItem(captor.capture());
                             verifyNoMoreInteractions(sdk);
                             PutItemRequest actual = captor.getValue();
+                            if (input.containsKey("deep")) {
+                                assertEquals(MAPPER.valueToTree(input.get("deep")),
+                                        MAPPER.valueToTree(DynamoItemMapper.attributeMapToMap(actual.item()).get("deep")));
+                                assertTrue(nativeDepth(actual.item().get("deep")) == 31
+                                        || nativeDepth(actual.item().get("deep")) == 32);
+                                assertEquals(jsonDepth(MAPPER.valueToTree(input.get("deep"))),
+                                        nativeDepth(actual.item().get("deep")));
+                            }
                             // Native envelope and operation policy are checked independently of the mapper.
                             var expectedItem = DynamoItemMapper.mapToAttributeMap(before);
                             expectedItem.put("partitionKey", AttributeValue.fromS(key.partitionKey()));
@@ -175,6 +184,13 @@ class NativeWriteMappingTest {
                                 assertEquals(expected.getOperation(), captured.get().getOperation());
                                 assertEquals(expected.getColumns(), captured.get().getColumns());
                                 assertEquals(expected.asMap(), captured.get().asMap());
+                                if (input.containsKey("deep")) {
+                                    String encoded = captured.get().asMap().get("deep").getString();
+                                    assertTrue(encoded.startsWith(SpannerConstants.JSON_VALUE_MARKER));
+                                    var parsed = MAPPER.readTree(encoded.substring(SpannerConstants.JSON_VALUE_MARKER.length()));
+                                    assertEquals(MAPPER.valueToTree(input.get("deep")), parsed);
+                                    assertTrue(jsonDepth(parsed) == 31 || jsonDepth(parsed) == 32);
+                                }
                                 assertEquals(before, new LinkedHashMap<>(input));
                                 if (op.equals("update")) {
                                     verify(sdk).readWriteTransaction();
@@ -205,6 +221,23 @@ class NativeWriteMappingTest {
                 }
             }
         }
+    }
+
+    private static int nativeDepth(AttributeValue value) {
+        if (value.type() == AttributeValue.Type.M) {
+            return 1 + value.m().values().stream().mapToInt(NativeWriteMappingTest::nativeDepth).max().orElse(0);
+        }
+        if (value.type() == AttributeValue.Type.L) {
+            return 1 + value.l().stream().mapToInt(NativeWriteMappingTest::nativeDepth).max().orElse(0);
+        }
+        return 0;
+    }
+
+    private static int jsonDepth(com.fasterxml.jackson.databind.JsonNode value) {
+        if (!value.isContainerNode()) return 0;
+        int maximum = 0;
+        for (var child : value) maximum = Math.max(maximum, jsonDepth(child));
+        return 1 + maximum;
     }
 
     private static Mutation legacyMutation(Map<String, Object> input, MulticloudDbKey key,

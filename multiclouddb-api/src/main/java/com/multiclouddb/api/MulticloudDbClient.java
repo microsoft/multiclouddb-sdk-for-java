@@ -22,21 +22,23 @@ import java.util.Map;
  * opt-ins are controlled via {@link MulticloudDbClientConfig} only.
  *
  * <h2>Document values and ownership</h2>
- * Write documents contain string-keyed Maps, Lists, Strings, Booleans,
- * {@code null}, and exactly Byte, Short, Integer, Long, Float, Double,
- * java.math.BigInteger or java.math.BigDecimal numbers. Floating-point numbers
- * must be finite. A null document root is rejected with {@code INVALID_REQUEST}
- * before provider delegation by create, update and upsert; empty Maps and
- * nested null values remain valid. Cycles, null/non-string keys, arrays, sets, arbitrary Java
- * objects and other Number implementations are rejected with
- * {@link MulticloudDbErrorCategory#INVALID_REQUEST} before native I/O.
- * Shared acyclic subtrees are permitted. Applications explicitly map their
- * objects before calling the SDK; no application serializer is invoked.
+ * The document Map passed to create, update, or upsert may contain supported
+ * neutral Maps, Lists and scalar values. A null root or unsupported value is
+ * rejected with {@code INVALID_REQUEST} before native I/O; empty Maps and nested
+ * nulls are valid. Applications map their objects explicitly.
  * <p>
- * Callers must not mutate a write document or its nested containers during the
+ * Numeric input acceptance does not guarantee lossless storage or readback.
+ * Consider String representations when exact large integers or decimal precision
+ * are required; this changes numeric sorting and aggregation semantics.
+ * See the <a href="https://microsoft.github.io/multiclouddb-sdk-for-java/guide/#supported-values-and-numeric-precision">recommended
+ * integer range, limitations and supported values</a> before selecting field representations.
+ * <p>
+ * Callers must not mutate the input Map or its nested containers during the
  * entire synchronous call, including retries. The SDK does not mutate caller
- * data or retain it after the call returns. Validation preserves the existing
- * logical JSON input limit of 399 KiB; this is not native item-size accounting.
+ * data or retain it after the call returns. Write validation permits at most
+ * 32 nested Map/List levels below the root Map (depth zero), including empty
+ * containers. Native SDKs/services enforce size limits; passing input validation
+ * does not guarantee storage success.
  * Returned point-read and feed data is detached and mutable; queries retain
  * the ownership contract of {@link QueryPage}.
  */

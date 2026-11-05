@@ -178,7 +178,8 @@ public class Main {
     private void upsert(String id, String name, String category,
                         double price, boolean inStock) {
         MulticloudDbKey key = MulticloudDbKey.of(id, id);
-        Map<String, Object> doc = Map.of("id", id, "name", name, "category", category,
+        Map<String, Object> doc = Map.of(
+                "id", id, "name", name, "category", category,
                 "price", price, "inStock", inStock);
 
         System.out.printf("  client.upsert(address, key(%s), doc)%n", id);

@@ -34,7 +34,6 @@ public final class ChangeEvent {
     private final ChangeType type;
     private final Instant commitTimestamp;
     private final Object data;
-    private final boolean hasData;
     private final String providerEventId;
 
     /**
@@ -46,7 +45,8 @@ public final class ChangeEvent {
      *                        (never {@code null})
      * @param data            the provider-selected payload, possibly partial or a
      *                        before-image; {@code null} if no payload was supplied.
-     *                        Use the explicit-presence constructor for present-null.
+     *                        A non-null empty Map is a supplied payload with no fields;
+     *                        null values inside a Map are preserved.
      * @param providerEventId a stable provider-side identifier for this event,
      *                        suitable for deduplication; never {@code null}.
      * @throws NullPointerException if any non-nullable argument is {@code null}
@@ -56,36 +56,11 @@ public final class ChangeEvent {
                        Instant commitTimestamp,
                        Object data,
                        String providerEventId) {
-        this(key, type, commitTimestamp, data, providerEventId, data != null);
-    }
-
-    /**
-     * Constructs an event with explicit payload presence.
-     *
-     * @param key non-null document key
-     * @param type non-null change type
-     * @param commitTimestamp non-null provider ordering timestamp
-     * @param data neutral Map/List/scalar/null payload; must be null when absent
-     * @param providerEventId non-null provider event identifier
-     * @param hasData whether a payload was supplied, including explicit null
-     * @throws IllegalArgumentException if absent data is non-null
-     * @throws NullPointerException if a required argument is null
-     */
-    public ChangeEvent(MulticloudDbKey key,
-                       ChangeType type,
-                       Instant commitTimestamp,
-                       Object data,
-                       String providerEventId,
-                       boolean hasData) {
         this.key = Objects.requireNonNull(key, "key");
         this.type = Objects.requireNonNull(type, "type");
         this.commitTimestamp = Objects.requireNonNull(commitTimestamp, "commitTimestamp");
         this.providerEventId = Objects.requireNonNull(providerEventId, "providerEventId");
-        if (!hasData && data != null) {
-            throw new IllegalArgumentException("Absent change data must be null.");
-        }
         this.data = data;
-        this.hasData = hasData;
     }
 
     /** The document key the event applies to. */
@@ -108,18 +83,16 @@ public final class ChangeEvent {
 
     /**
      * Provider-selected neutral payload. Maps and Lists are mutable and detached
-     * from retained native responses. Use {@link #hasData()} to distinguish
-     * absent data from an explicit null payload.
+     * from retained native responses. Use {@code data() != null} to test whether
+     * a payload is available. Top-level null means no payload; it is not a separate
+     * explicit-null state. A non-null empty Map has no fields, while null-valued
+     * Map entries remain present. An event without data still retains its key,
+     * type, timestamp and provider event identifier.
      * This is not a completeness or post-image guarantee. Image selection and
      * metadata visibility retain the provider's existing behavior.
      */
     public Object data() {
         return data;
-    }
-
-    /** Whether a payload was supplied, including explicit null or an empty object. */
-    public boolean hasData() {
-        return hasData;
     }
 
     /**
@@ -137,7 +110,7 @@ public final class ChangeEvent {
         return "ChangeEvent{" + type + " " + key
                 + " @" + commitTimestamp
                 + " id=" + providerEventId
-                + (hasData ? " (data)" : "")
+                + (data != null ? " (data)" : "")
                 + '}';
     }
 }

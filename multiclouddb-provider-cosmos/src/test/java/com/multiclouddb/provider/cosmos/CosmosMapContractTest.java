@@ -134,9 +134,9 @@ class CosmosMapContractTest {
         R upsert = captured.get();
         readFixture.accept(upsert);
         Map<String, Object> upsertRead = client.read(ADDRESS, KEY).document();
-        Map<String, Object> before = upsertRead;
+        JsonNode before = mapper.valueToTree(upsertRead);
         assertEquals(source, mapper.convertValue(upsertRead, BATCH));
-        assertEquals(before, upsertRead);
+        assertEquals(before, mapper.valueToTree(upsertRead));
         client.upsert(ADDRESS, KEY, baseline);
         assertEquals(comparable.apply(upsert), comparable.apply(captured.get()));
 
@@ -231,15 +231,27 @@ class CosmosMapContractTest {
 
     private static void assertValidationBeforeNativeOperation(MulticloudDbClient client, Object nativeBoundary) {
         clearInvocations(nativeBoundary);
-        Map<String, Object> oversized = Map.of("body", "x".repeat(400 * 1024));
-        assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, assertThrows(MulticloudDbException.class,
-                () -> client.upsert(ADDRESS, KEY, oversized)).error().category());
-        verifyNoInteractions(nativeBoundary);
+        Object nested = Map.of();
+        for (int i = 1; i < 33; i++) nested = List.of(nested);
+        Map<String, Object> tooDeep = Map.of("field", nested);
+        for (String operation : List.of("create", "update", "upsert")) {
+            var failure = assertThrows(MulticloudDbException.class,
+                    () -> write(client, operation, KEY, tooDeep, OperationOptions.defaults()));
+            assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, failure.error().category());
+            assertEquals(operation, failure.error().operation());
+            assertFalse(failure.error().retryable());
+            assertTrue(failure.getMessage().contains("depth 33 exceeds maximum 32 (root Map depth 0)"));
+            verifyNoInteractions(nativeBoundary);
+        }
         for (Object unsupported : List.of(Double.NaN, new byte[]{1}, java.nio.ByteBuffer.wrap(new byte[]{1}),
                 Set.of("value"), new Object(), new java.util.concurrent.atomic.AtomicInteger(1))) {
             MulticloudDbException failure = assertThrows(MulticloudDbException.class,
                     () -> client.upsert(ADDRESS, KEY, Map.of("nested", List.of(unsupported))));
             assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, failure.error().category());
+            assertTrue(failure.getMessage().contains(unsupported.getClass().getName()));
+            assertTrue(failure.getMessage().contains(unsupported instanceof Double ? "must be finite" : "expected"));
+            assertEquals(failure.error().message(), failure.getMessage());
+            assertNull(failure.getCause());
             verifyNoInteractions(nativeBoundary);
         }
         Map<String, Object> cycle = new LinkedHashMap<>();
@@ -268,6 +280,18 @@ class CosmosMapContractTest {
                 .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
     }
 
+    @Test
+    void nativeRequestTooLargeIsNotRetryable() {
+        var nativeFailure = mock(com.azure.cosmos.CosmosException.class);
+        when(nativeFailure.getStatusCode()).thenReturn(413);
+        when(nativeFailure.getMessage()).thenReturn("Request too large");
+        var failure = CosmosErrorMapper.map(nativeFailure, "upsert");
+        assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, failure.error().category());
+        assertFalse(failure.error().retryable());
+        assertEquals(413, failure.error().statusCode());
+        assertEquals("upsert", failure.error().operation());
+    }
+
     private static List<Map<String, Object>> fixtures() {
         var numbers = List.<Number>of((byte) -2, (short) 3, 4, Long.MIN_VALUE, Long.MAX_VALUE,
                 0.1F, Float.MIN_VALUE, Float.MAX_VALUE, -0.0F, -0.0D, Double.MIN_VALUE, Double.MAX_VALUE,
@@ -291,9 +315,17 @@ class CosmosMapContractTest {
         var wide = new LinkedHashMap<String, Object>();
         for (int i = 0; i < 256; i++) wide.put("f" + i, List.of(i, "v" + i));
         Object deep = "leaf";
-        for (int i = 0; i < 127; i++) deep = List.of(deep);
+        for (int i = 0; i < 31; i++) deep = i % 2 == 0 ? List.of(deep) : Map.of("child", deep);
         return List.of(Map.of(), fields, wide,
-                Map.of("deep", deep), Map.of("large", "x".repeat(408500)));
+                Map.of("deep", deep), Map.of("deep", List.of(deep)),
+                Map.of("large", "x".repeat(409600)));
+    }
+
+    private static int containerDepth(JsonNode value) {
+        if (!value.isContainerNode()) return 0;
+        int maximum = 0;
+        for (JsonNode child : value) maximum = Math.max(maximum, containerDepth(child));
+        return 1 + maximum;
     }
 
     private static void write(MulticloudDbClient client, String operation, MulticloudDbKey key,
@@ -341,6 +373,11 @@ class CosmosMapContractTest {
                         clearInvocations(container);
                         write(client, op, key, input, options);
                         assertNativeTree(expected, MAPPER.valueToTree(captured.get()));
+                        if (input.containsKey("deep")) {
+                            int depth = containerDepth(MAPPER.valueToTree(captured.get().get("deep")));
+                            assertTrue(depth == 31 || depth == 32);
+                            assertEquals(containerDepth(MAPPER.valueToTree(input.get("deep"))), depth);
+                        }
                         assertEquals(before, new LinkedHashMap<>(input));
                         assertEquals(1, mockingDetails(container).getInvocations().size());
                         var invocation = mockingDetails(container).getInvocations().iterator().next();
@@ -355,6 +392,32 @@ class CosmosMapContractTest {
                     }
                 }
             }
+            var nativeSizeFailure = mock(com.azure.cosmos.CosmosException.class);
+            when(nativeSizeFailure.getStatusCode()).thenReturn(413);
+            when(nativeSizeFailure.getMessage()).thenReturn("Request too large");
+            when(nativeSizeFailure.getActivityId()).thenReturn("cosmos-size-request");
+            when(nativeSizeFailure.getSubStatusCode()).thenReturn(0);
+            when(nativeSizeFailure.getRequestCharge()).thenReturn(2.5);
+            when(container.upsertItem(any(Map.class), any(PartitionKey.class), any(CosmosItemRequestOptions.class)))
+                    .thenThrow(nativeSizeFailure);
+            clearInvocations(container);
+            var failure = assertThrows(MulticloudDbException.class,
+                    () -> client.upsert(ADDRESS, KEY, Map.of("body", "x".repeat(409600))));
+            assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, failure.error().category());
+            assertFalse(failure.error().retryable());
+            assertEquals(413, failure.error().statusCode());
+            assertEquals(nativeSizeFailure.getMessage(), failure.getMessage());
+            assertEquals(nativeSizeFailure.getMessage(), failure.error().message());
+            assertSame(nativeSizeFailure, failure.getCause());
+            assertEquals(ProviderId.COSMOS, failure.error().provider());
+            assertEquals("upsert", failure.error().operation());
+            assertEquals("cosmos-size-request", failure.error().providerDetails().get("requestId"));
+            assertEquals("0", failure.error().providerDetails().get("subStatusCode"));
+            assertEquals("2.5", failure.error().providerDetails().get("requestCharge"));
+            assertEquals("cosmos-size-request", failure.diagnostics().requestId());
+            assertEquals(ProviderId.COSMOS, failure.diagnostics().provider());
+            assertEquals("upsert", failure.diagnostics().operation());
+            verify(container).upsertItem(any(Map.class), any(PartitionKey.class), any(CosmosItemRequestOptions.class));
             Map<String, Object> raw = new LinkedHashMap<>();
             // These invalid model values must be skipped before conversion, not copied or validated.
             CosmosConstants.SYSTEM_FIELDS.forEach(name -> raw.put(name, new byte[]{1, 2}));

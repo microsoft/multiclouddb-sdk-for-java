@@ -49,15 +49,24 @@ Nested values are string-keyed Maps, Lists, Strings, Booleans, null and exactly
 Byte, Short, Integer, Long, Float, Double, BigInteger or BigDecimal. Floating
 values must be finite. Reject cycles, invalid keys and unsupported Java objects;
 shared acyclic subtrees are valid. Missing keys differ from present nulls.
-Preserve released numeric/depth behavior rather than imposing new limits.
+Preserve numeric conversion behavior. Write nesting permits at most 32 Map/List
+levels below the root Map (depth zero), counting empty containers but not scalars.
+Native SDKs/services enforce size; no common byte estimate is imposed.
 
 Applications map DTOs explicitly without an SDK mapping interface. Inputs must
 not be mutated during the synchronous call; the SDK neither mutates nor retains
 them after return. Point-read/feed containers are detached and mutable.
 QueryPage retains shallow read-only Maps/list with nested mutability.
-`ChangeEvent.data()` is Object and `hasData()` distinguishes absence from
-present null. Existing provider storage formats, numeric limitations and
-selected-image semantics remain. See [mapping and migration](../../docs/guide.md#application-owned-mapping).
+`ChangeEvent.data()` is Object: null means no available payload, a non-null empty
+Map is a payload without fields, and null-valued Map entries are preserved.
+Applications check `data() != null`; top-level explicit null has no independent
+state, and no presence boolean/accessor/constructor argument is exposed.
+Key/type/timestamp/provider event ID remain valid even without a payload.
+Dynamo uses native image-presence flags, Spanner considers capture mode and
+modification type before treating `{}` as a collected image, and Cosmos retains
+empty bodies and envelope identity fallback without exposing a missing AVAD image
+as the envelope. Existing numeric conversion and Spanner field filtering remain.
+See [mapping and migration](../../docs/guide.md#application-owned-mapping).
 
 ### Query
 Portable query request.
@@ -162,7 +171,7 @@ Fields:
 - `provider`: provider id
 - `operation`: string
 - `retryable`: bool
-- `provider_details`: optional object (sanitized provider codes, request ids)
+- `provider_details`: optional object (available provider codes, request ids and native diagnostic text). Native messages/details and original causes are preserved and may contain sensitive data; applications apply logging/redaction policy. SDK document-validation and cursor callback/result-access diagnostics are separately sanitized without input values or original callback exceptions.
 
 ## Relationships
 - ClientConfig selects Provider and influences capabilities.
@@ -257,15 +266,20 @@ New constants added to `Capability`:
 - `WRITE_TIMESTAMP = "write_timestamp"` — provider exposes last-write timestamp in document metadata
 - `RESULT_LIMIT = "result_limit"` — provider supports Top N result capping
 
-### DocumentSizeValidator (new utility)
+### DocumentValidator (internal write validation)
 
-Location: `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DocumentSizeValidator.java`
+Location: `multiclouddb-api/src/main/java/com/multiclouddb/api/internal/DocumentValidator.java`
 
 Static utility:
-- `MAX_BYTES = 400 * 1024 - 1024` (399 KiB logical JSON size, including the existing safety margin)
-- `validate(Map<String, Object> document, String operation)` - rejects oversized or unsupported input with `MulticloudDbException(INVALID_REQUEST)`; counts the existing byte profile without allocating document JSON.
+- `MAX_NESTING_DEPTH = 32` below the root Map. Longest Map/List path wins; empty containers count.
+- `validate(Map<String, Object> document, String operation)` rejects null roots,
+  unsupported values, invalid keys, non-finite floating values, cycles and depth
+  33 with non-retryable `INVALID_REQUEST`. Iterative traversal permits shared
+  acyclic containers without modifying, copying, measuring or serializing input.
 
-Applied in `DefaultMulticloudDbClient.create()`, `update()` and `upsert()` before provider delegation.
+Applied in `DefaultMulticloudDbClient.create()`, `update()` and `upsert()` after
+the closed-client check and before provider delegation. This replaces the existing
+size validator; native storage acceptance and final partial-update size are not predicted.
 
 ### Provider Schema Changes
 

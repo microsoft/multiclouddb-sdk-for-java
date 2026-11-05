@@ -591,14 +591,16 @@ final class DynamoChangeFeedReader {
                 ? MulticloudDbKey.of(pk, sk)
                 : MulticloudDbKey.of(pk);
 
-        Map<String, AttributeValue> imageAttrs = rec.dynamodb() != null
+        boolean imagePresent = rec.dynamodb() != null && (type == ChangeType.DELETE
+                ? rec.dynamodb().hasOldImage() : rec.dynamodb().hasNewImage());
+        Map<String, AttributeValue> imageAttrs = imagePresent
                 ? (type == ChangeType.DELETE
                         ? rec.dynamodb().oldImage()
                         : rec.dynamodb().newImage())
                 : null;
         Map<String, Object> data = imageAttrs != null ? DynamoItemMapper.attributeMapToMap(imageAttrs) : null;
 
-        return new ChangeEvent(key, type, commitTs, data, eventId, imageAttrs != null);
+        return new ChangeEvent(key, type, commitTs, data, eventId);
     }
 
     private static String attrToString(AttributeValue v) {

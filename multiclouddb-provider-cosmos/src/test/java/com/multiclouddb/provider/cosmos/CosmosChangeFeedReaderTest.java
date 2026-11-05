@@ -342,9 +342,8 @@ class CosmosChangeFeedReaderTest {
                 "operationType=delete must surface as DELETE");
         assertEquals(MulticloudDbKey.of("cf-delete-abc", "cf-delete-abc"), ev.key(),
                 "key (pk+sk) must be recovered from metadata.id and metadata.partitionKey");
-        assertNotNull(ev.data(), "data must never be null even for tombstones");
+        assertNotNull(ev.data(), "the supplied empty current tombstone remains a payload");
         assertEquals(Map.of(), ev.data());
-        assertTrue(ev.hasData());
     }
 
     @Test
@@ -448,12 +447,59 @@ class CosmosChangeFeedReaderTest {
         assertEquals(Map.of("old", true), readEnvelope(envelope).data());
         envelope.remove("previous");
         envelope.put("current", null);
-        Map<?, ?> fallback = (Map<?, ?>) readEnvelope(envelope).data();
-        assertTrue(fallback.containsKey("current"));
-        org.junit.jupiter.api.Assertions.assertNull(fallback.get("current"));
-        assertFalse(fallback.containsKey("previous"));
+        org.junit.jupiter.api.Assertions.assertNull(readEnvelope(envelope).data());
         envelope.remove("current");
-        assertFalse(((Map<?, ?>) readEnvelope(envelope).data()).containsKey("current"));
+        org.junit.jupiter.api.Assertions.assertNull(readEnvelope(envelope).data());
+    }
+
+    @Test
+    void missingImagesKeepEventMetadataWhileEmptyAndNullValuedBodiesRemainPayloads() {
+        for (String operation : List.of("create", "replace", "delete")) {
+            Map<String, Object> metadata = Map.of("operationType", operation, "id", "record",
+                    "partitionKey", "tenant", "crts", 1700000000L);
+            for (Object payload : java.util.Arrays.asList(null, Map.of(),
+                    Collections.singletonMap("nullable", null), List.of(), "scalar")) {
+                var envelope = new java.util.LinkedHashMap<String, Object>();
+                envelope.put("metadata", metadata);
+                envelope.put(operation.equals("delete") ? "previous" : "current", payload);
+                ChangeEvent event = readEnvelope(envelope);
+                assertEquals(payload, event.data());
+                assertEquals(MulticloudDbKey.of("tenant", "record"), event.key());
+                assertEquals(operation.equals("create") ? ChangeType.CREATE
+                        : operation.equals("delete") ? ChangeType.DELETE : ChangeType.UPDATE, event.type());
+                assertEquals(java.time.Instant.ofEpochSecond(1700000000L), event.commitTimestamp());
+                assertEquals("record@1700000000", event.providerEventId());
+            }
+            var noImages = new java.util.LinkedHashMap<String, Object>();
+            noImages.put("metadata", metadata);
+            noImages.put("_etag", "envelope-etag");
+            var event = readEnvelope(noImages);
+            org.junit.jupiter.api.Assertions.assertNull(event.data());
+            assertEquals("envelope-etag", event.providerEventId());
+            assertEquals(MulticloudDbKey.of("tenant", "record"), event.key());
+            assertEquals(java.time.Instant.ofEpochSecond(1700000000L), event.commitTimestamp());
+            String preferred = operation.equals("delete") ? "previous" : "current";
+            String alternate = operation.equals("delete") ? "current" : "previous";
+            noImages.put(preferred, Map.of());
+            noImages.put(alternate, Map.of("other", true));
+            assertEquals(Map.of(), readEnvelope(noImages).data(), "a selected empty body is not missing");
+            noImages.remove(preferred);
+            assertEquals(Map.of("other", true), readEnvelope(noImages).data(), "retains alternate-image fallback");
+        }
+        Map<String, Object> bare = Map.of("id", "record", "partitionKey", "tenant",
+                "_ts", 1700000001L, "_etag", "bare-etag", "v", 1);
+        ChangeEvent bareEvent = readEnvelope(bare);
+        assertEquals(bare, bareEvent.data());
+        assertEquals(ChangeType.UPDATE, bareEvent.type());
+        assertEquals(java.time.Instant.ofEpochSecond(1700000001L), bareEvent.commitTimestamp());
+        assertEquals("bare-etag", bareEvent.providerEventId());
+        var fallback = new java.util.LinkedHashMap<String, Object>(bare);
+        fallback.put("metadata", Map.of("operationType", "delete"));
+        var absent = readEnvelope(fallback);
+        org.junit.jupiter.api.Assertions.assertNull(absent.data());
+        assertEquals(bareEvent.key(), absent.key());
+        assertEquals(bareEvent.commitTimestamp(), absent.commitTimestamp());
+        assertEquals(bareEvent.providerEventId(), absent.providerEventId());
     }
 
     @Test

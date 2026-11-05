@@ -16,6 +16,11 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Normalize missing/null change-feed images to null and respect capture mode:
+  `NEW_VALUES`/`NEW_ROW` delete events have no collected payload, even when native
+  old values are `{}`. Collected empty images and null-valued fields are preserved,
+  as are event metadata, numeric decoding and `FIELD_DATA` filtering.
+  ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 - Map values to Spanner typed mutations and detached row Maps, preserving
   existing storage formats and numeric conversions. Keep JSON processing
   internal to the provider and correct numeric lexical-length accounting.

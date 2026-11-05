@@ -557,6 +557,7 @@ final class SpannerChangeFeedReader {
         String modTypeRaw = getStringOrNull(rec, "mod_type");
         String modType = modTypeRaw != null ? modTypeRaw : "UPDATE";
         ChangeType type = mapModType(modType);
+        String captureType = getStringOrNull(rec, "value_capture_type");
         List<String> int64Columns = int64Columns(rec);
 
         List<Struct> mods = getStructListOrEmpty(rec, "mods");
@@ -566,11 +567,11 @@ final class SpannerChangeFeedReader {
             String eventId = txnId + ":" + (commitTs != null ? commitTs.toString() : "") + ":"
                     + recordSeq + ":" + idx;
             MulticloudDbKey key = extractKey(mod);
-            Object data = extractValues(mod, type, int64Columns);
+            Object data = extractValues(mod, type, captureType, int64Columns);
             Instant eventInstant = commitTs != null
                     ? Instant.ofEpochSecond(commitTs.getSeconds(), commitTs.getNanos())
                     : Instant.EPOCH;
-            out.add(new ChangeEvent(key, type, eventInstant, data, eventId, true));
+            out.add(new ChangeEvent(key, type, eventInstant, data, eventId));
             idx++;
         }
         return new DataChangeBatch(out, commitTs != null ? commitTs : Timestamp.now(), recordSeq);
@@ -657,20 +658,31 @@ final class SpannerChangeFeedReader {
         return columns;
     }
 
-    private Object extractValues(Struct mod, ChangeType type, List<String> int64Columns) {
-        // For CREATE/UPDATE prefer new_values; for DELETE fall back to old_values.
+    private Object extractValues(Struct mod, ChangeType type, String captureType, List<String> int64Columns) {
+        boolean newOnly = "NEW_VALUES".equals(captureType) || "NEW_ROW".equals(captureType);
+        boolean oldAndNew = "OLD_AND_NEW_VALUES".equals(captureType)
+                || "NEW_ROW_AND_OLD_VALUES".equals(captureType);
         String field;
-        if (type == ChangeType.DELETE && hasNonNullField(mod, "old_values")) {
+        if (newOnly || oldAndNew) {
+            // Uncollected images can be encoded as {}, so emptiness alone is not presence.
+            if (type == ChangeType.DELETE && newOnly) return null;
+            field = type == ChangeType.DELETE ? "old_values" : "new_values";
+            if (type == ChangeType.UPDATE && oldAndNew && !hasNonNullField(mod, field)) {
+                field = "old_values";
+            }
+        } else if (type == ChangeType.DELETE && hasNonNullField(mod, "old_values")) {
+            // Retain legacy image selection when capture metadata is unavailable or unknown.
             field = "old_values";
         } else if (hasNonNullField(mod, "new_values")) {
             field = "new_values";
         } else if (hasNonNullField(mod, "old_values")) {
             field = "old_values";
         } else {
-            return new java.util.LinkedHashMap<String, Object>();
+            return null;
         }
+        if (!hasNonNullField(mod, field)) return null;
         String json = getStringOrNull(mod, field);
-        if (json == null) return new java.util.LinkedHashMap<String, Object>();
+        if (json == null) return null;
         Object raw;
         try {
             raw = SpannerJson.read(json);

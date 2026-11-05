@@ -11,7 +11,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class CursorJsonCompatibilityTest {
+class CursorFieldCoercionsCompatibilityTest {
     private record Coercion(String json, int integer, long longValue, String text, boolean fitsLong) {}
 
     @Test
@@ -41,10 +41,10 @@ class CursorJsonCompatibilityTest {
                 new Coercion("[]", -9, -9L, "", false),
                 new Coercion("{}", -9, -9L, "", false))) {
             Object next = JsonSupport.read(fixture.json(), TestJson.DESERIALIZE);
-            assertEquals(fixture.integer(), CursorJson.asInt(next, -9), "int: " + fixture.json());
-            assertEquals(fixture.longValue(), CursorJson.asLong(next, -9), "long: " + fixture.json());
-            assertEquals(fixture.text(), CursorJson.text(next, null), "text: " + fixture.json());
-            assertEquals(fixture.fitsLong(), CursorJson.canConvertToLong(next), "range: " + fixture.json());
+            assertEquals(fixture.integer(), CursorFieldCoercions.asInt(next, -9), "int: " + fixture.json());
+            assertEquals(fixture.longValue(), CursorFieldCoercions.asLong(next, -9), "long: " + fixture.json());
+            assertEquals(fixture.text(), CursorFieldCoercions.text(next, null), "text: " + fixture.json());
+            assertEquals(fixture.fitsLong(), CursorFieldCoercions.canConvertToLong(next), "range: " + fixture.json());
         }
     }
 

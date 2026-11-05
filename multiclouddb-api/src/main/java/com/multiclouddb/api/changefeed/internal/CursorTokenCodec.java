@@ -46,7 +46,7 @@ import java.util.function.BiFunction;
  * }</pre>
  *
  * <h3>Error contract</h3>
- * Every decoding failure raises {@link CursorExpiredException} with a normalized
+ * Token processing and semantic failures raise {@link CursorExpiredException} with a normalized
  * {@link MulticloudDbErrorCategory#CURSOR_EXPIRED} and a structured
  * {@code providerDetails.reason} field — never a raw parser exception:
  * <ul>
@@ -54,6 +54,8 @@ import java.util.function.BiFunction;
  *   <li>{@code VERSION_UNSUPPORTED} — token codec version higher than the SDK supports.</li>
  *   <li>{@code TOKEN_AGED_OUT} — issued-at is older than {@link #MAX_TOKEN_AGE_MILLIS}.</li>
  * </ul>
+ * Application callback contract or result-access failures instead raise a
+ * sanitized {@link IllegalStateException}.
  * Providers may additionally surface {@code PROVIDER_TRIMMED} (events trimmed
  * out from the provider's retention window) or {@code ITERATOR_EXPIRED} (a
  * persisted server-side iterator handle aged out before its next read) from
@@ -205,13 +207,14 @@ public final class CursorTokenCodec {
         try {
             parsed = JsonSupport.read(new String(raw, StandardCharsets.UTF_8), deserializer);
         } catch (IOException e) {
-            throw expired(REASON_MALFORMED, "token payload is not valid JSON", null);
+            throw expired(REASON_MALFORMED,
+                    "token payload is not valid JSON: " + JsonSupport.processingFailureDetail(e), null);
         }
         if (!(parsed instanceof Map<?, ?> root)) {
             throw expired(REASON_MALFORMED, "token payload is not a JSON object", null);
         }
 
-        int version = CursorJson.asInt(root.get("v"), -1);
+        int version = JsonSupport.access(() -> CursorFieldCoercions.asInt(root.get("v"), -1));
         if (version < 0) {
             throw expired(REASON_MALFORMED, "token missing required field 'v'", null);
         }
@@ -223,7 +226,7 @@ public final class CursorTokenCodec {
         }
 
         String providerId = textRequired(root, "p");
-        long issuedAt = CursorJson.asLong(root.get("i"), Long.MIN_VALUE);
+        long issuedAt = JsonSupport.access(() -> CursorFieldCoercions.asLong(root.get("i"), Long.MIN_VALUE));
         if (issuedAt == Long.MIN_VALUE) {
             throw expired(REASON_MALFORMED, "token missing required field 'i'", null);
         }
@@ -236,8 +239,9 @@ public final class CursorTokenCodec {
         }
 
         ResourceAddress resource = null;
-        if (root.get("r") != null) {
-            String r = CursorJson.text(root.get("r"), "null");
+        Object resourceNode = JsonSupport.access(() -> root.get("r"));
+        if (resourceNode != null) {
+            String r = JsonSupport.access(() -> CursorFieldCoercions.text(resourceNode, "null"));
             int slash = r.indexOf('/');
             if (slash <= 0 || slash == r.length() - 1) {
                 throw expired(REASON_MALFORMED,
@@ -259,34 +263,36 @@ public final class CursorTokenCodec {
         // baseline floor so a malformed/tiny value cannot silently shorten
         // the portable guarantee.
         long effectiveRetentionMillis = MAX_TOKEN_AGE_MILLIS;
-        if (root.get("e") != null) {
-            Object eNode = root.get("e");
-            if (!CursorJson.canConvertToLong(eNode)) {
+        Object eNode = JsonSupport.access(() -> root.get("e"));
+        if (eNode != null) {
+            if (!JsonSupport.access(() -> CursorFieldCoercions.canConvertToLong(eNode))) {
                 throw expired(REASON_MALFORMED,
-                        "token effective-retention 'e' is not a long: " + eNode, null);
+                        "token effective-retention 'e' is not a long", null);
             }
-            long encoded = CursorJson.asLong(eNode, 0);
+            long encoded = JsonSupport.access(() -> CursorFieldCoercions.asLong(eNode, 0));
             if (encoded <= 0) {
                 throw expired(REASON_MALFORMED,
-                        "token effective-retention 'e' must be > 0; was " + encoded, null);
+                        "token effective-retention 'e' must be > 0", null);
             }
             effectiveRetentionMillis = Math.max(MAX_TOKEN_AGE_MILLIS, encoded);
         }
 
         List<PartitionPosition> partitions = new ArrayList<>();
-        Object arr = root.get("s");
+        Object arr = JsonSupport.access(() -> root.get("s"));
         if (!(arr instanceof List<?> entries)) {
             throw expired(REASON_MALFORMED, "token missing or non-array partitions 's'", null);
         }
-        for (Object element : entries) {
+        var iterator = JsonSupport.access(entries::iterator);
+        while (JsonSupport.access(() -> iterator.hasNext())) {
+            Object element = JsonSupport.access(() -> iterator.next());
             if (!(element instanceof Map<?, ?> p)) {
                 throw expired(REASON_MALFORMED, "partition entry is not a JSON object", null);
             }
-            String partId = CursorJson.text(p.get("id"), null);
+            String partId = JsonSupport.access(() -> CursorFieldCoercions.text(p.get("id"), null));
             if (partId == null || partId.isBlank()) {
                 throw expired(REASON_MALFORMED, "partition entry missing 'id'", null);
             }
-            String cont = CursorJson.text(p.get("c"), null);
+            String cont = JsonSupport.access(() -> CursorFieldCoercions.text(p.get("c"), null));
             try {
                 partitions.add(new PartitionPosition(partId, cont));
             } catch (IllegalArgumentException e) {
@@ -368,7 +374,7 @@ public final class CursorTokenCodec {
     }
 
     private static String textRequired(Map<?, ?> root, String field) {
-        Object n = root.get(field);
+        Object n = JsonSupport.access(() -> root.get(field));
         if (!(n instanceof String text) || text.isBlank()) {
             throw expired(REASON_MALFORMED, "token missing required field '" + field + "'", null);
         }
@@ -376,21 +382,26 @@ public final class CursorTokenCodec {
     }
 
     private static String escapeSurrogates(String json) {
-        StringBuilder escaped = new StringBuilder(json.length());
+        StringBuilder escaped = null;
         for (int i = 0; i < json.length(); i++) {
             char c = json.charAt(i);
             if (Character.isHighSurrogate(c) && i + 1 < json.length()
                     && Character.isLowSurrogate(json.charAt(i + 1))) {
-                escaped.append(c).append(json.charAt(++i));
+                if (escaped != null) escaped.append(c).append(json.charAt(i + 1));
+                i++;
             } else if (Character.isSurrogate(c)) {
+                if (escaped == null) {
+                    escaped = new StringBuilder(json.length());
+                    escaped.append(json, 0, i);
+                }
                 escaped.append("\\u");
                 String hex = Integer.toHexString(c);
                 escaped.append("0".repeat(4 - hex.length())).append(hex);
-            } else {
+            } else if (escaped != null) {
                 escaped.append(c);
             }
         }
-        return escaped.toString();
+        return escaped == null ? json : escaped.toString();
     }
 
     /**

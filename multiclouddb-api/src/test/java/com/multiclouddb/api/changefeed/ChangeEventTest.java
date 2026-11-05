@@ -27,7 +27,7 @@ class ChangeEventTest {
         assertEquals(ChangeType.UPDATE, ev.type());
         assertEquals(ts, ev.commitTimestamp());
         assertSame(data, ev.data());
-        assertTrue(ev.hasData());
+        assertNotNull(ev.data());
         assertEquals("evt-123", ev.providerEventId());
     }
 
@@ -39,7 +39,7 @@ class ChangeEventTest {
                 Instant.EPOCH, null, "evt-d");
         assertEquals(ChangeType.DELETE, ev.type());
         assertNull(ev.data());
-        assertFalse(ev.hasData());
+        assertFalse(ev.toString().contains("(data)"));
     }
 
     @Test
@@ -58,17 +58,27 @@ class ChangeEventTest {
     }
 
     @Test
-    void distinguishesPresentNullEmptyAndAbsentPayloads() {
+    void nullMeansNoPayloadWhileEmptyAndNullValuedMapsRemainPayloads() {
         MulticloudDbKey key = MulticloudDbKey.of("k");
-        ChangeEvent presentNull = new ChangeEvent(key, ChangeType.UPDATE, Instant.EPOCH, null, "id", true);
-        ChangeEvent empty = new ChangeEvent(key, ChangeType.UPDATE, Instant.EPOCH, Map.of(), "id");
-        ChangeEvent absent = new ChangeEvent(key, ChangeType.DELETE, Instant.EPOCH, null, "id", false);
-        assertTrue(presentNull.hasData());
-        assertNull(presentNull.data());
-        assertTrue(presentNull.toString().contains("(data)"));
-        assertTrue(empty.hasData());
-        assertFalse(absent.hasData());
-        assertThrows(IllegalArgumentException.class,
-                () -> new ChangeEvent(key, ChangeType.UPDATE, Instant.EPOCH, Map.of(), "id", false));
+        for (ChangeType type : ChangeType.values()) {
+            ChangeEvent absent = new ChangeEvent(key, type, Instant.EPOCH, null, "id");
+            assertNull(absent.data());
+            assertFalse(absent.toString().contains("(data)"));
+            assertEquals(key, absent.key());
+            assertEquals(type, absent.type());
+            assertEquals(Instant.EPOCH, absent.commitTimestamp());
+            assertEquals("id", absent.providerEventId());
+            for (Object payload : java.util.List.of(Map.of(), java.util.Collections.singletonMap("field", null),
+                    java.util.List.of(), "text", 7, false)) {
+                ChangeEvent event = new ChangeEvent(key, type, Instant.EPOCH, payload, "id");
+                assertSame(payload, event.data());
+                assertTrue(event.toString().contains("(data)"));
+            }
+        }
+        assertEquals(1, ChangeEvent.class.getConstructors().length);
+        assertEquals(5, ChangeEvent.class.getConstructors()[0].getParameterCount());
+        assertTrue(java.util.Arrays.stream(ChangeEvent.class.getDeclaredFields())
+                .noneMatch(field -> field.getType() == boolean.class));
+        assertThrows(NoSuchMethodException.class, () -> ChangeEvent.class.getMethod("hasData"));
     }
 }

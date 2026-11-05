@@ -314,26 +314,20 @@ Map<String, Object> doc = result.document();  // detached mutable payload
 
 ---
 
-## Uniform Document Size Limit
+## Write Validation and Native Size Limits
 
-The SDK enforces a **399 KiB (408,576 bytes) logical JSON** maximum for create,
-update and upsert inputs across all providers. The structural counter rejects
-oversized Maps before provider delegation without creating JSON bytes.
-This retains the legacy byte-encoding profile and safety margin below DynamoDB's
-400 KiB native item limit; it is not native item accounting or a guarantee of
-native fit.
+Create, update and upsert validate neutral input and at most **32 nested Map/List
+levels below the root Map** before provider delegation. Root depth is zero;
+empty containers count, scalars do not. Unsupported values, invalid keys,
+non-finite numbers, cycles and excessive depth produce `INVALID_REQUEST`.
 
-```java
-// Oversized documents are rejected before any I/O
-Map<String, Object> largeDoc = Map.of("body", "x".repeat(400 * 1024));
-try {
-    client.create(address, key, largeDoc, OperationOptions.defaults());
-} catch (MulticloudDbException e) {
-    if (e.error().category() == MulticloudDbErrorCategory.INVALID_REQUEST) {
-        System.out.println("Document too large: " + e.error().message());
-    }
-}
-```
+The existing 399 KiB logical JSON estimate has been removed. Native SDKs/services
+enforce their own size limits, so identical data can succeed on one provider and
+fail on another. Added keys/metadata, encoding and Spanner's retained columns
+during partial updates affect final size. A rejection may involve network calls
+and cost; do not blindly retry an unchanged oversized write. Passing input
+validation does not guarantee native success. See the
+[guide](../../docs/guide.md#document-size-enforcement).
 
 ---
 

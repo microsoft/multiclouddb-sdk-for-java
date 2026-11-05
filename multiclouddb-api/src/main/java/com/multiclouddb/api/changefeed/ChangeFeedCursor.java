@@ -111,6 +111,8 @@ public final class ChangeFeedCursor {
      * values and preserve the released JSON number/parser profile. Declare JSON
      * processing failures with {@link java.io.UncheckedIOException}. This method
      * retains neither the callback nor its returned containers.
+     * Returned Maps and Lists must not be modified until this method returns;
+     * later modifications do not affect the restored cursor.
      *
      * @param token persisted Base64URL JSON token, including tokens from earlier releases
      * @param deserializer application-owned JSON reader; never a POJO mapper

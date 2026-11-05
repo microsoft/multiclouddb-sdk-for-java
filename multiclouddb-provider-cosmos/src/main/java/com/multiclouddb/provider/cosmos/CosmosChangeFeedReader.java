@@ -389,13 +389,14 @@ final class CosmosChangeFeedReader {
      * }</pre>
      * For CREATE / UPDATE the body is taken from {@code current}. For DELETE
      * the body is taken from {@code previous} when present (carries the
-     * just-deleted document); if {@code previous} is absent or empty (e.g.,
+     * just-deleted document); if {@code previous} is absent (e.g.,
      * the document was deleted before the change-feed retention had a chance
      * to capture it, or the Cosmos emulator omits {@code previous} for
      * fresh deletes), the key/id pair is recovered from the {@code metadata}
      * block — which always carries them for DELETE in AVAD mode — and the
-     * surfaced body is an empty JSON object (Cosmos has no document left
-     * to ship). The {@link ChangeEvent#data()} surfaced to the caller is
+     * surfaced body may be an empty {@code current} tombstone. If neither image
+     * is available, data is null while envelope/metadata identity is retained.
+     * A supplied empty body remains empty. The {@link ChangeEvent#data()} is
      * the unwrapped body (never the envelope), so the public contract is
      * identical to Dynamo and Spanner: a portable consumer sees the
      * document fields directly, not the provider's transport shape.
@@ -419,7 +420,7 @@ final class CosmosChangeFeedReader {
             default:       type = ChangeType.UPDATE; break;
         }
 
-        // Pick the most informative body:
+        // Prefer the selected body, including an empty object:
         //   - DELETE  → previous (the document that was just deleted)
         //   - others  → current
         // For DELETE the Cosmos emulator (and short-retention production
@@ -428,21 +429,15 @@ final class CosmosChangeFeedReader {
         // metadata block still carries id + partitionKey, which we recover
         // below.
         Object body = NativeDocuments.get(envelope, type == ChangeType.DELETE ? "previous" : "current");
-        if (isEmptyOrMissing(body)) {
-            Object alt = NativeDocuments.get(envelope, type == ChangeType.DELETE ? "current" : "previous");
-            if (!isEmptyOrMissing(alt)) {
-                body = alt;
-            } else if (body == null) {
-                // Neither side present → fall back to the envelope itself so
-                // _ts / _etag lookups below remain safe (will simply return
-                // empty / 0, and the metadata-driven fallbacks take over).
-                body = alt == null ? envelope : alt;
-            }
-            // else: body is a present-but-empty JSON object (the AVAD
-            // DELETE-tombstone case). Keep it as-is — an empty {} is a
-            // valid, portable payload for a tombstone — and let the
-            // metadata block supply id/pk.
+        if (body == null) {
+            body = NativeDocuments.get(envelope, type == ChangeType.DELETE ? "current" : "previous");
         }
+        boolean missingImage = body == null;
+        boolean avadEnvelope = !op.isEmpty() || envelope instanceof Map<?, ?> map
+                && (map.containsKey("current") || map.containsKey("previous"));
+        // Keep envelope fallback for identity/timestamp and bare-document responses,
+        // but do not expose a transport envelope as a missing AVAD image.
+        if (missingImage) body = envelope;
 
         // ── Identity ─────────────────────────────────────────────────────
         // 1) Prefer fields on the document body (CREATE/UPDATE always; DELETE
@@ -489,11 +484,8 @@ final class CosmosChangeFeedReader {
         String eventId = textOrEmpty(NativeDocuments.get(body, "_etag"));
         if (eventId.isBlank()) eventId = id + "@" + tsSeconds;
 
-        return new ChangeEvent(key, type, commitTs, NativeDocuments.changeData(body), eventId, body != null);
-    }
-
-    private static boolean isEmptyOrMissing(Object node) {
-        return node == null || node instanceof Map<?, ?> map && map.isEmpty();
+        Object data = missingImage && avadEnvelope ? null : NativeDocuments.changeData(body);
+        return new ChangeEvent(key, type, commitTs, data, eventId);
     }
 
     /**
