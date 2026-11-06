@@ -329,6 +329,12 @@ and cost; do not blindly retry an unchanged oversized write. Passing input
 validation does not guarantee native success. See the
 [guide](../../docs/guide.md#document-size-enforcement).
 
+Best-effort WARN events at 400 KiB use available completed Cosmos response payloads
+or Spanner commit-request protobufs, not stored-item/row sizes. DynamoDB retains
+native rejection without an additional observer. Configure `com.multiclouddb.size`
+through normal logging levels; tests can capture and assert on warnings after a
+successful write, without changing its outcome. No new SDK flag is required.
+
 ---
 
 ## Capability Checking for New Features

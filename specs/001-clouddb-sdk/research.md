@@ -341,6 +341,11 @@ This appendix is **non-normative**. It records Java SDK behaviors that impact th
 **Superseded for the current pre-release contract:** remove the existing 399 KiB
 logical-JSON estimate because it cannot predict native size. Native SDKs/services
 decide acceptance, including metadata/encoding and partial-update effects.
+Advisory warnings use only available completed Cosmos operation-max response
+payloads and existing Spanner commit-request protobufs at 400 KiB; DynamoDB adds
+no observer. These are not stored-size readings or blockers. Logging levels
+control visibility; tests assert on captured warnings outside the write path.
+Stronger sizing and partial-update accounting remain separate work.
 Retain exact input validation, with 32 nested Map/List levels below the root
 (depth zero), based on DynamoDB's document limit; Cosmos allows 128 embedded
 levels and Spanner stores nested values as marked STRINGs. Cursor/read parser

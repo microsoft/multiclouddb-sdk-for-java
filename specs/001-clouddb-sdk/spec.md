@@ -27,7 +27,11 @@ record earlier milestones; current payload contracts are defined here.
 All future bulk/offload/chunking requirements below that assume a uniform
 400 KB threshold (including FR-073, FR-082, FR-088, FR-092 and their acceptance
 criteria) have a superseded size premise and require separate design before
-implementation. They do not reinstate a byte limit or authorize offload/chunking.
+implementation. Best-effort warnings at 400 KiB observe available completed Cosmos
+operation-max response payloads or Spanner commit-request protobufs; DynamoDB adds
+no observer. These are non-blocking diagnostics, not stored-size validation.
+Logger levels control visibility; tests assert on captured warnings after writes.
+Stronger sizing and partial-update accounting remain separate work.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -200,7 +204,7 @@ As an application developer, I receive consistent validation of measurable input
 
 **Why this priority**: Native representations and partial-update state prevent a common input byte count from predicting storage success. Identical data can succeed on one provider and fail on another; this limitation must be explicit. Exact neutral-value and nesting checks still fail consistently before native I/O.
 
-**Independent Test**: Explicit provider mocks accept delegation of valid large inputs and depth 31/32; depth 33 fails before delegation for all three write operations. Root Map is depth zero. No live service is required for these checks.
+**Independent Test**: Explicit provider mocks accept delegation of valid large inputs and depth 31/32; depth 33 fails before delegation for all three write operations. Root Map is depth zero. Native diagnostic/request fixtures verify WARN at 409600 payload bytes, logger-level suppression and unchanged native completion/errors. No live service is required for these checks.
 
 **Acceptance Scenarios**:
 
@@ -208,6 +212,7 @@ As an application developer, I receive consistent validation of measurable input
 2. **Given** 33 nested Map/List levels below the root, **When** create/update/upsert is called, **Then** non-retryable `INVALID_REQUEST` occurs before provider delegation.
 3. **Given** at most 32 nested levels, **When** other input checks pass, **Then** the request reaches the provider; empty containers count, scalars do not, and native success is not guaranteed.
 4. **Given** a native size/quota failure, **Then** existing provider-neutral normalization applies, potentially after network I/O/cost; unchanged oversized inputs must not be blindly retried.
+5. **Given** available completed successful Cosmos write diagnostics or a Spanner CommitRequest with payload size at least 409600 bytes, **Then** an enabled `com.multiclouddb.size` WARN logger emits a value-free advisory identifying the response/request metric. It does not reject/retry the write or establish stored size. Missing signals and DynamoDB's lack of observer do not imply compatibility.
 
 ---
 
@@ -742,7 +747,7 @@ The SDK enforces a strict no-code-escape-hatch policy to preserve portability:
 - **FR-061**: After the closed-client check, create/update/upsert MUST validate null roots, exact supported types, string Map keys, finite floating values, cycles and depth before provider delegation. Root Map depth is zero; each nested Map/List (including empty containers) adds one, scalars add none, and the maximum path is 32. Violations produce non-retryable `INVALID_REQUEST`. Validation is iterative, permits shared acyclic subtrees and does not modify, copy, serialize or size-count input. Cursor/read parser limits remain unchanged.
 - **FR-062**: The SDK MUST document provider-specific resource quotas (e.g., maximum logical partition size), rather than promise uniform storage capacity across different native representations.
 - **FR-063**: When a provider-specific quota limit is reached (e.g., partition size exceeded, throughput exhausted), the SDK MUST surface the failure through the standard provider-neutral error model with clear categorization and actionable guidance.
-- **FR-064**: The SDK MUST document exact input validation and provider-specific size/quota limitations, without exposing a fictitious common byte allowance or promising native success. Native failures may incur network I/O/cost; no new size category, bypass, automatic chunking or offload is added.
+- **FR-064**: The SDK MUST document exact input validation and provider-specific size/quota limitations without promising native success. Best-effort payload observations MUST remain advisory at 400 KiB: Cosmos completed operation-max response payload, Spanner existing commit-request protobuf, no DynamoDB observer. Warnings MUST NOT contain payloads or change native outcomes/retries. Logger levels control visibility; post-write test log assertions MUST NOT become SDK write failures. No extra reads, separate serialization, SDK test/opt-out option, size category, chunking or offload is added. No signal is not proof of fit, and first protobuf size computation may have cost.
 
 #### Change Data Capture / Change Feed Requirements
 
@@ -1093,7 +1098,7 @@ The following operators and functions form the portable query subset, available 
 - **SC-020**: A query specifying ORDER BY with a descending sort direction returns items in reverse order on all providers that support ORDER BY. Providers that do not support ORDER BY produce a clear, actionable error.
 - **SC-021**: A document created with a TTL of T seconds is automatically removed after approximately T seconds on all providers that support row-level TTL.
 - **SC-022**: Reading a document returns write timestamp metadata on all providers that support it, enabling applications to determine data freshness within 1 second of accuracy.
-- **SC-023**: Offline mock tests prove common rejection at nested depth 33, acceptance through 32 and delegation above the former 399 KiB boundary across all providers/write operations, without claiming native storage success. Native mapping fixtures preserve the same 32 semantic levels.
+- **SC-023**: Offline mock tests prove common rejection at nested depth 33, acceptance through 32 and delegation above the former 399 KiB boundary across all providers/write operations, without claiming native storage success. Native mapping fixtures preserve the same 32 semantic levels. Warning tests cover below/equal/above 400 KiB, missing signals, log control and unchanged native completion/error handling.
 - **SC-024**: When a provider-specific quota limit is reached (e.g., partition size exceeded), the SDK surfaces a provider-neutral error with clear categorization and actionable guidance, consistent across all providers.
 - **SC-025**: Every Java source file (main and test) across all modules carries the standard Microsoft copyright header (`// Copyright (c) Microsoft Corporation. All rights reserved.` / `// Licensed under the MIT License.`) as its first two lines. A `LICENSE` file exists at the repository root with the full MIT license text. Both are verifiable by inspection of any file in the repository.
 - **SC-026**: A change feed consumer can receive a chronologically ordered stream of create and update events from a collection on all providers that support change feed, by changing configuration only.
@@ -1154,7 +1159,7 @@ The following operators and functions form the portable query subset, available 
 - **Row-level TTL scope**: The SDK supports row-level (document-level) TTL only. Cell-level TTL (per-field expiration) as found in Cassandra is not supported because the native TTL engines in Cosmos DB and DynamoDB operate at the row/item level. Applications migrating from Cassandra cell-level TTL should evaluate whether row-level TTL is sufficient for their use case.
 - **TTL precision**: TTL expiration is approximate. Providers may enforce TTL with varying granularity (e.g., Cosmos DB checks TTL in the background periodically, DynamoDB typically deletes within 48 hours of expiration). The SDK does not guarantee exact-second expiration precision.
 - **Write timestamp source**: Write timestamps are sourced from the provider's system metadata (e.g., Cosmos DB `_ts`, DynamoDB stream record timestamps). The SDK does not maintain its own write timestamps. Precision and availability may vary by provider.
-- **Native size enforcement**: The former 399 KiB logical JSON estimate is removed. Native SDK/service constraints govern size, including final state after Spanner partial updates. Exact input depth is limited to 32 nested Map/List levels below the root; no native-fit guarantee, numeric-range enforcement, bypass or automatic offload is added.
+- **Native size enforcement**: The former 399 KiB logical JSON estimate is removed. Native SDK/service constraints govern size, including final state after Spanner partial updates. Optional Cosmos response/Spanner request payload warnings do not measure that final state or undeployed providers. Exact input depth is limited to 32 nested Map/List levels below the root; no native-fit guarantee, numeric-range enforcement, bypass or automatic offload is added.
 - **Uniform quota limits**: The SDK documents and surfaces provider quota constraints (e.g., logical partition size limits, throughput caps) in a uniform way. While exact quota values may differ by provider, the SDK ensures that quota-related failures are reported through the standard error model with consistent categorization.
 - **Multi-tenancy patterns**: The SDK does not enforce tenant isolation. Multi-tenant applications can use partition key schemes to scope data by tenant (e.g., including an organization code in the partition key value) and use the existing `partitionKey` query scope (FR-039) to restrict queries to a single tenant's data. For stronger isolation (per-tenant encryption, noisy-neighbor protection), applications should use collection-per-tenant or account-per-tenant patterns with provider fleet management features. This is a deployment architecture decision, not an SDK-level concern.
 - Every Java source file in all modules (main and test) carries the standard Microsoft MIT copyright header as its first two lines. This applies to all 117 Java files across `multiclouddb-api`, `multiclouddb-conformance`, `multiclouddb-provider-cosmos`, `multiclouddb-provider-dynamo`, `multiclouddb-provider-spanner`, and `multiclouddb-samples`. A `LICENSE` file at the repository root contains the full MIT license text. The per-file header is:
@@ -1269,7 +1274,7 @@ This checklist is used to accept the feature as “done” at the spec level.
 
 - [ ] Supported large inputs pass common validation without byte measurement; depth 31/32 delegates and depth 33 fails before native I/O for all providers/write operations. Native schema/item limits remain applicable, without a native-fit or identical-persistence guarantee.
 - [ ] Common write validation enforces the neutral input contract and root-zero nesting limit of 32, not a byte estimate. Native size rejection is normalized, but acceptance can differ across providers and passing input validation does not guarantee native fit.
-- [ ] The guide documents exact input validation, native size/quota constraints, partial-update limitations and the possibility of provider-dependent success/failure.
+- [ ] The guide documents exact validation, native limits, asymmetric payload warnings, partial-update limitations, missing signals and post-write test assertions without a new SDK failure/configuration contract.
 - [ ] When a provider-specific quota limit is reached, the SDK surfaces a provider-neutral error with clear categorization and actionable guidance.
 - [ ] Quota-related errors are consistent in format across all providers.
 

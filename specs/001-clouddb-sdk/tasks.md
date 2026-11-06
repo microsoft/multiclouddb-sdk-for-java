@@ -688,7 +688,9 @@ RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use sing
 
 **Goal**: Replace the earlier common size estimate with exact neutral-input and
 32-level nesting validation; native SDKs/services determine size acceptance.
-The former 400 KB task premise is superseded, not a future offload/chunk threshold.
+Add best-effort Cosmos response/Spanner commit-request payload warnings at
+400 KiB, with normal logger controls and post-write test log assertions.
+No extra reads, SDK test/configuration API or stored-size guarantee is added.
 
 - [x] T158 [P] [US7] Replace `DocumentSizeValidator` and `DocumentJsonSize` with
   internal `DocumentValidator`. Remove byte accounting and size-only normalization;

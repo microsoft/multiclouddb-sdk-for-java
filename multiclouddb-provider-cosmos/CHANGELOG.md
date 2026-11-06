@@ -7,6 +7,13 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- Advisory WARN logging on `com.multiclouddb.size` for available completed write
+  operation-max response payloads at least 400 KiB. No extra reads, write rejection
+  or stored-item-size guarantee; normal logger levels control visibility.
+  ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
+
 ### Fixed
 
 - Normalize native HTTP 413 (request too large) as non-retryable

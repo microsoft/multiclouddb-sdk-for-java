@@ -8,6 +8,7 @@ import com.azure.cosmos.CosmosException;
 import com.azure.cosmos.models.CosmosItemResponse;
 import com.azure.cosmos.models.FeedResponse;
 import com.multiclouddb.api.ResourceAddress;
+import com.multiclouddb.api.OperationNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,6 +48,8 @@ final class CosmosDiagnosticsLogger {
     // Intentionally uses CosmosProviderClient's logger so all Cosmos diagnostics
     // appear under a single logger name, simplifying log configuration.
     static final Logger LOG = LoggerFactory.getLogger(CosmosProviderClient.class);
+    private static final Logger SIZE_LOG = LoggerFactory.getLogger("com.multiclouddb.size");
+    private static final int PAYLOAD_WARNING_BYTES = 400 * 1024;
 
     private CosmosDiagnosticsLogger() {}
 
@@ -71,6 +74,21 @@ final class CosmosDiagnosticsLogger {
         String activityId = response.getActivityId();
         int statusCode = response.getStatusCode();
         long latencyMs = durationMs(diag);
+
+        if (SIZE_LOG.isWarnEnabled() && diag != null && statusCode >= 200 && statusCode < 300
+                && (OperationNames.CREATE.equals(operation) || OperationNames.UPDATE.equals(operation)
+                || OperationNames.UPSERT.equals(operation))) {
+            var context = diag.getDiagnosticsContext();
+            if (context != null && context.isCompleted() && !context.isFailure()) {
+                int bytes = context.getMaxResponsePayloadSizeInBytes();
+                if (bytes >= PAYLOAD_WARNING_BYTES) {
+                    SIZE_LOG.warn("size.payload-advisory provider=cosmos operation={} "
+                                    + "metric=operation-max-response-payload bytes={} thresholdBytes={} "
+                                    + "notStoredItemSize=true advisoryOnly=true",
+                            operation, bytes, PAYLOAD_WARNING_BYTES);
+                }
+            }
+        }
 
         LOG.debug("cosmos.op={} db={} col={} activityId={} statusCode={} ruCharge={} latencyMs={}",
                 operation, address.database(), address.collection(),
@@ -163,4 +181,3 @@ final class CosmosDiagnosticsLogger {
         return d != null ? d.toMillis() : -1L;
     }
 }
-
