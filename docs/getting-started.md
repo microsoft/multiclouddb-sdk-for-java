@@ -154,8 +154,9 @@ When you need provider-specific query syntax, use `nativeExpression()`:
 === "DynamoDB"
 
     ```java
+    // Table name is database__collection - here ResourceAddress("mydb", "todos")
     QueryRequest q = QueryRequest.builder()
-            .nativeExpression("SELECT * FROM \"todos\" WHERE begins_with(title, 'Ship')")
+            .nativeExpression("SELECT * FROM \"mydb__todos\" WHERE begins_with(title, 'Ship')")
             .maxPageSize(25)
             .build();
     ```
