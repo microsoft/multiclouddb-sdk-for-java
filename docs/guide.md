@@ -676,8 +676,7 @@ root is also invalid for create/update/upsert; empty Maps and nested nulls remai
 Write nesting is now limited to **32 Map/List levels below the root Map**, rather
 than the previous 1000-container traversal limit that included the root. The
 existing 399 KiB logical-size estimate has been removed; native size rejection
-may happen after I/O and differs by provider. Optional payload warnings are
-advisory only, not a replacement storage-size guarantee. See
+may happen after I/O and differs by provider. See
 [exact validation and native size limits](#document-size-enforcement).
 Cursor and read/query/feed parser limits are unchanged.
 
@@ -2052,10 +2051,13 @@ system properties (`_ts`, `_etag`, `_rid`, `_self`, `_attachments`, `partitionKe
 
 The former **399 KiB logical JSON estimate is no longer enforced**. It could not
 reliably predict native storage size: keys/TTL, metadata, native encoding and
-existing data all affect that size. The common validator does not serialize or
-measure input to predict native acceptance.
+existing data all affect that size. No common input-Map byte estimate is used
+to predict native acceptance.
 
-Native SDKs/services independently decide storage acceptance. DynamoDB has a
+The SDK adds no payload-size checks or size-warning logger. Size estimation and
+cross-provider size advisories are deferred; structural validation remains.
+
+Native SDKs/services decide size acceptance. DynamoDB has a
 [400 KiB item limit](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Constraints.html#limits-items),
 Cosmos DB has a [2 MB item limit](https://learn.microsoft.com/en-us/azure/cosmos-db/concepts-limits#per-item-limits),
 and Spanner applies [column, row and mutation/commit limits](https://cloud.google.com/spanner/quotas).
@@ -2074,67 +2076,6 @@ validation may occur after network I/O and incur cost. Inspect the normalized
 category/status and documented provider constraints; do not blindly retry an
 unchanged oversized request. No automatic chunking, offload or bypass option is
 provided.
-
-### Best-effort payload warnings
-
-The dedicated SLF4J logger **`com.multiclouddb.size`** emits WARN events with marker
-`size.payload-advisory` when an available native payload observation is
-**at least 400 KiB (409,600 bytes)**. This threshold is an advisory reference
-chosen with DynamoDB's item limit in mind, **not a measurement of that limit's
-accounted size**. It does not reject writes, change results or request SDK retries.
-
-| Provider | Observed signal | Timing and limits |
-|---|---|---|
-| Cosmos | `operation-max-response-payload` from completed, successful write diagnostics | After create/replace/upsert returns; response bodies are already enabled. This is the maximum payload observed in the operation, possibly across service interactions/retries, not an exact final-item size. Null/incomplete diagnostics or unavailable/zero measurements produce no size warning. |
-| DynamoDB | No additional size observer | Native size failures and existing error normalization remain. Current writes use PutItem, not UpdateItem with ALL_NEW; response/capacity data does not supply final-item bytes. |
-| Spanner | `commit-request-protobuf` from the existing CommitRequest | Before send, including commit attempts/retries and potentially multiple mutations. It includes request overhead, excludes unchanged columns in partial updates and does not measure final rows, indexes, change streams or commit accounting. CommitResponse does not contain final rows. |
-
-This deliberate provider asymmetry is diagnostic, not a portable size guarantee.
-No extra read or separate serialization is used to manufacture a measurement.
-The first protobuf `getSerializedSize()` may traverse/encode fields before caching
-the result; this is not a zero-overhead claim. The Spanner interceptor is installed
-on the SDK-owned client configuration, not a general hook for independently
-constructed native clients. No warning means neither native fit nor compatibility
-with a provider that has not been deployed/tested. Stronger sizing and
-partial-update accounting remain separate work.
-
-Warnings contain only provider/operation, metric kind, byte count and fixed
-advisory text, not documents, field names, keys, resource identifiers or full
-native diagnostics. Existing native error/diagnostic logging policies are
-unchanged. Control visibility through normal logging configuration, for example
-Logback `<logger name="com.multiclouddb.size" level="ERROR"/>`; no SDK opt-out or
-test-mode option is added. Suppressing WARN does not disable native limits or
-guarantee that the native SDK avoids its own diagnostics/size work.
-
-**Tests can assert on captured warnings after the write completes.** With
-test-only Logback and JUnit, isolate the client/test from concurrent writers:
-
-```java
-var logger = (ch.qos.logback.classic.Logger)
-        org.slf4j.LoggerFactory.getLogger("com.multiclouddb.size");
-var previousLevel = logger.getLevel();
-var captured = new ch.qos.logback.core.read.ListAppender<
-        ch.qos.logback.classic.spi.ILoggingEvent>();
-captured.start();
-logger.setLevel(ch.qos.logback.classic.Level.WARN);
-logger.addAppender(captured);
-try {
-    client.upsert(address, key, document); // May already be persisted.
-    org.junit.jupiter.api.Assertions.assertTrue(captured.list.stream().noneMatch(
-            event -> event.getLevel() == ch.qos.logback.classic.Level.WARN
-                    && event.getFormattedMessage().startsWith("size.payload-advisory")),
-            "Inspect payload-size advisory; do not retry an already successful write");
-} finally {
-    logger.detachAppender(captured);
-    logger.setLevel(previousLevel);
-    captured.stop();
-}
-```
-
-The assertion fails the **test**, not the SDK write. Never throw an assertion from
-a logging appender/native callback or wrap the test assertion in write retry
-logic. This example does not detect missing signals, prove service acceptance
-or validate the final state of a Spanner partial update.
 
 ### Exact input validation and nesting
 

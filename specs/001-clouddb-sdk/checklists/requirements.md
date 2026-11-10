@@ -43,7 +43,7 @@ Added 7 new capability areas based on customer gap analysis (2026-03-19):
 | ORDER BY with ASC/DESC | P2 | FR-053, FR-054, SC-020, User Story 5 | Specified |
 | Row-level TTL | P2 | FR-056, FR-057, SC-021, User Story 6 | Specified |
 | Write timestamp metadata | P2 | FR-058, FR-059, SC-022, User Story 6 | Specified |
-| Exact write validation (32 nested levels); native size limits and non-blocking provider-specific payload warnings | P2 | FR-060–FR-064, SC-023, SC-024, User Story 7 | Specified |
+| Exact write validation (32 nested levels); native size/quota enforcement, no common byte estimate | P2 | FR-060–FR-064, SC-023, SC-024, User Story 7 | Specified |
 | ~~Secondary index awareness~~ | ~~P3~~ | ~~FR-065, FR-066, SC-025~~ | Removed — not a portable concept across Cosmos DB, DynamoDB, and Spanner |
 | Multi-tenancy guidance | P3 | Edge case + Assumptions section | Documented |
 

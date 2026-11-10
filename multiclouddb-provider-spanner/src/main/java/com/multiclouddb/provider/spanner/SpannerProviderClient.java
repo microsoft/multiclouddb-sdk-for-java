@@ -196,7 +196,6 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
 
         SpannerOptions.Builder builder = SpannerOptions.newBuilder()
                 .setProjectId(projectId)
-                .setInterceptorProvider(() -> List.of(new SpannerPayloadSizeInterceptor()))
                 .setHeaderProvider(FixedHeaderProvider.create(
                         "user-agent", SdkUserAgent.userAgent(config)));
 

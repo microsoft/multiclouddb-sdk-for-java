@@ -52,9 +52,6 @@ shared acyclic subtrees are valid. Missing keys differ from present nulls.
 Preserve numeric conversion behavior. Write nesting permits at most 32 Map/List
 levels below the root Map (depth zero), counting empty containers but not scalars.
 Native SDKs/services enforce size; no common byte estimate is imposed.
-Best-effort payload warnings at 400 KiB do not add a size-validation contract:
-Cosmos observes completed operation-max response payloads, Spanner observes
-commit-request protobuf bytes, and DynamoDB has no additional observer.
 
 Applications map DTOs explicitly without an SDK mapping interface. Inputs must
 not be mutated during the synchronous call; the SDK neither mutates nor retains

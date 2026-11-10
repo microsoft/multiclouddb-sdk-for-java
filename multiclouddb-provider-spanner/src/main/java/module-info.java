@@ -14,10 +14,6 @@ module com.multiclouddb.provider.spanner {
     // JPMS compiler reports "module not in scope" errors when it resolves the
     // signatures of google.cloud.spanner methods we call.
     requires gax;
-    requires gax.grpc;
-    requires io.grpc;
-    requires proto.google.cloud.spanner.v1;
-    requires protobuf.java;
     requires com.google.api.apicommon;
     requires com.google.gson;
     requires org.slf4j;

@@ -8,7 +8,6 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.azure.cosmos.CosmosDiagnostics;
-import com.azure.cosmos.CosmosDiagnosticsContext;
 import com.azure.cosmos.CosmosException;
 import com.azure.cosmos.models.CosmosItemResponse;
 import com.azure.cosmos.models.FeedResponse;
@@ -47,9 +46,6 @@ class CosmosDiagnosticsLogTest {
 
     private ListAppender<ILoggingEvent> appender;
     private Logger cosmosLogger;
-    private Logger sizeLogger;
-    private Level previousSizeLevel;
-    private ListAppender<ILoggingEvent> sizeAppender;
 
     private static final ResourceAddress ADDR = new ResourceAddress("testdb", "testcol");
 
@@ -60,129 +56,12 @@ class CosmosDiagnosticsLogTest {
         appender = new ListAppender<>();
         appender.start();
         cosmosLogger.addAppender(appender);
-        sizeLogger = (Logger) LoggerFactory.getLogger("com.multiclouddb.size");
-        previousSizeLevel = sizeLogger.getLevel();
-        sizeLogger.setLevel(Level.WARN);
-        sizeAppender = new ListAppender<>();
-        sizeAppender.start();
-        sizeLogger.addAppender(sizeAppender);
     }
 
     @AfterEach
     void detachAppender() {
         cosmosLogger.detachAppender(appender);
         appender.stop();
-        sizeLogger.detachAppender(sizeAppender);
-        sizeLogger.setLevel(previousSizeLevel);
-        sizeAppender.stop();
-    }
-
-    @Test
-    void sizeAdvisoryUsesOnlyCompletedSuccessfulWriteResponsePayloads() {
-        var response = mockItemResponse(1, 1, "secret-request-id", 200);
-        var context = mock(CosmosDiagnosticsContext.class);
-        when(response.getDiagnostics().getDiagnosticsContext()).thenReturn(context);
-        when(context.isCompleted()).thenReturn(true);
-        for (String operation : List.of("create", "update", "upsert")) {
-            for (int bytes : new int[]{409599, 409600, 409601}) {
-                sizeAppender.list.clear();
-                when(context.getMaxResponsePayloadSizeInBytes()).thenReturn(bytes);
-                assertDoesNotThrow(() -> CosmosDiagnosticsLogger.logItem(operation, ADDR, response));
-                assertEquals(bytes >= 409600 ? 1 : 0, sizeAppender.list.size());
-                if (bytes >= 409600) {
-                    var event = sizeAppender.list.get(0);
-                    assertEquals(Level.WARN, event.getLevel());
-                    assertEquals("size.payload-advisory provider=cosmos operation=" + operation
-                            + " metric=operation-max-response-payload bytes=" + bytes
-                            + " thresholdBytes=409600 notStoredItemSize=true advisoryOnly=true",
-                            event.getFormattedMessage());
-                    assertNull(event.getThrowableProxy());
-                }
-            }
-        }
-        verify(response, never()).getItem();
-        verify(context, never()).getMaxRequestPayloadSizeInBytes();
-        sizeAppender.list.clear();
-        for (String operation : List.of("read", "delete", "query")) {
-            CosmosDiagnosticsLogger.logItem(operation, ADDR, response);
-        }
-        assertTrue(sizeAppender.list.isEmpty());
-    }
-
-    @Test
-    void missingIncompleteAndFailedSizeSignalsAreNotTreatedAsMeasurements() {
-        var response = mockItemResponse(1, 1, "act", 200);
-        CosmosDiagnosticsLogger.logItem("upsert", ADDR, response); // No associated context.
-        var context = mock(CosmosDiagnosticsContext.class);
-        when(response.getDiagnostics().getDiagnosticsContext()).thenReturn(context);
-        when(context.getMaxResponsePayloadSizeInBytes()).thenReturn(500000);
-        CosmosDiagnosticsLogger.logItem("upsert", ADDR, response); // Incomplete.
-        verify(context, never()).getMaxResponsePayloadSizeInBytes();
-        when(context.isCompleted()).thenReturn(true);
-        when(context.isFailure()).thenReturn(true);
-        CosmosDiagnosticsLogger.logItem("upsert", ADDR, response);
-        when(context.isFailure()).thenReturn(false);
-        when(context.getMaxResponsePayloadSizeInBytes()).thenReturn(0);
-        CosmosDiagnosticsLogger.logItem("upsert", ADDR, response);
-        when(context.getMaxResponsePayloadSizeInBytes()).thenReturn(500000);
-        when(response.getStatusCode()).thenReturn(413);
-        CosmosDiagnosticsLogger.logItem("upsert", ADDR, response);
-        when(response.getDiagnostics()).thenReturn(null);
-        CosmosDiagnosticsLogger.logItem("upsert", ADDR, response);
-        assertTrue(sizeAppender.list.isEmpty(), "Absence of a warning is not evidence of native fit");
-    }
-
-    @Test
-    void sizeLoggerLevelControlsVisibilityWithoutChangingNativeDiagnosticsSetting() {
-        var response = mockItemResponse(1, 1, "act", 200);
-        var context = mock(CosmosDiagnosticsContext.class);
-        when(response.getDiagnostics().getDiagnosticsContext()).thenReturn(context);
-        when(context.isCompleted()).thenReturn(true);
-        when(context.getMaxResponsePayloadSizeInBytes()).thenReturn(409600);
-        sizeLogger.setLevel(Level.ERROR);
-        assertDoesNotThrow(() -> CosmosDiagnosticsLogger.logItem("create", ADDR, response));
-        assertTrue(sizeAppender.list.isEmpty());
-        verify(context, never()).getMaxResponsePayloadSizeInBytes();
-        sizeLogger.setLevel(Level.WARN);
-        CosmosDiagnosticsLogger.logItem("create", ADDR, response);
-        assertEquals(1, sizeAppender.list.size());
-    }
-
-    @Test
-    void successfulPublicWriteReturnsBeforeTestAssertsOnWarnings() throws Exception {
-        var sdk = mock(com.azure.cosmos.CosmosClient.class);
-        var database = mock(com.azure.cosmos.CosmosDatabase.class);
-        var container = mock(com.azure.cosmos.CosmosContainer.class);
-        var response = mockItemResponse(1, 1, "private-request-id", 200);
-        var context = mock(CosmosDiagnosticsContext.class);
-        when(response.getDiagnostics().getDiagnosticsContext()).thenReturn(context);
-        when(context.isCompleted()).thenReturn(true);
-        when(context.getMaxResponsePayloadSizeInBytes()).thenReturn(409600);
-        when(sdk.getDatabase(anyString())).thenReturn(database);
-        when(database.getContainer(anyString())).thenReturn(container);
-        doReturn(response).when(container).upsertItem(any(java.util.Map.class),
-                any(com.azure.cosmos.models.PartitionKey.class),
-                any(com.azure.cosmos.models.CosmosItemRequestOptions.class));
-        try (var construction = mockConstruction(com.azure.cosmos.CosmosClientBuilder.class,
-                withSettings().defaultAnswer(RETURNS_SELF),
-                (builder, ignored) -> when(builder.buildClient()).thenReturn(sdk));
-             var client = com.multiclouddb.api.MulticloudDbClientFactory.create(
-                     com.multiclouddb.api.MulticloudDbClientConfig.builder()
-                             .provider(com.multiclouddb.api.ProviderId.COSMOS)
-                             .connection(java.util.Map.of("endpoint", "https://example.documents.azure.com:443/",
-                                     "key", "dGVzdA==")).build())) {
-            verify(construction.constructed().get(0)).contentResponseOnWriteEnabled(true);
-            assertDoesNotThrow(() -> client.upsert(ADDR, com.multiclouddb.api.MulticloudDbKey.of("pk", "sk"),
-                    java.util.Map.of("secret-field", "secret-value")));
-            verify(container, times(1)).upsertItem(any(java.util.Map.class),
-                    any(com.azure.cosmos.models.PartitionKey.class),
-                    any(com.azure.cosmos.models.CosmosItemRequestOptions.class));
-            verifyNoMoreInteractions(container);
-            assertEquals(1, sizeAppender.list.size());
-            // An application test may fail here, outside the successful write.
-            assertThrows(AssertionError.class, () -> assertTrue(sizeAppender.list.isEmpty()));
-            assertFalse(sizeAppender.list.get(0).getFormattedMessage().contains("secret"));
-        }
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
@@ -268,6 +147,18 @@ class CosmosDiagnosticsLogTest {
     }
 
     // ── logItem — fast, normal operation ─────────────────────────────────────
+
+    @Test
+    void writeDiagnosticsDoNotInspectPayloadSize() {
+        var response = mockItemResponse(1, 1, "act-write", 200);
+        for (String operation : List.of("create", "update", "upsert")) {
+            CosmosDiagnosticsLogger.logItem(operation, ADDR, response);
+            assertTrue(messageContains(Level.DEBUG, "cosmos.op=" + operation));
+        }
+        verify(response.getDiagnostics(), never()).getDiagnosticsContext();
+        verify(response, never()).getItem();
+        assertFalse(hasLevel(Level.WARN));
+    }
 
     @Test
     @DisplayName("logItem: always emits DEBUG with activityId and statusCode")

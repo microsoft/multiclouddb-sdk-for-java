@@ -171,6 +171,7 @@ class NativeWriteMappingTest {
                     .provider(ProviderId.SPANNER)
                     .connection(Map.of("projectId", "project", "instanceId", "instance", "databaseId", "database"))
                     .build())) {
+                verify(builder, never()).setInterceptorProvider(any());
                 for (Map<String, Object> input : fixtures()) {
                     var before = new LinkedHashMap<>(input);
                     for (var key : KEYS) for (var operationOptions : OPTIONS) {
