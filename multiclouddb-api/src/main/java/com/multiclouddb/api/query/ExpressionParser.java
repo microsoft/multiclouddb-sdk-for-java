@@ -37,14 +37,18 @@ import java.util.List;
  */
 public final class ExpressionParser {
 
+    private static final int MAX_EXPRESSION_LENGTH = 8192;
+    private static final int MAX_RECURSION_DEPTH = 100;
     private final String input;
     private final List<Token> tokens;
     private int pos;
+    private int recursionDepth;
 
     private ExpressionParser(String input) {
         this.input = input;
         this.tokens = tokenize(input);
         this.pos = 0;
+        this.recursionDepth = 0;
     }
 
     /**
@@ -58,7 +62,14 @@ public final class ExpressionParser {
         if (expression == null || expression.isBlank()) {
             throw new ExpressionParseException("Expression must not be null or blank", 0);
         }
-        ExpressionParser parser = new ExpressionParser(expression.trim());
+        String trimmed = expression.trim();
+        if (trimmed.length() > MAX_EXPRESSION_LENGTH) {
+            throw new ExpressionParseException(
+                    "Expression length must be <= " + MAX_EXPRESSION_LENGTH
+                            + " characters",
+                    MAX_EXPRESSION_LENGTH);
+        }
+        ExpressionParser parser = new ExpressionParser(trimmed);
         Expression result = parser.parseOrExpression();
         if (parser.pos < parser.tokens.size()) {
             Token unexpected = parser.tokens.get(parser.pos);
@@ -69,6 +80,19 @@ public final class ExpressionParser {
     }
 
     // ---- Recursive descent ----
+
+    private void enterRecursion() {
+        if (recursionDepth >= MAX_RECURSION_DEPTH) {
+            throw new ExpressionParseException(
+                    "Expression recursion depth must be <= " + MAX_RECURSION_DEPTH,
+                    pos < tokens.size() ? tokens.get(pos).position : input.length());
+        }
+        recursionDepth++;
+    }
+
+    private void exitRecursion() {
+        recursionDepth--;
+    }
 
     private Expression parseOrExpression() {
         Expression left = parseAndExpression();
@@ -99,8 +123,13 @@ public final class ExpressionParser {
 
     private Expression parseNotExpression() {
         if (matchKeyword("NOT")) {
-            Expression child = parseNotExpression();
-            return new NotExpression(child);
+            enterRecursion();
+            try {
+                Expression child = parseNotExpression();
+                return new NotExpression(child);
+            } finally {
+                exitRecursion();
+            }
         }
         return parsePrimary();
     }
@@ -112,9 +141,14 @@ public final class ExpressionParser {
 
         // Parenthesized expression
         if (match(TokenType.LPAREN)) {
-            Expression inner = parseOrExpression();
-            expect(TokenType.RPAREN, ")");
-            return inner;
+            enterRecursion();
+            try {
+                Expression inner = parseOrExpression();
+                expect(TokenType.RPAREN, ")");
+                return inner;
+            } finally {
+                exitRecursion();
+            }
         }
 
         Token current = tokens.get(pos);
