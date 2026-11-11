@@ -69,13 +69,13 @@ The SDK is fully implemented with CRUD + query + paging + conformance tests (47 
 ## Technical Context
 
 **Language/Version**: Java 17 LTS (Eclipse Adoptium Temurin-17.0.10.7-hotspot)
-**Primary Dependencies**: Jackson 2.22.3, SLF4J 2.0.12, Azure Cosmos SDK 4.82.0, Azure Identity 1.18.2, AWS SDK v2 2.34.0 (DynamoDB + DynamoDB Enhanced), Google Cloud Spanner 6.62.0
+**Primary Dependencies**: API: SLF4J 2.0.12, without a direct JSON-library dependency. Providers: Azure Cosmos SDK 4.82.0, Azure Identity 1.18.2, AWS SDK v2 2.34.0, Google Cloud Spanner 6.62.0. Cursor persistence takes explicit application JSON functions; Spanner uses its own explicit Gson dependency for internal stored/change-stream JSON. No client requires JSON callbacks at construction. Native SDK dependencies remain externally visible and can still include Gson/Jackson.
 **Storage**: Cosmos DB (NoSQL), DynamoDB, Spanner (via provider SDKs)
 **Testing**: JUnit 5.10.2, Mockito 5.11.0, Maven Surefire/Failsafe
 **Target Platform**: JVM 17+ (server-side)
 **Project Type**: Multi-module Maven library (7 modules)
 **Performance Goals**: Expression translation overhead < 1ms per query (thin wrapper principle)
-**Constraints**: No runtime dependencies beyond Jackson for AST serialization; parser must be hand-written (no ANTLR/grammar-generator dependency)
+**Constraints**: Map/Object public payloads and application-owned mapping. Cursor JSON callbacks use JDK Function/BiFunction with neutral Object targets, distinct from POJO mapping and Spanner's internal Gson processing. Preserve JSON cursor tokens using the [application-owned compatibility profile](../../docs/guide.md#application-owned-json-processing); no binary codec or API-selected JSON fallback. Spanner retains its storage formats and legacy corruption handling. Write validation checks neutral values and at most 32 nested Map/List levels below the root, without a common byte estimate; native SDKs/services decide size acceptance. Cursor/read parser limits remain separate. The query-expression parser remains hand-written (no ANTLR/grammar-generator dependency). See [current data contracts](data-model.md#document).
 **Scale/Scope**: ~25 new/modified Java source files, ~30 new test cases for expression translation, provisioning API across 7 files, cloud authentication (DefaultAzureCredential + ARM management SDK) in Cosmos provider
 
 ## Constitution Check
@@ -190,13 +190,13 @@ Three primitives on `MulticloudDbClient`:
 2. `ChangeFeedPage readChanges(ResourceAddress addr, ChangeFeedCursor cursor)` — drains one bounded page (events + a refreshed cursor + `hasMore` + `isTerminal`).
 3. `readChanges(ResourceAddress addr, ChangeFeedCursor cursor, OperationOptions opts)` — accepts `OperationOptions` for forward-compatibility; **v1 providers do not honour any option field**.
 
-Plus two cursor factories: `ChangeFeedCursor.now()` (live-tip sentinel) and `ChangeFeedCursor.fromToken(String)` (resume from a previously persisted token). Tokens are opaque Base64URL JSON carrying provider id, resource binding, anchor, partition list, and an `issuedAt` epoch-ms with a 24h portable age cap (CursorTokenCodec.MAX_TOKEN_AGE_MILLIS).
+Plus two cursor factories: `ChangeFeedCursor.now()` (live-tip sentinel) and `ChangeFeedCursor.fromToken(token, deserialize)` (resume from a previously persisted token). Tokens are opaque Base64URL JSON carrying provider id, resource binding, anchor, partition list, and an `issuedAt` epoch-ms with a 24h portable age cap (CursorTokenCodec.MAX_TOKEN_AGE_MILLIS).
 
 ### Per-provider mapping
 
 | Provider | Native API | Notes |
 |---|---|---|
-| Cosmos | `CosmosContainer.queryChangeFeed(CosmosChangeFeedRequestOptions, JsonNode.class)` + `getFeedRanges()` | Always reads in All-Versions-and-Deletes (AVAD) mode and unwraps the AVAD envelope (`{current, previous, metadata}`) so `ChangeEvent.type()` and `ChangeEvent.data()` match the Dynamo / Spanner contract. The Cosmos container the caller targets must be provisioned with an AVAD change-feed policy (`ChangeFeedPolicy.createAllVersionsAndDeletesPolicy`); a non-AVAD container surfaces a Cosmos 400 BadRequest through the SDK's normalised error envelope on the first read. 410 GONE → `CursorExpiredException(PROVIDER_TRIMMED)`. Under the opt-in path (`ChangeFeedConfig.extendedRetention`), `ensureContainer(...)` drives provisioning end-to-end — creating the container with the AVAD `ChangeFeedPolicy` carrying the requested retention — and the Continuous-Backup-required failure is re-mapped into `UNSUPPORTED_CAPABILITY(continuous_backup_required)`. |
+| Cosmos | `CosmosContainer.queryChangeFeed(CosmosChangeFeedRequestOptions, Object.class)` + `getFeedRanges()` | Always reads in All-Versions-and-Deletes (AVAD) mode and unwraps the AVAD envelope (`{current, previous, metadata}`) so `ChangeEvent.type()` and `ChangeEvent.data()` match the Dynamo / Spanner contract. The Cosmos container the caller targets must be provisioned with an AVAD change-feed policy (`ChangeFeedPolicy.createAllVersionsAndDeletesPolicy`); a non-AVAD container surfaces a Cosmos 400 BadRequest through the SDK's normalised error envelope on the first read. 410 GONE → `CursorExpiredException(PROVIDER_TRIMMED)`. Under the opt-in path (`ChangeFeedConfig.extendedRetention`), `ensureContainer(...)` drives provisioning end-to-end — creating the container with the AVAD `ChangeFeedPolicy` carrying the requested retention — and the Continuous-Backup-required failure is re-mapped into `UNSUPPORTED_CAPABILITY(continuous_backup_required)`. |
 | Dynamo | `DynamoDbStreams.getRecords(GetRecordsRequest)` with `ShardIteratorType=AT_SEQUENCE_NUMBER`/`LATEST` | Requires the table to have a stream enabled (`StreamSpecification` with `NEW_AND_OLD_IMAGES`). `TrimmedDataAccessException` → `CursorExpiredException(PROVIDER_TRIMMED)`. |
 | Spanner | `READ_<stream>(start_timestamp, end_timestamp, partition_token, heartbeat_milliseconds)` TVF in single-use read-only TX | Each `data_change_record.mod` → one `ChangeEvent`. `child_partitions_record` rows rotate the partition set in place (no cursor re-bootstrap required). `OUT_OF_RANGE` → `CursorExpiredException(PROVIDER_TRIMMED)`. Requires `CREATE CHANGE STREAM <name> FOR <collection> OPTIONS (value_capture_type='NEW_ROW')` provisioned out-of-band by default; under the opt-in path (`ChangeFeedConfig.extendedRetention`), `ensureContainer(...)` drives the SDK to emit the DDL itself, including the requested `OPTIONS (retention_period = '…')` clause, and the stream name honours the `changeStream.<collection>` connection-key override so the producer and reader resolve the same stream. |
 
@@ -207,7 +207,7 @@ Plus two cursor factories: `ChangeFeedCursor.now()` (live-tip sentinel) and `Cha
 - live-tip semantics (`now()` ignores prior events)
 - ordering within a partition
 - DELETE event surface (Cosmos AVAD + Dynamo + Spanner; Cosmos LatestVersion is *waived* — see FR-068 deferral)
-- continuation resume across re-bootstrap (`toToken()` → persist → `fromToken()`)
+- continuation resume across re-bootstrap (`toToken(serialize)` → persist → `fromToken(token, deserialize)`)
 - expired-token diagnostics (`CursorExpiredException` with `reason=PROVIDER_TRIMMED` from a 24h-old token, plus the codec-side `TOKEN_AGED_OUT` aged-token path)
 - per-partition cursor mint (`listCursors` returns ≥1 cursor)
 - error normalization (capability missing, provider trimmed, unsupported resource)

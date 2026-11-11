@@ -149,6 +149,18 @@ class CosmosDiagnosticsLogTest {
     // ── logItem — fast, normal operation ─────────────────────────────────────
 
     @Test
+    void writeDiagnosticsDoNotInspectPayloadSize() {
+        var response = mockItemResponse(1, 1, "act-write", 200);
+        for (String operation : List.of("create", "update", "upsert")) {
+            CosmosDiagnosticsLogger.logItem(operation, ADDR, response);
+            assertTrue(messageContains(Level.DEBUG, "cosmos.op=" + operation));
+        }
+        verify(response.getDiagnostics(), never()).getDiagnosticsContext();
+        verify(response, never()).getItem();
+        assertFalse(hasLevel(Level.WARN));
+    }
+
+    @Test
     @DisplayName("logItem: always emits DEBUG with activityId and statusCode")
     void logItem_alwaysDebug() {
         var resp = mockItemResponse(1, 1.0, "act-1", 201);
@@ -382,4 +394,3 @@ class CosmosDiagnosticsLogTest {
                 "Query WARN threshold must be lower than query ERROR threshold");
     }
 }
-

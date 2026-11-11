@@ -31,8 +31,18 @@ multiclouddb-api  ← must be released first if API changed
     └── multiclouddb-provider-spanner  ← independent of other providers
 ```
 
-Providers depend on a released version of `multiclouddb-api`. They are
-independent of each other and can be released separately.
+Published providers pin an API dependency and can be released independently.
+In this development reactor, the root POM coordinates API/Cosmos/Dynamo
+`0.1.0-beta.2-SNAPSHOT` and Spanner `0.1.0-beta.1-SNAPSHOT`. Build and consume
+the same revision; see [Quick Start](getting-started.md#2-add-dependencies).
+
+The common API has no runtime JSON-library dependency. Applications own object
+mapping and cursor JSON callbacks. Native provider dependencies remain visible:
+Cosmos still uses native Jackson, DynamoDB its AWS JSON stack, and Spanner an
+explicit production Gson dependency (Jackson is test-only in that module).
+`ItemMapper` (Cosmos), `DynamoItemMapper` and `SpannerRowMapper` are package-private
+implementation helpers, not an application mapping extension point. Spanner's
+row mapper also owns its required stored/metadata/change-stream JSON processing.
 
 ---
 

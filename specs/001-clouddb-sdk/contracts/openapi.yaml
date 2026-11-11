@@ -574,15 +574,6 @@ components:
           default: false
           description: When true, read operations return DocumentMetadata alongside the document payload (FR-058).
 
-    DocumentSizeLimit:
-      type: object
-      description: Uniform document size limit enforced across all providers (FR-061).
-      properties:
-        maxDocumentSizeBytes:
-          type: integer
-          const: 409600
-          description: 400 KB = 400 × 1024 bytes. DynamoDB hard limit — lowest common denominator.
-
   x-capability-additions-issue25:
     ROW_LEVEL_TTL:
       name: row_level_ttl

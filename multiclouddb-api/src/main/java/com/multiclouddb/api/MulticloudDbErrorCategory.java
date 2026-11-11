@@ -128,7 +128,7 @@ public final class MulticloudDbErrorCategory {
      * A change-feed cursor cannot be resumed.
      * <p>
      * Raised by
-     * {@link com.multiclouddb.api.changefeed.ChangeFeedCursor#fromToken(String)}
+     * {@link com.multiclouddb.api.changefeed.ChangeFeedCursor#fromToken(String, java.util.function.BiFunction)}
      * and by
      * {@link com.multiclouddb.api.MulticloudDbClient#readChanges(ResourceAddress,
      * com.multiclouddb.api.changefeed.ChangeFeedCursor)} when:

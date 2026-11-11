@@ -32,7 +32,7 @@ import java.util.List;
  * argList        ::= arg ( ',' arg )*
  * arg            ::= fieldRef | value
  * valueList      ::= value ( ',' value )*
- * compOp         ::= '=' | '<>' | '!=' | '<' | '>' | '<=' | '>='
+ * compOp         ::= '=' | '&lt;&gt;' | '!=' | '&lt;' | '&gt;' | '&lt;=' | '&gt;='
  * </pre>
  */
 public final class ExpressionParser {

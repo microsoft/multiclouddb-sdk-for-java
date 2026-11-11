@@ -194,7 +194,9 @@ public class Main {
         System.out.printf("  client.read(address, key(%s))%n", id);
         DocumentResult result = client.read(address, key);
         if (result != null) {
-            System.out.println("    → " + result.document().toPrettyString());
+            Map<String, Object> document = result.document();
+            System.out.printf("    → name=%s, price=%s%n",
+                    document.get("name"), document.get("price"));
         } else {
             System.out.println("    → not found");
         }

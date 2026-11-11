@@ -3,7 +3,6 @@
 
 package com.multiclouddb.provider.spanner;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.google.cloud.spanner.ResultSet;
 import com.google.cloud.spanner.ResultSets;
 import com.google.cloud.spanner.Struct;
@@ -12,6 +11,7 @@ import com.google.cloud.spanner.Type.StructField;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Modifier;
 import java.util.List;
 import java.util.Map;
 
@@ -41,11 +41,129 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       the row mapping — affected columns are returned without metadata
  *       filtering.</li>
  *   <li>{@link SpannerRowMapper#toMap} preserves explicitly written
- *       {@code null} values, matching {@link SpannerRowMapper#toJsonNode}
+ *       {@code null} values, matching the released null semantics
  *       and the Cosmos / DynamoDB schemaless contract.</li>
  * </ol>
  */
 class SpannerRowMapperTest {
+    @Test
+    void mapperRemainsPackagePrivate() {
+        int visibility = Modifier.PUBLIC | Modifier.PROTECTED | Modifier.PRIVATE;
+        assertEquals(0, SpannerRowMapper.class.getModifiers() & visibility);
+        for (var method : SpannerRowMapper.class.getDeclaredMethods()) {
+            if (!Modifier.isPrivate(method.getModifiers())) {
+                assertEquals(0, method.getModifiers() & visibility, method.getName());
+            }
+        }
+    }
+
+    @Test
+    void overLimitNumericMetadataRetainsUnlistedAndNullColumns() {
+        Struct row = Struct.newBuilder().set("data").to("[\"kept\"," + "1".repeat(1001) + "]")
+                .set("kept").to("a").set("unlisted").to("b").set("missing").to((String) null).build();
+        try (ResultSet rs = singleRow(row.getType(), row)) {
+            Map<String, Object> mapped = SpannerRowMapper.toMap(rs);
+            assertEquals("a", mapped.get("kept"));
+            assertEquals("b", mapped.get("unlisted"));
+            assertTrue(mapped.containsKey("missing"));
+            assertNull(mapped.get("missing"));
+            assertFalse(mapped.containsKey("data"));
+        }
+    }
+
+    @Test
+    void malformedUnicodeRetainsMarkedNativeJsonAndMetadataFallbacks() {
+        for (String invalid : List.of("\ud800", "\udc00", "\\ud800", "\\udc00")) {
+            String json = "{\"s\":\"" + invalid + "\"}";
+            assertEquals(SpannerConstants.JSON_VALUE_MARKER + json, markedValue(json));
+            Struct row = Struct.newBuilder()
+                    .set("payload").to(com.google.cloud.spanner.Value.json(json))
+                    .set("data").to("[\"payload\",\"" + invalid + "\"]")
+                    .set("unlisted").to("retained")
+                    .set("missing").to((String) null).build();
+            try (ResultSet rs = singleRow(row.getType(), row)) {
+                Map<String, Object> mapped = SpannerRowMapper.toMap(rs);
+                assertEquals(json, mapped.get("payload"));
+                assertEquals("retained", mapped.get("unlisted"));
+                assertTrue(mapped.containsKey("missing"));
+                assertNull(mapped.get("missing"));
+                assertFalse(mapped.containsKey("data"));
+            }
+        }
+        String valid = "\uD55C\uAE00\uD83D\uDE00";
+        assertEquals(Map.of("s", valid), markedValue("{\"s\":\"" + valid + "\"}"));
+        assertEquals(Map.of("s", valid), markedValue("{\"s\":\"\\ud55c\\uae00\\ud83d\\ude00\"}"));
+    }
+
+    @Test
+    void markedJsonUsesItsOwnRootDepthAndKeepsOverLimitRawFallback() {
+        for (int depth : List.of(256, 1000)) {
+            Object value = markedValue("[".repeat(depth) + "0" + "]".repeat(depth));
+            for (int i = 0; i < depth; i++) {
+                value = org.junit.jupiter.api.Assertions.assertInstanceOf(List.class, value).get(0);
+            }
+            assertEquals(0, value);
+        }
+        String rejected = "[".repeat(1001) + "0" + "]".repeat(1001);
+        assertEquals(SpannerConstants.JSON_VALUE_MARKER + rejected, markedValue(rejected));
+    }
+
+    @Test
+    void nativeJsonUsesInternalReaderAndCorruptPayloadReturnsRawText() {
+        for (String text : List.of("{\"a\":[1,null]}", "{bad}")) {
+            Struct row = Struct.newBuilder().set("payload").to(com.google.cloud.spanner.Value.json(text)).build();
+            try (ResultSet rs = singleRow(row.getType(), row)) {
+                Object value = SpannerRowMapper.toMap(rs).get("payload");
+                assertEquals(text.equals("{bad}") ? text : Map.of("a", java.util.Arrays.asList(1, null)), value);
+            }
+        }
+    }
+
+    @Test
+    void typedMetadataPreservesLexicalNames() {
+        Struct row = Struct.newBuilder().set("data").to("[2.00,1e+03,-0]")
+                .set("2.00").to("a").set("1e+03").to("b").set("-0").to("c").set("drop").to("d").build();
+        try (ResultSet rs = singleRow(row.getType(), row)) {
+            assertEquals(Map.of("2.00", "a", "1e+03", "b", "-0", "c"), SpannerRowMapper.toMap(rs));
+        }
+    }
+    @Test
+    void releasedLongDecimalsAndExponentsRemainStructuredThroughMarkedRows() throws Exception {
+        var released = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (String number : List.of("0." + "9".repeat(999), "-0." + "9".repeat(999),
+                "0." + "9".repeat(1000), "-0." + "9".repeat(1000),
+                "1" + "0".repeat(998) + "e+1", "-1" + "0".repeat(998) + "e-1",
+                "1e+" + "0".repeat(998) + "1", "-1e-" + "0".repeat(998) + "1",
+                "1".repeat(1000), "-" + "1".repeat(1000), "1e999", "-0.0")) {
+            String json = "{\"n\":[" + number + "]}";
+            var expected = released.readTree(json).get("n").get(0);
+            Map<?, ?> mapped = org.junit.jupiter.api.Assertions.assertInstanceOf(
+                    Map.class, markedValue(json), number);
+            Object value = ((List<?>) mapped.get("n")).get(0);
+            assertEquals(expected.numberValue().getClass(), value.getClass(), number);
+            assertEquals(expected.numberValue(), value, number);
+        }
+    }
+
+    @Test
+    void releasedRejectedNumericBoundariesRetainDeclaredParseFailureFallback() {
+        for (String number : List.of("1".repeat(1001), "-" + "1".repeat(1001),
+                "0." + "9".repeat(1001), "-0." + "9".repeat(1001),
+                "1" + "0".repeat(999) + "e+1", "-1" + "0".repeat(999) + "e-1",
+                "1e+" + "0".repeat(999) + "1", "-1e-" + "0".repeat(999) + "1")) {
+            String json = "{\"n\":[" + number + "]}";
+            org.junit.jupiter.api.Assertions.assertThrows(com.fasterxml.jackson.core.JsonProcessingException.class,
+                    () -> new com.fasterxml.jackson.databind.ObjectMapper().readTree(json));
+            assertEquals(SpannerConstants.JSON_VALUE_MARKER + json, markedValue(json));
+        }
+    }
+
+    private static Object markedValue(String json) {
+        Struct row = Struct.newBuilder().set("payload").to(SpannerConstants.JSON_VALUE_MARKER + json).build();
+        try (ResultSet rs = singleRow(row.getType(), row)) {
+            return SpannerRowMapper.toMap(rs).get("payload");
+        }
+    }
 
     private static ResultSet singleRow(Type rowType, Struct row) {
         ResultSet rs = ResultSets.forRows(rowType, List.of(row));
@@ -71,11 +189,10 @@ class SpannerRowMapperTest {
                 .build();
 
         try (ResultSet rs = singleRow(rowType, row)) {
-            JsonNode node = SpannerRowMapper.toJsonNode(rs);
-            assertTrue(node.get("custom").isObject(),
+            Map<String, Object> node = SpannerRowMapper.toMap(rs);
+            assertTrue(node.get("custom") instanceof Map<?, ?>,
                     "marker-prefixed payload must decode to JSON object");
-            assertEquals(1, node.get("custom").get("a").asInt());
-            assertEquals("x", node.get("custom").get("b").asText());
+            assertEquals(Map.of("a", 1, "b", "x"), node.get("custom"));
         }
     }
 
@@ -100,10 +217,10 @@ class SpannerRowMapperTest {
                 .build();
 
         try (ResultSet rs = singleRow(rowType, row)) {
-            JsonNode node = SpannerRowMapper.toJsonNode(rs);
-            assertTrue(node.get("note").isTextual(),
+            Map<String, Object> node = SpannerRowMapper.toMap(rs);
+            assertTrue(node.get("note") instanceof String,
                     "escape pair must decode to a plain text node, not a JSON value");
-            assertEquals(userValue, node.get("note").asText(),
+            assertEquals(userValue, node.get("note"),
                     "verbatim round-trip of user string starting with U+0001");
         }
     }
@@ -124,8 +241,8 @@ class SpannerRowMapperTest {
                 .build();
 
         try (ResultSet rs = singleRow(rowType, row)) {
-            JsonNode node = SpannerRowMapper.toJsonNode(rs);
-            assertEquals("hello world", node.get("title").asText());
+            Map<String, Object> node = SpannerRowMapper.toMap(rs);
+            assertEquals("hello world", node.get("title"));
         }
     }
 
@@ -148,9 +265,9 @@ class SpannerRowMapperTest {
                 .build();
 
         try (ResultSet rs = singleRow(rowType, row)) {
-            JsonNode node = SpannerRowMapper.toJsonNode(rs);
-            assertTrue(node.get("snippet").isTextual());
-            assertEquals("[\"not\",\"parsed\"]", node.get("snippet").asText());
+            Map<String, Object> node = SpannerRowMapper.toMap(rs);
+            assertTrue(node.get("snippet") instanceof String);
+            assertEquals("[\"not\",\"parsed\"]", node.get("snippet"));
         }
     }
 
@@ -171,10 +288,10 @@ class SpannerRowMapperTest {
                 .build();
 
         try (ResultSet rs = singleRow(rowType, row)) {
-            JsonNode node = SpannerRowMapper.toJsonNode(rs);
-            assertTrue(node.get("payload").isTextual(),
+            Map<String, Object> node = SpannerRowMapper.toMap(rs);
+            assertTrue(node.get("payload") instanceof String,
                     "corrupt payload must not crash the mapper");
-            assertEquals(stored, node.get("payload").asText());
+            assertEquals(stored, node.get("payload"));
         }
     }
 
@@ -197,8 +314,8 @@ class SpannerRowMapperTest {
                 .build();
 
         try (ResultSet rs = singleRow(rowType, row)) {
-            JsonNode node = SpannerRowMapper.toJsonNode(rs);
-            assertEquals("still visible", node.get("title").asText());
+            Map<String, Object> node = SpannerRowMapper.toMap(rs);
+            assertEquals("still visible", node.get("title"));
         }
     }
 
@@ -279,11 +396,11 @@ class SpannerRowMapperTest {
                 .build();
 
         try (ResultSet rs = singleRow(rowType, row)) {
-            JsonNode node = SpannerRowMapper.toJsonNode(rs);
-            assertEquals("still visible", node.get("title").asText());
-            assertTrue(node.has("maybe"),
+            Map<String, Object> node = SpannerRowMapper.toMap(rs);
+            assertEquals("still visible", node.get("title"));
+            assertTrue(node.containsKey("maybe"),
                     "legacy row null columns must round-trip (no metadata => no filtering)");
-            assertTrue(node.get("maybe").isNull(),
+            assertTrue(node.get("maybe") == null,
                     "legacy row null columns must surface as JSON null, not be dropped");
         }
     }
@@ -309,10 +426,10 @@ class SpannerRowMapperTest {
                 .build();
 
         try (ResultSet rs = singleRow(rowType, row)) {
-            JsonNode node = SpannerRowMapper.toJsonNode(rs);
-            assertTrue(node.has("maybe"),
+            Map<String, Object> node = SpannerRowMapper.toMap(rs);
+            assertTrue(node.containsKey("maybe"),
                     "malformed FIELD_DATA must fall back to legacy null-preserving behaviour");
-            assertTrue(node.get("maybe").isNull());
+            assertTrue(node.get("maybe") == null);
         }
     }
 }

@@ -10,6 +10,8 @@ import com.multiclouddb.api.changefeed.internal.CursorTokenCodec;
 
 import java.util.Collections;
 import java.util.Objects;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
 /**
  * Opaque, immutable handle to one or more provider-side change-feed positions.
@@ -20,12 +22,12 @@ import java.util.Objects;
  *   <li>{@link #now()} — create an unhydrated sentinel that, on its first
  *       {@code readChanges} call, starts at the live tip of the supplied
  *       {@link com.multiclouddb.api.ResourceAddress}.</li>
- *   <li>{@link #fromToken(String)} — resume from a previously persisted token
- *       returned by {@link #toToken()}. Resumption fails with
+ *   <li>{@link #fromToken(String, java.util.function.BiFunction)} — resume from a previously persisted token
+ *       returned by {@link #toToken(java.util.function.Function)}. Resumption fails with
  *       {@link CursorExpiredException} when the token is older than the v1
  *       portable 24-hour baseline, was minted by a different provider, was
  *       minted for a different resource, or is malformed.</li>
- *   <li>{@link #toToken()} — serialize the cursor's position so it can be
+ *   <li>{@link #toToken(java.util.function.Function)} — serialize the cursor's position so it can be
  *       persisted in any user-managed store. The wire format is a Base64URL
  *       JSON string. It is structurally validated but otherwise opaque — do
  *       not parse it.</li>
@@ -77,7 +79,7 @@ public final class ChangeFeedCursor {
      * hydrates it to the live tip of {@code addr}. No events that occurred
      * before that call are returned.
      * <p>
-     * Calling {@link #toToken()} on a {@code now()} sentinel before it has
+     * Calling {@link #toToken(java.util.function.Function)} on a {@code now()} sentinel before it has
      * been read returns a token without a resource binding. Persisting that
      * raw sentinel and resuming hours later produces a fresh hydration on the
      * resume target — equivalent to a new {@code now()} call. To <em>resume
@@ -99,13 +101,24 @@ public final class ChangeFeedCursor {
     }
 
     /**
-     * Resume from a token previously returned by {@link #toToken()}.
+     * Resume from a token previously returned by {@link #toToken(java.util.function.Function)}.
      * <p>
      * Decoding validates the wire format, codec version, and client-side
      * 24-hour age. Provider and resource binding are checked later, inside
      * {@code readChanges(addr, cursor)} when both the cursor and the runtime
      * context are known.
+     * The deserializer is invoked with {@code Object.class}; it must return neutral
+     * values and preserve the released JSON number/parser profile. Declare JSON
+     * processing failures with {@link java.io.UncheckedIOException}. This method
+     * retains neither the callback nor its returned containers.
+     * Returned Maps and Lists must not be modified until this method returns;
+     * later modifications do not affect the restored cursor.
      *
+     * @param token persisted Base64URL JSON token, including tokens from earlier releases
+     * @param deserializer application-owned JSON reader; never a POJO mapper
+     * @return the restored cursor
+     * @throws NullPointerException if the deserializer is null
+     * @throws IllegalStateException if the callback violates its contract
      * @throws CursorExpiredException if the token is malformed, has an
      *         unsupported codec version, or is older than the 24-hour
      *         portable baseline. The
@@ -114,19 +127,29 @@ public final class ChangeFeedCursor {
      *         defined on
      *         {@link com.multiclouddb.api.changefeed.internal.CursorTokenCodec}.
      */
-    public static ChangeFeedCursor fromToken(String token) {
-        return new ChangeFeedCursor(CursorTokenCodec.decode(token));
+    public static ChangeFeedCursor fromToken(String token,
+            BiFunction<String, Class<?>, Object> deserializer) {
+        return new ChangeFeedCursor(CursorTokenCodec.decode(token, deserializer));
     }
 
     /**
      * Serialize this cursor for persistence.
      * <p>
      * Tokens are <em>opaque</em> — do not parse them. The SDK guarantees that
-     * passing the returned string back to {@link #fromToken(String)} recovers
-     * an equivalent cursor (subject to the 24-hour age check).
+     * passing the returned string back to {@link #fromToken(String, java.util.function.BiFunction)} recovers
+     * an equivalent cursor (subject to the age check and compatible callbacks).
+     * The serializer receives only neutral values, must preserve their values,
+     * and must not mutate or retain them. Signal processing failures with
+     * {@link java.io.UncheckedIOException}. The callback is required even for a
+     * {@link #now()} sentinel; it is not retained by the cursor.
+     *
+     * @param serializer application-owned JSON writer
+     * @return the opaque Base64URL JSON token
+     * @throws NullPointerException if the serializer is null
+     * @throws IllegalStateException if serialization fails or violates the callback contract
      */
-    public String toToken() {
-        return CursorTokenCodec.encode(token);
+    public String toToken(Function<Object, String> serializer) {
+        return CursorTokenCodec.encode(token, serializer);
     }
 
     /** SPI accessor — providers read the decoded token to drive their reads. */
@@ -163,7 +186,7 @@ public final class ChangeFeedCursor {
      * Placeholder provider id stamped on a fresh {@link #now()} sentinel. Any
      * concrete client may consume it; the first hydration replaces it with the
      * client's real provider id, after which subsequent
-     * {@link #fromToken(String)} calls enforce provider match.
+     * {@link #fromToken(String, java.util.function.BiFunction)} calls enforce provider match.
      */
     public static final ProviderId SENTINEL_PROVIDER = ProviderId.register(
             "multicloud", "(unhydrated cursor)");

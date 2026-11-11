@@ -9,7 +9,6 @@ import com.azure.cosmos.models.CosmosChangeFeedRequestOptions;
 import com.azure.cosmos.models.FeedRange;
 import com.azure.cosmos.models.FeedResponse;
 import com.azure.cosmos.util.CosmosPagedIterable;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.multiclouddb.api.MulticloudDbError;
 import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.MulticloudDbException;
@@ -236,8 +235,8 @@ final class CosmosChangeFeedReader {
                     CosmosChangeFeedRequestOptions.createForProcessingFromNow(range)
                             .allVersionsAndDeletes();
             warmup.setMaxItemCount(1);
-            Iterator<FeedResponse<JsonNode>> it =
-                    container.queryChangeFeed(warmup, JsonNode.class).iterableByPage().iterator();
+            Iterator<FeedResponse<Object>> it =
+                    container.queryChangeFeed(warmup, Object.class).iterableByPage().iterator();
             if (it.hasNext()) {
                 String c = it.next().getContinuationToken();
                 // Capture wall-clock immediately after the bookmark materialises so
@@ -322,16 +321,16 @@ final class CosmosChangeFeedReader {
         opts.setMaxItemCount(DEFAULT_PAGE_SIZE);
 
         try {
-            CosmosPagedIterable<JsonNode> iterable = container.queryChangeFeed(opts, JsonNode.class);
-            Iterator<FeedResponse<JsonNode>> pageIter = iterable.iterableByPage().iterator();
+            CosmosPagedIterable<Object> iterable = container.queryChangeFeed(opts, Object.class);
+            Iterator<FeedResponse<Object>> pageIter = iterable.iterableByPage().iterator();
 
             List<ChangeEvent> events = new ArrayList<>();
             String newContinuation = pos.continuation();
             boolean hasMore = false;
 
             if (pageIter.hasNext()) {
-                FeedResponse<JsonNode> page = pageIter.next();
-                for (JsonNode item : page.getResults()) {
+                FeedResponse<Object> page = pageIter.next();
+                for (Object item : page.getResults()) {
                     events.add(mapEvent(item));
                 }
                 String c = page.getContinuationToken();
@@ -390,13 +389,14 @@ final class CosmosChangeFeedReader {
      * }</pre>
      * For CREATE / UPDATE the body is taken from {@code current}. For DELETE
      * the body is taken from {@code previous} when present (carries the
-     * just-deleted document); if {@code previous} is absent or empty (e.g.,
+     * just-deleted document); if {@code previous} is absent (e.g.,
      * the document was deleted before the change-feed retention had a chance
      * to capture it, or the Cosmos emulator omits {@code previous} for
      * fresh deletes), the key/id pair is recovered from the {@code metadata}
      * block — which always carries them for DELETE in AVAD mode — and the
-     * surfaced body is an empty JSON object (Cosmos has no document left
-     * to ship). The {@link ChangeEvent#data()} surfaced to the caller is
+     * surfaced body may be an empty {@code current} tombstone. If neither image
+     * is available, data is null while envelope/metadata identity is retained.
+     * A supplied empty body remains empty. The {@link ChangeEvent#data()} is
      * the unwrapped body (never the envelope), so the public contract is
      * identical to Dynamo and Spanner: a portable consumer sees the
      * document fields directly, not the provider's transport shape.
@@ -407,9 +407,9 @@ final class CosmosChangeFeedReader {
      * surfaced as the body so the caller still receives something usable
      * instead of a hard failure.
      */
-    private ChangeEvent mapEvent(JsonNode envelope) {
-        JsonNode metadata = envelope.path("metadata");
-        String op = metadata.path("operationType").asText("").toLowerCase(java.util.Locale.ROOT);
+    private ChangeEvent mapEvent(Object envelope) {
+        Object metadata = ItemMapper.get(envelope, "metadata");
+        String op = textOrEmpty(ItemMapper.get(metadata, "operationType")).toLowerCase(java.util.Locale.ROOT);
 
         ChangeType type;
         switch (op) {
@@ -420,7 +420,7 @@ final class CosmosChangeFeedReader {
             default:       type = ChangeType.UPDATE; break;
         }
 
-        // Pick the most informative body:
+        // Prefer the selected body, including an empty object:
         //   - DELETE  → previous (the document that was just deleted)
         //   - others  → current
         // For DELETE the Cosmos emulator (and short-retention production
@@ -428,26 +428,16 @@ final class CosmosChangeFeedReader {
         // empty object; in that case the surfaced body is empty but the
         // metadata block still carries id + partitionKey, which we recover
         // below.
-        JsonNode body = type == ChangeType.DELETE
-                ? envelope.path("previous")
-                : envelope.path("current");
-        if (isEmptyOrMissing(body)) {
-            JsonNode alt = type == ChangeType.DELETE
-                    ? envelope.path("current")
-                    : envelope.path("previous");
-            if (!isEmptyOrMissing(alt)) {
-                body = alt;
-            } else if (body.isMissingNode() || body.isNull()) {
-                // Neither side present → fall back to the envelope itself so
-                // _ts / _etag lookups below remain safe (will simply return
-                // empty / 0, and the metadata-driven fallbacks take over).
-                body = alt.isMissingNode() || alt.isNull() ? envelope : alt;
-            }
-            // else: body is a present-but-empty JSON object (the AVAD
-            // DELETE-tombstone case). Keep it as-is — an empty {} is a
-            // valid, portable payload for a tombstone — and let the
-            // metadata block supply id/pk.
+        Object body = ItemMapper.get(envelope, type == ChangeType.DELETE ? "previous" : "current");
+        if (body == null) {
+            body = ItemMapper.get(envelope, type == ChangeType.DELETE ? "current" : "previous");
         }
+        boolean missingImage = body == null;
+        boolean avadEnvelope = !op.isEmpty() || envelope instanceof Map<?, ?> map
+                && (map.containsKey("current") || map.containsKey("previous"));
+        // Keep envelope fallback for identity/timestamp and bare-document responses,
+        // but do not expose a transport envelope as a missing AVAD image.
+        if (missingImage) body = envelope;
 
         // ── Identity ─────────────────────────────────────────────────────
         // 1) Prefer fields on the document body (CREATE/UPDATE always; DELETE
@@ -457,8 +447,8 @@ final class CosmosChangeFeedReader {
         //    nested object keyed by the partition-key path segment, e.g.
         //    `{"partitionKey":"<value>"}` for a container with `/partitionKey`,
         //    so we extract the first leaf text value).
-        String id = textOrEmpty(body.get("id"));
-        if (id.isBlank()) id = textOrEmpty(metadata.get("id"));
+        String id = textOrEmpty(ItemMapper.get(body, "id"));
+        if (id.isBlank()) id = textOrEmpty(ItemMapper.get(metadata, "id"));
 
         String pk = textOrEmpty(firstPresent(body, "partitionKey", "pk", "_pk"));
         if (pk.isBlank()) pk = extractMetadataPartitionKey(metadata);
@@ -483,22 +473,19 @@ final class CosmosChangeFeedReader {
         // Prefer the AVAD metadata's conflict-resolution timestamp (`crts`)
         // which is the authoritative ordering instant for the change record;
         // fall back to `_ts` (second-resolution wall clock) on the body.
-        long tsSeconds = metadata.path("crts").asLong(body.path("_ts").asLong(0L));
+        long tsSeconds = ItemMapper.asLong(ItemMapper.get(metadata, "crts"),
+                ItemMapper.asLong(ItemMapper.get(body, "_ts"), 0L));
         Instant commitTs = tsSeconds > 0
                 ? Instant.ofEpochSecond(tsSeconds)
                 : Instant.now();
 
         // _etag is a stable per-version identifier; pair with id+ts as a
         // last-resort eventId when the SDK strips it.
-        String eventId = textOrEmpty(body.get("_etag"));
+        String eventId = textOrEmpty(ItemMapper.get(body, "_etag"));
         if (eventId.isBlank()) eventId = id + "@" + tsSeconds;
 
-        return new ChangeEvent(key, type, commitTs, body, eventId);
-    }
-
-    private static boolean isEmptyOrMissing(JsonNode node) {
-        return node == null || node.isMissingNode() || node.isNull()
-                || (node.isObject() && node.size() == 0);
+        Object data = missingImage && avadEnvelope ? null : ItemMapper.changeData(body);
+        return new ChangeEvent(key, type, commitTs, data, eventId);
     }
 
     /**
@@ -509,28 +496,25 @@ final class CosmosChangeFeedReader {
      * {@code /partitionKey}); this helper unwraps that and also tolerates the
      * less common shape where the value is shipped as a bare string.
      */
-    private static String extractMetadataPartitionKey(JsonNode metadata) {
-        JsonNode pk = metadata.get("partitionKey");
-        if (pk == null || pk.isNull()) return "";
-        if (pk.isValueNode()) return pk.asText("");
-        if (pk.isObject() && pk.size() >= 1) {
-            JsonNode first = pk.fields().next().getValue();
-            if (first != null && first.isValueNode()) return first.asText("");
+    private static String extractMetadataPartitionKey(Object metadata) {
+        Object pk = ItemMapper.get(metadata, "partitionKey");
+        if (pk instanceof Map<?, ?> map && !map.isEmpty()) {
+            return textOrEmpty(map.values().iterator().next());
         }
-        if (pk.isArray() && pk.size() >= 1 && pk.get(0).isValueNode()) {
-            return pk.get(0).asText("");
+        if (pk instanceof List<?> list && !list.isEmpty()) {
+            return textOrEmpty(list.get(0));
         }
-        return "";
+        return textOrEmpty(pk);
     }
 
-    private static String textOrEmpty(JsonNode node) {
-        return node == null || node.isNull() ? "" : node.asText("");
+    private static String textOrEmpty(Object value) {
+        return ItemMapper.text(value);
     }
 
-    private static JsonNode firstPresent(JsonNode item, String... fields) {
+    private static Object firstPresent(Object item, String... fields) {
         for (String f : fields) {
-            JsonNode n = item.get(f);
-            if (n != null && !n.isNull()) return n;
+            Object value = ItemMapper.get(item, f);
+            if (value != null) return value;
         }
         return null;
     }

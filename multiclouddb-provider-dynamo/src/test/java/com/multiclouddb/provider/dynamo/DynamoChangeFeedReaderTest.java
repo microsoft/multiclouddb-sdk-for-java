@@ -4,6 +4,10 @@
 package com.multiclouddb.provider.dynamo;
 
 import com.multiclouddb.api.OperationOptions;
+import com.multiclouddb.api.MulticloudDbException;
+import com.multiclouddb.api.MulticloudDbErrorCategory;
+import com.multiclouddb.api.changefeed.ChangeEvent;
+import com.multiclouddb.api.changefeed.ChangeType;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.ResourceAddress;
 import com.multiclouddb.api.changefeed.ChangeFeedCursor;
@@ -31,10 +35,15 @@ import software.amazon.awssdk.services.dynamodb.model.Shard;
 import software.amazon.awssdk.services.dynamodb.model.StreamDescription;
 import software.amazon.awssdk.services.dynamodb.model.TableDescription;
 import software.amazon.awssdk.services.dynamodb.streams.DynamoDbStreamsClient;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.OperationType;
+import software.amazon.awssdk.services.dynamodb.model.StreamRecord;
+import software.amazon.awssdk.services.dynamodb.model.Record;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -74,6 +83,87 @@ class DynamoChangeFeedReaderTest {
     private static final String TABLE = "test-table";
     private static final String STREAM_ARN = "arn:aws:dynamodb:us-east-1:123:table/test-table/stream/2025-01-01T00:00:00.000";
     private static final ResourceAddress ADDR = new ResourceAddress("test-db", TABLE);
+
+    @Test
+    void finalEventsPreserveSelectedNewOldEmptyAndAbsentImages() {
+        AttributeValue nested = AttributeValue.builder().l(
+                AttributeValue.builder().nul(true).build(),
+                AttributeValue.builder().m(Map.of("n", AttributeValue.builder().n("2").build())).build()).build();
+        Map<String, AttributeValue> newer = Map.of("nested", nested);
+        Map<String, AttributeValue> older = Map.of("old", AttributeValue.builder().bool(true).build());
+        var current = readRecord(record(OperationType.INSERT, newer, older));
+        assertEquals(ChangeType.CREATE, current.type());
+        assertEquals(Map.of("nested", java.util.Arrays.asList(null, Map.of("n", 2))), current.data());
+        assertNotNull(current.data());
+        assertEquals(current.data(), readRecord(record(OperationType.MODIFY, newer, older)).data());
+        var deleted = readRecord(record(OperationType.REMOVE, newer, older));
+        assertEquals(ChangeType.DELETE, deleted.type());
+        assertEquals(Map.of("old", true), deleted.data());
+        assertEquals(Map.of(), readRecord(record(OperationType.MODIFY, Map.of(), older)).data());
+        org.junit.jupiter.api.Assertions.assertNull(readRecord(record(OperationType.MODIFY, null, older)).data());
+        Record absentSdkImages = Record.builder().eventName(OperationType.MODIFY).dynamodb(
+                StreamRecord.builder().keys(Map.of("partitionKey", AttributeValue.builder().s("tenant").build()))
+                        .sequenceNumber("1").build()).build();
+        org.junit.jupiter.api.Assertions.assertNull(readRecord(absentSdkImages).data(),
+                "native hasNewImage distinguishes an absent auto-constructed map from a supplied empty map");
+        AttributeValue binary = AttributeValue.builder()
+                .b(software.amazon.awssdk.core.SdkBytes.fromByteArray(new byte[]{1, 2})).build();
+        assertEquals(java.util.Collections.singletonMap("bytes", null),
+                readRecord(record(OperationType.MODIFY, Map.of("bytes", binary), Map.of())).data(),
+                "legacy native B fallback remains null before neutral conversion");
+    }
+
+    @Test
+    void retainsReleasedDepthAndNumericParsingFailuresWithoutModelCaps() {
+        AttributeValue deep = AttributeValue.builder().s("private-value").build();
+        for (int i = 0; i < 128; i++) deep = AttributeValue.builder().l(deep).build();
+        assertNotNull(readRecord(record(OperationType.MODIFY, Map.of("nested", deep), Map.of())).data());
+        for (AttributeValue invalid : List.of(AttributeValue.fromN("1E+3"),
+                AttributeValue.fromN("9223372036854775808"))) {
+            org.junit.jupiter.api.Assertions.assertThrows(NumberFormatException.class,
+                    () -> readRecord(record(OperationType.MODIFY, Map.of("private-field", invalid), Map.of())));
+        }
+    }
+
+    private static Record record(OperationType operation, Map<String, AttributeValue> newer,
+                                 Map<String, AttributeValue> older) {
+        StreamRecord data = StreamRecord.builder()
+                .keys(Map.of("partitionKey", AttributeValue.fromS("tenant"), "sortKey", AttributeValue.fromS("record")))
+                .sequenceNumber("1").approximateCreationDateTime(java.time.Instant.EPOCH)
+                .newImage(newer).oldImage(older).build();
+        return Record.builder().eventName(operation).eventID("event-1").dynamodb(data).build();
+    }
+
+    @Test
+    void nativePresenceDistinguishesMissingEmptyAndNullValuedImagesForEveryOperation() {
+        for (OperationType operation : List.of(OperationType.INSERT, OperationType.MODIFY, OperationType.REMOVE)) {
+            for (Map<String, AttributeValue> image : java.util.Arrays.<Map<String, AttributeValue>>asList(
+                    null, Map.of(), Map.of("nullable", AttributeValue.fromNul(true)))) {
+                Record record = record(operation, operation == OperationType.REMOVE ? Map.of("other", AttributeValue.fromS("v")) : image,
+                        operation == OperationType.REMOVE ? image : Map.of("other", AttributeValue.fromS("v")));
+                assertEquals(image != null, operation == OperationType.REMOVE
+                        ? record.dynamodb().hasOldImage() : record.dynamodb().hasNewImage());
+                ChangeEvent event = readRecord(record);
+                assertEquals(operation == OperationType.INSERT ? ChangeType.CREATE
+                        : operation == OperationType.REMOVE ? ChangeType.DELETE : ChangeType.UPDATE, event.type());
+                assertEquals(com.multiclouddb.api.MulticloudDbKey.of("tenant", "record"), event.key());
+                assertEquals(java.time.Instant.EPOCH, event.commitTimestamp());
+                assertEquals("event-1", event.providerEventId());
+                assertEquals(image == null ? null : image.isEmpty() ? Map.of()
+                        : java.util.Collections.singletonMap("nullable", null), event.data());
+            }
+        }
+    }
+
+    private static ChangeEvent readRecord(Record record) {
+        DynamoDbStreamsClient streams = mock(DynamoDbStreamsClient.class);
+        when(streams.getRecords(any(GetRecordsRequest.class))).thenReturn(GetRecordsResponse.builder()
+                .records(record).nextShardIterator("next").build());
+        var cursor = new ChangeFeedCursor(new CursorToken(ProviderId.DYNAMO, ADDR, System.currentTimeMillis(),
+                CursorAnchor.NOW, List.of(new PartitionPosition(STREAM_ARN + "::shard-1", "@@ITER:ready"))));
+        return new DynamoChangeFeedReader(ProviderId.DYNAMO, streams).readChanges(
+                mockDdbWithStream(STREAM_ARN), ADDR, TABLE, cursor, OperationOptions.defaults()).events().get(0);
+    }
 
     private static Shard shard(String id) {
         // Open shard: endingSequenceNumber == null. Build a real Shard (not a mock)

@@ -1640,15 +1640,19 @@ $tamperedOutput
 
   $multiReleaseArchive = Join-Path $providerFixtures `
     'inner-class-multi-release-shadow.jar'
-  $providerClientInnerResource =
-    'com/multiclouddb/provider/cosmos/CosmosProviderClient$1.class'
+  $providerInnerResource =
+    'com/multiclouddb/provider/cosmos/CosmosChangeFeedReader$WarmupResult.class'
+  Assert-True -Condition (Test-Path -LiteralPath (
+      Join-Path $fixtureRoot (
+        "multiclouddb-provider-cosmos/target/classes/$providerInnerResource")
+    ) -PathType Leaf) -Message 'The multi-release shadow fixture must target a canonical nested class.'
   New-FixtureArchive -Path $multiReleaseArchive -Entries ([ordered]@{
       'META-INF/MANIFEST.MF' =
         "Manifest-Version: 1.0`r`nMulti-Release: true`r`n`r`n"
-      "META-INF/versions/17/$providerClientInnerResource" = [byte[]]@(0)
+      "META-INF/versions/17/$providerInnerResource" = [byte[]]@(0)
     })
   Invoke-ProviderMetadataFailureCase -Name 'multi-release-shadow' `
-    -Expected 'CosmosProviderClient$1' `
+    -Expected 'CosmosChangeFeedReader$WarmupResult' `
     -FixtureRoot $fixtureRoot -FixtureTemp $fixtureTemp `
     -RunnerScript $fixtureRunner -BaseEnvironment $environment `
     -ClasspathPrepend $multiReleaseArchive

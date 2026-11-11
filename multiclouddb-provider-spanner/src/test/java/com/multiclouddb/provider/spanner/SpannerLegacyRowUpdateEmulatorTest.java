@@ -15,7 +15,6 @@ import com.google.cloud.spanner.Mutation;
 import com.google.cloud.spanner.Spanner;
 import com.google.cloud.spanner.SpannerException;
 import com.google.cloud.spanner.SpannerOptions;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.multiclouddb.api.DocumentResult;
 import com.multiclouddb.api.MulticloudDbClient;
 import com.multiclouddb.api.MulticloudDbClientConfig;
@@ -170,21 +169,21 @@ class SpannerLegacyRowUpdateEmulatorTest {
         //    all columns.
         DocumentResult result = client.read(address, MulticloudDbKey.of(pk, sk), null);
         assertNotNull(result, "read() must find the row that was updated");
-        JsonNode doc = result.document();
+        Map<String, Object> doc = result.document();
 
-        assertEquals("ada@new", doc.path("email").asText(),
+        assertEquals("ada@new", text(doc, "email"),
                 "new field from the partial update() must round-trip");
-        assertEquals("Ada", doc.path("name").asText(),
+        assertEquals("Ada", text(doc, "name"),
                 "legacy `name` column must survive the partial update — "
                         + "if this fails, FIELD_DATA was stamped with only the "
                         + "partial-update keys, filtering out the legacy columns "
                         + "on read (silent data loss)");
-        assertEquals("active", doc.path("status").asText(),
+        assertEquals("active", text(doc, "status"),
                 "legacy `status` column must survive the partial update");
-        assertTrue(doc.has("priority"),
+        assertTrue(doc.containsKey("priority"),
                 "legacy `priority` column must survive the partial update; "
                         + "got fields=" + fieldNames(doc));
-        assertEquals(5L, doc.path("priority").asLong(),
+        assertEquals(5L, doc.get("priority"),
                 "legacy `priority` value must round-trip unchanged");
     }
 
@@ -211,13 +210,13 @@ class SpannerLegacyRowUpdateEmulatorTest {
 
         DocumentResult result = client.read(address, MulticloudDbKey.of(pk, sk), null);
         assertNotNull(result);
-        JsonNode doc = result.document();
-        assertEquals("Bob", doc.path("name").asText(),
+        Map<String, Object> doc = result.document();
+        assertEquals("Bob", text(doc, "name"),
                 "legacy `name` must survive both partial updates; got fields=" + fieldNames(doc));
-        assertEquals("bob@new", doc.path("email").asText());
-        assertEquals("active", doc.path("status").asText(),
+        assertEquals("bob@new", text(doc, "email"));
+        assertEquals("active", text(doc, "status"),
                 "legacy `status` must survive both partial updates");
-        assertEquals(9L, doc.path("priority").asLong(),
+        assertEquals(9L, doc.get("priority"),
                 "second partial update must apply");
     }
 
@@ -231,24 +230,23 @@ class SpannerLegacyRowUpdateEmulatorTest {
         // regime, then issue a partial update that names only one of the
         // existing keys. The merged stamp must include both keys, so a
         // subsequent read returns both.
-        client.create(address, MulticloudDbKey.of(pk, sk),
-                Map.of("name", "Cara", "email", "cara@x"), null);
-        client.update(address, MulticloudDbKey.of(pk, sk),
-                Map.of("email", "cara@new"), null);
+        client.create(address, MulticloudDbKey.of(pk, sk), Map.of("name", "Cara", "email", "cara@x"), null);
+        client.update(address, MulticloudDbKey.of(pk, sk), Map.of("email", "cara@new"), null);
 
         DocumentResult result = client.read(address, MulticloudDbKey.of(pk, sk), null);
         assertNotNull(result);
-        JsonNode doc = result.document();
-        assertEquals("Cara", doc.path("name").asText(),
+        Map<String, Object> doc = result.document();
+        assertEquals("Cara", text(doc, "name"),
                 "field written by create() must survive a later partial update — "
                         + "this is the non-regression case (round-3 fix)");
-        assertEquals("cara@new", doc.path("email").asText());
+        assertEquals("cara@new", text(doc, "email"));
     }
 
-    /** Helper: collect the visible field names on a Jackson ObjectNode for diagnostics. */
-    private static java.util.List<String> fieldNames(JsonNode node) {
-        java.util.List<String> names = new java.util.ArrayList<>();
-        node.fieldNames().forEachRemaining(names::add);
-        return names;
+    private static java.util.List<String> fieldNames(Map<String, Object> document) {
+        return java.util.List.copyOf(document.keySet());
+    }
+
+    private static String text(Map<String, Object> document, String field) {
+        return (String) document.get(field);
     }
 }

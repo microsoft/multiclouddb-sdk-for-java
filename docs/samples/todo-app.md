@@ -19,6 +19,11 @@ browser-based UI for managing TODO items.
 
 ## Architecture
 
+This external sample's dependency versions may target released beta APIs. Before
+using this development Map API, follow the
+[sample-version compatibility note](index.md) and migrate payload/cursor access.
+The SDK's documentation checks do not validate this external application's build.
+
 ```mermaid
 graph TD
     UI["Browser UI<br/><i>localhost:8080</i><br/>Create · Read · Update · Delete"]

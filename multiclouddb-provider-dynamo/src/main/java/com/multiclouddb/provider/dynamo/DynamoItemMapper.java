@@ -3,170 +3,100 @@
 
 package com.multiclouddb.provider.dynamo;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.*;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
-import java.util.*;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
-/**
- * Bidirectional mapper between Jackson {@link JsonNode} and DynamoDB
- * {@link AttributeValue}.
- */
-public final class DynamoItemMapper {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
-
+/** Maps neutral document values directly to DynamoDB attributes and back. */
+final class DynamoItemMapper {
     private DynamoItemMapper() {
     }
 
-    /**
-     * Convert a JsonNode (object) into a DynamoDB attribute map.
-     */
-    public static Map<String, AttributeValue> jsonNodeToAttributeMap(JsonNode node) {
-        Map<String, AttributeValue> map = new LinkedHashMap<>();
-        if (node == null || !node.isObject()) {
-            return map;
-        }
-        Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
-        while (fields.hasNext()) {
-            Map.Entry<String, JsonNode> field = fields.next();
-            map.put(field.getKey(), jsonNodeToAttributeValue(field.getValue()));
-        }
-        return map;
-    }
-
-    /**
-     * Convert a single JsonNode value into a DynamoDB AttributeValue.
-     */
-    public static AttributeValue jsonNodeToAttributeValue(JsonNode value) {
-        if (value == null || value.isNull()) {
-            return AttributeValue.fromNul(true);
-        }
-        if (value.isTextual()) {
-            return AttributeValue.fromS(value.textValue());
-        }
-        if (value.isBoolean()) {
-            return AttributeValue.fromBool(value.booleanValue());
-        }
-        if (value.isNumber()) {
-            return AttributeValue.fromN(value.numberValue().toString());
-        }
-        if (value.isArray()) {
-            List<AttributeValue> list = new ArrayList<>();
-            for (JsonNode element : value) {
-                list.add(jsonNodeToAttributeValue(element));
+    /** Converts a document to a detached native attribute map. */
+    static Map<String, AttributeValue> mapToAttributeMap(Map<?, ?> document) {
+        Map<String, AttributeValue> result = new LinkedHashMap<>();
+        if (document == null) return result;
+        for (var entry : document.entrySet()) {
+            if (!(entry.getKey() instanceof String name)) {
+                throw new IllegalArgumentException("Document keys must be non-null strings.");
             }
-            return AttributeValue.fromL(list);
+            result.put(name, documentValueToAttribute(entry.getValue()));
         }
-        if (value.isObject()) {
-            Map<String, AttributeValue> nested = jsonNodeToAttributeMap(value);
-            return AttributeValue.fromM(nested);
-        }
-        return AttributeValue.fromS(value.toString());
+        return result;
     }
 
-    /**
-     * Convert a DynamoDB attribute map back to a JsonNode.
-     */
-    public static JsonNode attributeMapToJsonNode(Map<String, AttributeValue> item) {
-        ObjectNode node = MAPPER.createObjectNode();
-        for (Map.Entry<String, AttributeValue> entry : item.entrySet()) {
-            node.set(entry.getKey(), attributeValueToJsonNode(entry.getValue()));
+    private static AttributeValue documentValueToAttribute(Object value) {
+        if (value == null) return AttributeValue.fromNul(true);
+        if (value instanceof String text) return AttributeValue.fromS(text);
+        if (value instanceof Boolean bool) return AttributeValue.fromBool(bool);
+        if (value instanceof Number number) {
+            // Retain the released Map-to-tree decimal normalization, not a new numeric policy.
+            String text = number instanceof BigDecimal decimal
+                    ? decimal.stripTrailingZeros().toString() : number.toString();
+            return AttributeValue.fromN(text);
         }
-        return node;
+        if (value instanceof Map<?, ?> map) return AttributeValue.fromM(mapToAttributeMap(map));
+        if (value instanceof List<?> list) {
+            List<AttributeValue> items = new ArrayList<>(list.size());
+            for (Object item : list) items.add(documentValueToAttribute(item));
+            return AttributeValue.fromL(items);
+        }
+        throw new IllegalArgumentException("Unsupported document value.");
     }
 
-    /**
-     * Convert a single DynamoDB AttributeValue to a JsonNode.
-     */
-    public static JsonNode attributeValueToJsonNode(AttributeValue av) {
-        if (av.s() != null && av.type() == AttributeValue.Type.S) {
-            return TextNode.valueOf(av.s());
+    /** Converts native attributes into detached mutable neutral Maps and Lists. */
+    static Map<String, Object> attributeMapToMap(Map<String, AttributeValue> item) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (var entry : item.entrySet()) {
+            result.put(entry.getKey(), attributeToValue(entry.getValue()));
         }
-        if (av.n() != null && av.type() == AttributeValue.Type.N) {
-            String numStr = av.n();
-            if (numStr.contains(".")) {
-                return new DoubleNode(Double.parseDouble(numStr));
-            }
+        return result;
+    }
+
+    private static Object attributeToValue(AttributeValue attribute) {
+        if (attribute.type() == AttributeValue.Type.S && attribute.s() != null) return attribute.s();
+        if (attribute.type() == AttributeValue.Type.N && attribute.n() != null) {
+            String text = attribute.n();
+            // Preserve the existing parser, including exponent/overflow failures.
+            if (text.contains(".")) return Double.parseDouble(text);
             try {
-                return new IntNode(Integer.parseInt(numStr));
-            } catch (NumberFormatException e) {
-                return new LongNode(Long.parseLong(numStr));
+                return Integer.parseInt(text);
+            } catch (NumberFormatException integerOverflow) {
+                return Long.parseLong(text);
             }
         }
-        if (av.type() == AttributeValue.Type.BOOL) {
-            return BooleanNode.valueOf(av.bool());
+        if (attribute.type() == AttributeValue.Type.BOOL) return attribute.bool();
+        if (attribute.type() == AttributeValue.Type.NUL && Boolean.TRUE.equals(attribute.nul())) return null;
+        if (attribute.type() == AttributeValue.Type.L && attribute.hasL()) {
+            List<Object> items = new ArrayList<>(attribute.l().size());
+            for (AttributeValue item : attribute.l()) items.add(attributeToValue(item));
+            return items;
         }
-        if (av.type() == AttributeValue.Type.NUL && Boolean.TRUE.equals(av.nul())) {
-            return NullNode.getInstance();
+        if (attribute.type() == AttributeValue.Type.M && attribute.hasM()) {
+            return attributeMapToMap(attribute.m());
         }
-        if (av.hasL() && av.type() == AttributeValue.Type.L) {
-            ArrayNode array = MAPPER.createArrayNode();
-            for (AttributeValue element : av.l()) {
-                array.add(attributeValueToJsonNode(element));
-            }
-            return array;
+        if (attribute.type() == AttributeValue.Type.SS && attribute.hasSs()) {
+            return new ArrayList<>(attribute.ss());
         }
-        if (av.hasM() && av.type() == AttributeValue.Type.M) {
-            return attributeMapToJsonNode(av.m());
+        if (attribute.type() == AttributeValue.Type.NS && attribute.hasNs()) {
+            List<Object> items = new ArrayList<>(attribute.ns().size());
+            for (String text : attribute.ns()) items.add(Double.parseDouble(text));
+            return items;
         }
-        if (av.hasSs() && av.type() == AttributeValue.Type.SS) {
-            ArrayNode array = MAPPER.createArrayNode();
-            for (String s : av.ss()) {
-                array.add(TextNode.valueOf(s));
-            }
-            return array;
-        }
-        if (av.hasNs() && av.type() == AttributeValue.Type.NS) {
-            ArrayNode array = MAPPER.createArrayNode();
-            for (String n : av.ns()) {
-                array.add(new DoubleNode(Double.parseDouble(n)));
-            }
-            return array;
-        }
-        // Fallback
-        return NullNode.getInstance();
+        // Retain the existing unsupported native-kind fallback.
+        return null;
     }
 
-    /**
-     * Convert a Java Object to an AttributeValue (for query parameters).
-     */
-    public static AttributeValue toAttributeValue(Object value) {
-        if (value == null) {
-            return AttributeValue.fromNul(true);
-        }
-        if (value instanceof String s) {
-            return AttributeValue.fromS(s);
-        }
-        if (value instanceof Number n) {
-            return AttributeValue.fromN(n.toString());
-        }
-        if (value instanceof Boolean b) {
-            return AttributeValue.fromBool(b);
-        }
+    /** Converts a query parameter using the existing parameter-coercion policy. */
+    static AttributeValue toAttributeValue(Object value) {
+        if (value == null) return AttributeValue.fromNul(true);
+        if (value instanceof String text) return AttributeValue.fromS(text);
+        if (value instanceof Number number) return AttributeValue.fromN(number.toString());
+        if (value instanceof Boolean bool) return AttributeValue.fromBool(bool);
         return AttributeValue.fromS(value.toString());
-    }
-
-    /**
-     * Convert a caller-supplied {@code Map<String, Object>} document into a
-     * DynamoDB attribute map. Uses Jackson internally to handle nested structures.
-     */
-    public static Map<String, AttributeValue> mapToAttributeMap(Map<String, Object> document) {
-        if (document == null) return new LinkedHashMap<>();
-        JsonNode node = MAPPER.valueToTree(document);
-        return jsonNodeToAttributeMap(node);
-    }
-
-    /**
-     * Convert a DynamoDB attribute map to a plain {@code Map<String, Object>}.
-     * Uses Jackson internally to handle nested structures.
-     */
-    public static Map<String, Object> attributeMapToMap(Map<String, AttributeValue> item) {
-        JsonNode node = attributeMapToJsonNode(item);
-        return MAPPER.convertValue(node, MAP_TYPE);
     }
 }

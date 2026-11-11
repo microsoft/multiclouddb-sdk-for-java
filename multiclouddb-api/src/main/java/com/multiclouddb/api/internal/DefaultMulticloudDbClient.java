@@ -61,7 +61,7 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
      * Lifecycle flag flipped to {@code true} by {@link #close()}. All public
      * entry points consult {@link #checkOpen(String)} first so a post-close
      * call always surfaces {@link MulticloudDbErrorCategory#CLIENT_CLOSED}
-     * before any other validation (e.g. {@link DocumentSizeValidator}) runs.
+     * before any other validation (e.g. {@link DocumentValidator}) runs.
      * Declared {@code volatile} so a thread that races with {@link #close()}
      * sees the flip without locking. See also the matching provider-level
      * guards in {@code SpannerProviderClient}, {@code CosmosProviderClient},
@@ -86,7 +86,7 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
         checkOpen(OperationNames.CREATE);
         Instant start = Instant.now();
         try {
-            DocumentSizeValidator.validate(document, OperationNames.CREATE);
+            DocumentValidator.validate(document, OperationNames.CREATE);
             providerClient.create(address, key, document, options);
             LOG.debug("create completed: address={}, key={}, duration={}ms",
                     address, key, Duration.between(start, Instant.now()).toMillis());
@@ -118,7 +118,7 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
         checkOpen(OperationNames.UPDATE);
         Instant start = Instant.now();
         try {
-            DocumentSizeValidator.validate(document, OperationNames.UPDATE);
+            DocumentValidator.validate(document, OperationNames.UPDATE);
             providerClient.update(address, key, document, options);
             LOG.debug("update completed: address={}, key={}, duration={}ms",
                     address, key, Duration.between(start, Instant.now()).toMillis());
@@ -134,7 +134,7 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
         checkOpen(OperationNames.UPSERT);
         Instant start = Instant.now();
         try {
-            DocumentSizeValidator.validate(document, OperationNames.UPSERT);
+            DocumentValidator.validate(document, OperationNames.UPSERT);
             providerClient.upsert(address, key, document, options);
             LOG.debug("upsert completed: address={}, key={}, duration={}ms",
                     address, key, Duration.between(start, Instant.now()).toMillis());

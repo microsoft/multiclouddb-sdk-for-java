@@ -11,14 +11,34 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 - Change-feed reader backed by Spanner change streams via the `READ_<stream>` TVF (single-use read-only transaction; 5-second bounded window per call). `listCursors` bootstraps the partition tree by calling the TVF with a `NULL` partition token and anchors each cursor''s bookmark at `max(now, childStart)` so `now()` cursors honour their live-tip contract on the emulator. `readChanges` drains a bounded window, absorbs `child_partitions_record` rows (splits/merges), rotates the partition list across partitions, and surfaces `isTerminal()=true` when a cursor''s sole partition closes without children. Each `data_change_record.mod` becomes one `ChangeEvent` with a stable `providerEventId` (`<server_transaction_id>:<commit_ts>:<record_sequence>:<mod_index>`). `INVALID_ARGUMENT` / `NOT_FOUND` / `OUT_OF_RANGE` on the TVF (most commonly a partition token outside the stream''s retention window) is mapped to `CursorExpiredException(reason=PROVIDER_TRIMMED)`.
 - Per-collection change-stream name resolution: defaults to `<collection>_changes`; override via the `changeStream.<collection>` connection key (so producer and reader resolve the same stream when running against an operator-provisioned change stream).
-- Extended-retention provisioning: `SpannerProviderClient.ensureContainer(address)` emits an idempotent `CREATE CHANGE STREAM <name> FOR <table> OPTIONS (value_capture_type = ''NEW_ROW'', retention_period = ''<value>'')` when the user opted in via `ChangeFeedConfig.extendedRetention(...)`, on both the fresh-table and the pre-existing-table paths. `value_capture_type = ''NEW_ROW''` ensures `mods.new_values` carries the full post-image (the GoogleSQL default of `OLD_AND_NEW_VALUES` only carries the mutated columns). The duplicate-name path reads back the active `retention_period` from `INFORMATION_SCHEMA.CHANGE_STREAM_OPTIONS` and throws `UNSUPPORTED_CAPABILITY(reason="extended_retention_not_enacted")` (with `requestedRetention` and `activeRetention` in `providerDetails`) when the on-disk retention does not match the request — mirroring Cosmos''s read-back-and-reject so application code that branches on `providerDetails.reason` stays portable. `INVALID_ARGUMENT` from `updateDatabaseDdl(...)` whose message contains the `retention_period` token is re-mapped to `UNSUPPORTED_CAPABILITY(reason="retention_exceeds_native_max")`. `SpannerCapabilities` declares `EXTENDED_CHANGE_FEED_HISTORY_CAP` (default 24h; configurable up to 7d natively).
+- Extended-retention provisioning: `SpannerProviderClient.ensureContainer(address)` emits an idempotent `CREATE CHANGE STREAM <name> FOR <table> OPTIONS (value_capture_type = ''NEW_ROW'', retention_period = ''<value>'')` when the user opted in via `ChangeFeedConfig.extendedRetention(...)`, on both the fresh-table and the pre-existing-table paths. `value_capture_type = ''NEW_ROW''` requests new non-key column values in `mods.new_values` (the GoogleSQL default of `OLD_AND_NEW_VALUES` only carries the mutated columns). The duplicate-name path reads back the active `retention_period` from `INFORMATION_SCHEMA.CHANGE_STREAM_OPTIONS` and throws `UNSUPPORTED_CAPABILITY(reason="extended_retention_not_enacted")` (with `requestedRetention` and `activeRetention` in `providerDetails`) when the on-disk retention does not match the request — mirroring Cosmos''s read-back-and-reject so application code that branches on `providerDetails.reason` stays portable. `INVALID_ARGUMENT` from `updateDatabaseDdl(...)` whose message contains the `retention_period` token is re-mapped to `UNSUPPORTED_CAPABILITY(reason="retention_exceeds_native_max")`. `SpannerCapabilities` declares `EXTENDED_CHANGE_FEED_HISTORY_CAP` (default 24h; configurable up to 7d natively).
 - Typed `CLIENT_CLOSED` envelope replacing prior raw `IllegalStateException` from `checkOpen()`. `close()` is idempotent and the `Spanner` field is `final` again; post-close errors attribute the failing operation (`create` / `read` / `update` / ...) instead of the literal `"checkOpen"`.
 
 ### Changed
 
+- Make `SpannerRowMapper` and its conversion method package-private provider
+  implementation details. Applications should use the portable client API rather
+  than calling the native mapper directly.
+- Normalize missing/null change-feed images to null and respect capture mode:
+  `NEW_VALUES`/`NEW_ROW` delete events have no collected payload, even when native
+  old values are `{}`. Collected empty images and null-valued fields are preserved,
+  as are event metadata, numeric decoding and `FIELD_DATA` filtering.
+  A supplied payload is not a guarantee of a complete captured document image.
+  ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
+- Map values to Spanner typed mutations and detached row Maps, preserving
+  existing storage formats and numeric conversions. Keep JSON processing
+  internal to `SpannerRowMapper` and correct numeric lexical-length accounting.
+  Add direct `com.google.code.gson:gson:2.15.0` and JPMS `requires com.google.gson`.
+  Common write validation now rejects null document roots before native I/O.
+  **Breaking result-type migration:** see the [migration guide](../docs/guide.md#migrating-from-beta2).
+  **Compatibility:** strict JSON parsing rejects unpaired UTF-16 surrogates;
+  legacy marked rows may return raw text. Malformed field-name metadata can
+  disable filtering and metadata stamping, exposing previously excluded columns. Review
+  [existing-data guidance](../docs/guide.md#spanner-json-unicode-compatibility) before upgrading.
+  ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 - `upsert(address, key, document)` now uses Spanner `INSERT_OR_UPDATE` (was `REPLACE`). `REPLACE` is internally delete-then-insert, which change streams surface as `mod_type=INSERT` — making a second upsert of the same key appear as `ChangeType.CREATE` instead of `ChangeType.UPDATE`. `INSERT_OR_UPDATE` matches the `UPDATE` / `MODIFY` behaviour of Cosmos AVAD and DynamoDB Streams. The observable upsert semantics are unchanged: `FIELD_DATA` continues to project only the new document''s fields on read, so `CrudConformanceTests.upsertOverwrites` still passes.
 - Spanner instance creation in `ensureDatabase` is gated to emulator mode. In production (no `emulatorHost` configured), the instance is expected to pre-exist; only the database is created. Creating a Spanner instance is a billable, region-specific operation that should be done deliberately.
-- Complex container values (`Map`, `Collection`) round-trip through STRING columns using an unambiguous prefix marker (`U+0001` + `mcdb:json:`). User strings that happen to start with `{` or `[` are returned verbatim; user strings that themselves begin with `U+0001` are escaped at write time.
+- Supported complex container values (`Map`, `List`) round-trip through STRING columns using an unambiguous prefix marker (`U+0001` + `mcdb:json:`). User strings that happen to start with `{` or `[` are returned verbatim; user strings that themselves begin with `U+0001` are escaped at write time.
 - `BETWEEN` translation wraps in parentheses (`(field BETWEEN @lo AND @hi)`) for cross-provider consistency.
 
 ### Breaking changes
@@ -33,10 +53,13 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- Treat top-level JSON `null` in `FIELD_DATA` as malformed metadata during
+  partial updates, preserving old columns without stamping a replacement field
+  list. A valid empty array remains distinct.
 - **Default `ORDER BY` no longer fires for aggregate / `GROUP BY` queries.** The provider previously appended `ORDER BY partitionKey, sortKey` to every SELECT, which GoogleSQL rejects on aggregates with `column not aggregated`. The default is now suppressed when the SQL contains an aggregate function or `GROUP BY`; caller-supplied `ORDER BY` is honoured verbatim. The default also no longer duplicates primary-key columns when the caller already sorts by them — only the missing key is appended as a tiebreaker — and `ORDER BY` detection ignores string literals so `WHERE comment = ''please ORDER BY date''` is no longer a false positive.
 - **Legacy / pre-`FIELD_DATA` rows preserve every column on read and `update()`.** When `FIELD_DATA` is absent or malformed, `SpannerRowMapper` applies the historical "no metadata => no filtering" rule including nulls; `update()` deliberately leaves `FIELD_DATA` alone so the reader''s fallback continues to project all legacy columns. A subsequent `upsert()` or `create()` promotes the row into the metadata regime by writing a complete `FIELD_DATA` stamp.
 - `ensureDatabase()` / `ensureContainer()` no longer leak raw `RuntimeException` on non-Spanner failures. `InterruptedException` surfaces as `MulticloudDbException(TRANSIENT_FAILURE, retryable=true)` (with the interrupt flag restored); non-Spanner causes inside the admin `ExecutionException` surface as `MulticloudDbException(PROVIDER_ERROR)` preserving the original cause.
-- `setMutationValue` no longer fails on common Java types (e.g. `java.time.Instant`) — JSON serialisation is restricted to `Map`/`Collection`; every other type falls back to `value.toString()`.
+- Applications must explicitly convert unsupported Java values (for example, `java.time.Instant`) to supported Map/List/scalar values; common validation rejects them rather than invoking `toString()`.
 
 ### Known limitations
 

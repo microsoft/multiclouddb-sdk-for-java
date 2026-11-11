@@ -6,6 +6,14 @@ and architecture overview, see the [Getting Started](getting-started.md) guide. 
 portable API surface and error mapping reference, see
 [Compatibility](compatibility.md).
 
+The Map boundary accepts null, boolean, string, supported finite numbers, Lists
+and string-keyed Maps. Binary/embedded objects are not supported inputs.
+Applications may explicitly map bytes to ordinary text; the SDK does not infer
+or decode Base64. Do not mutate input containers during a synchronous write;
+the SDK neither mutates nor retains them after return. See the
+[provider mapping table](#provider-mapping-and-serialization)
+for the existing per-provider schema and numeric limitations.
+
 ---
 
 ## Table of Contents
@@ -24,6 +32,7 @@ portable API surface and error mapping reference, see
   - [Database-per-Tenant Pattern](#database-per-tenant-pattern)
   - [Provisioning Resources with provisionSchema()](#provisioning-resources-with-provisionschema)
 - [CRUD Semantics](#crud-semantics)
+  - [Application-owned mapping](#application-owned-mapping)
   - [create - Insert Only](#create---insert-only)
   - [read - Point Read](#read---point-read)
   - [update - Replace Existing](#update---replace-existing)
@@ -331,17 +340,22 @@ names**:
 | **DynamoDB** | `partitionKey` (hash key attribute) | `sortKey` (range key attribute) |
 | **Spanner** | `partitionKey` (primary key column) | `sortKey` (primary key column) |
 
-This means a document read back from **Cosmos DB** looks like:
+This means the native stored document in **Cosmos DB** looks like:
 
 ```json
 {"id": "pos-42", "partitionKey": "tenant-1", "name": "Alpha Fund"}
 ```
 
-while the same document read back from **DynamoDB** looks like:
+while the native item in **DynamoDB** looks like:
 
 ```json
 {"sortKey": "pos-42", "partitionKey": "tenant-1", "name": "Alpha Fund"}
 ```
+
+Point-read projection is separate: Cosmos removes root `id` and `partitionKey`,
+whereas DynamoDB retains its key attributes. See
+[system property stripping](#system-property-stripping); the returned shapes
+are not identical merely because all payloads now use Maps.
 
 A convention-based overload - `upsert(address, document)` - would need to look
 for `sortKey` on DynamoDB/Spanner but `id` on Cosmos DB. That requires
@@ -497,6 +511,406 @@ but the default SPI implementation works correctly for all providers.
 
 ## CRUD Semantics
 
+These examples describe the coordinated development Map API and use
+`import java.util.Map;`. Released beta callers must migrate point-read/feed
+payload access and recompile; see [application-owned mapping](#application-owned-mapping).
+Query Map/Object contracts and existing provider-specific update behavior are
+not changed by this increment.
+
+### Application-owned mapping
+
+Applications explicitly map Java objects to `Map<String, Object>` and map returned
+data back themselves. Multicloud does not discover POJOs, invoke a POJO mapper
+or ship a mapping interface, codec hierarchy or serializer module. Separate
+[JSON syntax callbacks](#application-owned-json-processing) handle cursor
+persistence, not POJO mapping or provider storage encoding.
+
+For example, use an application-configured Jackson mapper to save and read a
+customer. Jackson is an optional **application dependency**, not an SDK requirement
+or adapter. Applications own naming, dates, generics, coercion, unknown fields,
+errors and mapper lifetime:
+
+```java
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Map;
+
+ObjectMapper mapper = applicationConfiguredMapper;
+Map<String, Object> fields = mapper.convertValue(customer,
+        new TypeReference<Map<String, Object>>() {});
+client.upsert(address, key, fields);
+DocumentResult result = client.read(address, key);
+if (result == null) throw new IllegalStateException("Document not found.");
+Customer restored = mapper.convertValue(result.document(), Customer.class);
+```
+
+Keep these points in mind:
+
+- Check for a null result before mapping a missing point read; see
+  [migration details](#migrating-from-beta2).
+- Accepted numeric input types do not guarantee identical precision across
+  providers; see [supported values and numeric precision](#supported-values-and-numeric-precision).
+- Do not mutate inputs during a synchronous write; see
+  [input and result ownership](#input-and-result-ownership).
+
+#### Manual mapping
+
+The JDK-only [PlainCustomerMapping example](https://github.com/microsoft/multiclouddb-sdk-for-java/blob/ca0011ad2d4f9555a6a5d391ed1689b7e46156ce/multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/PlainCustomerMapping.java)
+illustrates handwritten mapping:
+
+```java
+PlainCustomerMapping mapping = new PlainCustomerMapping();
+PlainCustomerMapping.Customer customer = new PlainCustomerMapping.Customer("Grace", 7);
+client.create(address, key, mapping.toMap(customer));
+DocumentResult result = client.read(address, key);
+if (result == null) throw new IllegalStateException("Document not found.");
+PlainCustomerMapping.Customer restored = mapping.fromMap(result.document());
+```
+
+#### Supported values and numeric precision
+
+The document root must be a non-null Map; create, update and upsert reject a null
+root with `INVALID_REQUEST` before native I/O. Empty Maps and nested null values
+remain supported. Values allow non-null string-keyed Maps, ordered Lists, Strings, Booleans, null,
+and exactly Byte, Short, Integer, Long, Float, Double, BigInteger and BigDecimal.
+Float/Double must be finite. Cycles, arrays, sets, arbitrary POJOs, invalid keys
+and other Number implementations fail with `INVALID_REQUEST` before native I/O.
+Shared acyclic subtrees are valid. Missing keys differ from present nulls; use
+`containsKey`. Equality follows JDK Map/List/Number semantics.
+
+**Conservative portability recommendation:** supply integers as `Integer` or
+`Long` within **-9,007,199,254,740,991 through +9,007,199,254,740,991, inclusive**.
+This lowest-common-denominator (LCD) recommendation uses the JSON/binary64
+interoperability interval in [RFC 8259 section 6](https://www.rfc-editor.org/rfc/rfc8259#section-6).
+It is not a new validation bound or a native storage cap; values outside it are
+not necessarily rejected or damaged. It does not guarantee lossless behavior
+for every accepted Number class or every read, query and change-feed path,
+nor restoration of the original Java subtype.
+
+For fractional values, magnitude is not decimal precision: even `0.1` is not
+exactly representable in binary floating point. **When exact large integers,
+decimal values or scale matter, explicitly map BigInteger/BigDecimal to String
+in the application and parse them on read.** Converting an already-rounded
+Float/Double to String cannot recover lost precision. String storage changes
+numeric comparison, ordering and aggregation semantics (for example, ordinary
+string ordering places `"10"` before `"2"`).
+
+Provider schema and representation rules still apply; see
+[provider mapping and serialization](#provider-mapping-and-serialization) and
+[Spanner JSON compatibility](#spanner-json-unicode-compatibility). In particular,
+Spanner change feeds can retain nested Map/List fields as marked JSON STRINGs
+rather than decoded containers. The LCD recommendation does not promise a common
+nested feed shape. The [write-depth contract and native size limits](#document-size-enforcement)
+also apply; the integer recommendation is not a new numeric validation bound.
+
+For example, choose String before calling the SDK:
+
+```java
+BigInteger largeInteger = new BigInteger("9007199254740993");
+BigDecimal amount = new BigDecimal("123.4500");
+Map<String, Object> input = Map.of(
+        "largeInteger", largeInteger.toString(),
+        "amount", amount.toString());
+client.upsert(address, key, input);
+DocumentResult result = client.read(address, key);
+if (result == null) throw new IllegalStateException("Document not found.");
+BigInteger restoredInteger = new BigInteger((String) result.document().get("largeInteger"));
+BigDecimal restoredAmount = new BigDecimal((String) result.document().get("amount"));
+```
+
+Keep query/filter values consistent with the chosen String representation.
+
+#### Input and result ownership
+
+Callers must not mutate inputs or nested containers during the **entire
+synchronous write**. The SDK neither mutates them nor retains them after return.
+Point-read/feed Maps and Lists are detached and mutable. QueryPage retains an
+unmodifiable list and top-level row Maps, with nested mutability. Released
+numeric conversion behavior remains. Writes follow the
+[32-level nesting contract and native size enforcement](#document-size-enforcement).
+These detachment guarantees describe provider-returned data. Directly constructing
+`DocumentResult` or `ChangeEvent` retains the supplied payload, without copying it.
+
+#### Change-feed payloads
+
+ChangeEvent data may be partial, a before-image, an array, a scalar or null.
+Use `event.data() != null` to check for a payload. Top-level null means no
+payload is available; an explicit top-level null is not a separate state.
+A non-null empty Map is a payload with no included fields, and null-valued Map
+entries remain present (`containsKey` distinguishes them from missing fields).
+An event without data is still valid: its key, type, timestamp and provider
+event ID remain available. Inspect the selected payload rather than assume a
+full DTO. There is only the five-argument constructor; no separate presence
+boolean or accessor is required.
+
+| Provider | Payload selection and absence |
+|---|---|
+| Cosmos | Prefer `current` for create/update and `previous` for delete; use the other image when the preferred image is null/missing. Keep a supplied empty body, including AVAD tombstones. If neither image exists in an AVAD envelope, data is null while envelope/metadata identity and timestamps are retained. The existing bare-document fallback remains a payload. |
+| DynamoDB | Use the native `hasNewImage()` / `hasOldImage()` presence flags for the selected image (new for create/update, old for delete). An absent SDK auto-constructed empty map becomes null; a supplied empty image remains an empty Map. A native `NULL` attribute remains a null-valued field, not an absent image. |
+| Spanner | Respect `value_capture_type` and modification type: `NEW_VALUES` / `NEW_ROW` do not collect old images, so delete data is null even when `old_values` is `{}`. Modes collecting old values can supply a delete before-image. Missing fields, SQL null and selected JSON null produce null; a collected `{}` or an object emptied by `FIELD_DATA` filtering remains an empty Map. Existing numeric decoding/filtering is unchanged. |
+
+For Cosmos AVAD DELETE, an absent `previous` with a supplied empty `current`
+still yields `{}`. This indicates a supplied event payload, not proof of a
+captured document image, before-image, completeness, or post-image. Missing
+both bodies yields null; a supplied nonempty fallback body remains available.
+
+For Spanner updates in old-and-new capture modes, a missing/SQL-null new image
+retains the existing old-image fallback; a selected JSON null is not replaced
+with another image. If capture metadata is absent or unrecognized, the reader
+retains its legacy available-field selection rather than guessing a new mode.
+See [Spanner capture types](https://cloud.google.com/spanner/docs/change-streams#value-capture-type).
+These rules normalize available native images, not a guarantee of complete
+post-images for every event or native configuration.
+
+#### Migrating from beta.2
+
+Against released API **0.1.0-beta.2**, write signatures remain Maps,
+`DocumentResult.document()` changes from ObjectNode to Map, and
+`ChangeEvent.data()` changes from JsonNode to Object. A missing point read still
+returns null. QueryPage remains `List<Map<String, Object>>`, including nested
+scalar/array values and existing unsupported top-level result errors.
+
+Some no-image change-feed paths that previously synthesized an empty object or
+returned a Cosmos transport envelope now return `data() == null`. The earlier
+API already allowed null data; this is an image-normalization change, not newly
+permitted nullability. Check `event.data() != null` before mapping a payload.
+A supplied non-null empty Map still represents a payload without fields, and
+`containsKey` distinguishes a null-valued field from an absent field. Events
+without a payload still retain their key/type/timestamp/provider event ID.
+
+**Breaking input validation:** values previously implicitly serialized by a
+provider mapper (sets, arrays, POJOs, enums, UUIDs, dates and custom Number
+implementations) and non-finite floating-point values are now rejected with
+`INVALID_REQUEST`. Explicitly map them to the supported Map/List/scalar vocabulary
+in the application; there is no implicit `toString()` fallback. A null document
+root is also invalid for create/update/upsert; empty Maps and nested nulls remain valid.
+
+Write nesting is now limited to **32 Map/List levels below the root Map**, rather
+than the previous 1000-container traversal limit that included the root. The
+existing 399 KiB logical-size estimate has been removed; native size rejection
+may happen after I/O and differs by provider. See
+[exact validation and native size limits](#document-size-enforcement).
+Cursor and read/query/feed parser limits are unchanged.
+
+The API no longer supplies Jackson transitively for compilation or through JPMS.
+Applications that use Jackson must declare their own Jackson dependencies and
+appropriate `requires` directives (for example, `requires com.fasterxml.jackson.databind;`).
+For the Jackson examples in this guide, add an application dependency:
+
+```xml
+<dependency>
+    <groupId>com.fasterxml.jackson.core</groupId>
+    <artifactId>jackson-databind</artifactId>
+    <version>2.18.6</version>
+</dependency>
+```
+
+Use the [source-installed module versions](getting-started.md#2-add-dependencies)
+for this development API; installing the reactor does not change a consumer's
+explicit release dependency. JSON library/version compatibility remains the
+application's responsibility, including mediation with native provider dependencies.
+
+Spanner now declares its explicit internal Gson 2.15 dependency; this does not add a
+JSON-library requirement to the common API.
+
+Cursor persistence now takes explicit callbacks: `cursor.toToken(serialize)`
+and `ChangeFeedCursor.fromToken(token, deserialize)`. Existing v1 JSON tokens
+remain readable with a compatible adapter; no binary format or legacy decoder
+is introduced. No client requires JSON callback configuration for construction,
+CRUD, queries or in-memory cursor use. Spanner's stored/change-stream JSON is
+handled internally by its provider, not application callbacks.
+
+#### Provider mapping and serialization
+
+| Provider | Multicloud mapping | Encoding and limitations retained |
+|---|---|---|
+| Cosmos | Detached request Maps; `Map.class` point reads; root-only system-field filtering | Native Cosmos JSON/wire encoding, key/id/TTL overwrite and decimal normalization. Feed bodies do not use point-read filtering |
+| DynamoDB | Direct Map/List/scalar to AttributeValue and back | Native encoding; dotted N values read as Double, others as Integer then Long. Existing exponent/overflow limitations and unsupported native binary null fallback remain |
+| Spanner | Typed mutations/rows; nested Map/List values use marked JSON STRINGs; FIELD_DATA selects visible fields | Protobuf/gRPC and required persisted JSON. Integer/Long use INT64, Float/Double use FLOAT64; root Byte/Short/BigInteger/BigDecimal retain STRING fallback. Native BYTES rows retain Base64 text conversion |
+
+Spanner's JSON marker, FIELD_DATA and update transaction are existing storage
+contracts, not redundant serialization to remove. Change-feed images retain
+native JSON representations: numeric-looking strings remain Strings, integer
+tokens become Integer/Long/BigInteger according to range, and fractional or
+exponential tokens become Double. `column_types` is not used to convert or
+validate image values. This does not promise numerical parity with point reads
+or other providers.
+
+Spanner still binds a top-level document field with a null value as STRING null
+without schema introspection; that can fail for a non-STRING column. Common
+support for null values does not remove this native schema limitation. Nested
+nulls inside marked JSON STRINGs follow the JSON representation instead.
+
+The API does not require a JSON library, but native provider SDKs may still depend
+on one. These dependencies are not isolated from your application's dependencies.
+
+JPMS applications require
+`com.multiclouddb.api`; opening DTO packages to an application mapper is the
+application's responsibility.
+
+##### Spanner JSON Unicode compatibility
+
+Spanner's internal Gson 2.15 reader uses strict parsing and rejects **unpaired
+UTF-16 surrogates**, whether present as raw Java code units or JSON escapes such
+as `\uD800` or `\uDC00`. These are malformed UTF-16, not ordinary Korean text,
+valid emoji surrogate pairs, or a string-length limitation. Valid Unicode
+continues to be supported. This does not add a common Map-input restriction or
+change Cosmos/DynamoDB data paths, and does not establish that their services
+preserve malformed Unicode.
+
+**Existing data can be affected.** In point-read and query results, legacy
+marked JSON STRINGs containing escaped lone surrogates now use the existing
+parse-failure fallback: the entire raw marker-prefixed text (including the
+leading U+0001 and `mcdb:json:` prefix) is returned instead of a Map/List or
+other decoded value. Native JSON-column parse failures return the original JSON
+text. Plain, unmarked STRING columns are not parsed by this reader; native
+UTF-8 transport can still reject or replace malformed Java strings, so their
+round-trip preservation is not guaranteed.
+
+Other existing parse-failure policies remain in force:
+
+- Invalid `FIELD_DATA` metadata disables field filtering on row reads, including
+  the legacy null-column behavior; updates do not stamp replacement metadata.
+  The JSON literal `null` is malformed metadata, not an empty field-name list.
+  `[]` is a valid empty list; legacy null/numeric/boolean array-element coercion
+  is retained. The JSON-null update fallback now preserves old fields instead
+  of failing while merging a null list.
+  Malformed-surrogate field-name metadata can trigger this no-filter/no-stamp
+  fallback and expose columns previously excluded by metadata.
+  Change-feed metadata failures strip `FIELD_DATA` but keep the other fields.
+- Change-feed image JSON failures return `{"raw": originalImageJson}` regardless
+  of column-type metadata. Key JSON failures use `malformed_envelope`.
+  Nested marker STRINGs are not recursively decoded
+  in change-feed images, so this is not a universal rejection of every event
+  containing such stored text.
+
+Inspect and correct affected stored values and metadata before upgrading; do not
+assume all existing data is unaffected. Escaping a lone surrogate as `\uXXXX`
+does not make it acceptable to the strict reader. Prefer valid Unicode at the
+application boundary rather than relying on parser or transport replacement.
+
+Both internal JSON readers explicitly retain a **1000-container nesting limit**,
+rather than Gson's default 255. This counts from each parsed JSON root, separately
+from the common write validator's 32 nested Map/List levels below the document
+root. The metadata reader still requires a flat field-name array.
+Native database limits remain separate: Spanner's native JSON-column nesting
+limit does not apply to JSON encoded inside the SDK's marked STRING columns.
+
+### Application-owned JSON processing
+
+For common cursor persistence, this is **JSON to/from neutral values**, separate
+from the optional POJO mapping above. Supply `Function<Object, String> serialize` and
+`BiFunction<String, Class<?>, Object> deserialize`. The SDK requests only
+`Object.class` (string-keyed Map, List, supported numbers, String, Boolean or
+null). No POJO target is requested. The SDK validates the returned neutral
+structures without copying their containers, then extracts immutable cursor state.
+Do not modify returned Maps/Lists during the entire `fromToken` call. After it
+returns, the cursor retains none of those containers and is unaffected by their
+later modification. Validation is not a concurrent-mutation snapshot.
+
+Both functions must be thread-safe, deterministic, and must not mutate or retain
+their arguments. Pass the corresponding function explicitly to each persistence
+call; the cursor does not retain it, and there is no global registry or client
+callback configuration. Every provider can use independent application functions.
+Only persistence/restoration needs them; `now()`, `listCursors`, client
+construction and in-memory cursor use need none.
+Even persisting a `now()` sentinel explicitly requires the corresponding function.
+
+The application selects and configures its JSON library. This example uses
+Jackson 2.18.6 as an **application dependency** with the released compatibility
+profile; it is not an SDK fallback or a promise about arbitrary mapper defaults.
+
+Configure the mapper and callbacks once and reuse them across operations.
+Complete all mapper configuration before first use; do not reconfigure a shared
+mapper while it is in use.
+
+```java
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.StreamReadConstraints;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.util.function.BiFunction;
+import java.util.function.Function;
+
+ObjectMapper json = new ObjectMapper(JsonFactory.builder()
+        .streamReadConstraints(StreamReadConstraints.builder()
+                .maxNestingDepth(1000).maxNumberLength(1000)
+                .maxStringLength(20_000_000).maxNameLength(50_000).build())
+        .build())
+        .disable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+        .disable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+        .disable(DeserializationFeature.USE_BIG_INTEGER_FOR_INTS)
+        .disable(DeserializationFeature.USE_LONG_FOR_INTS);
+Function<Object, String> serialize = value -> {
+    try {
+        return json.writeValueAsString(value);
+    } catch (IOException failure) {
+        throw new UncheckedIOException(failure);
+    }
+};
+BiFunction<String, Class<?>, Object> deserialize = (text, target) -> {
+    if (target != Object.class) {
+        throw new IllegalArgumentException("Unsupported JSON target.");
+    }
+    try (var parser = json.createParser(text)) {
+        if (parser.nextToken() == null) return null;
+        return json.readValue(parser, target);
+    } catch (IOException failure) {
+        throw new UncheckedIOException(failure);
+    }
+};
+```
+
+Use the initialized callbacks to persist and restore cursors:
+
+```java
+String saved = cursor.toToken(serialize);
+ChangeFeedCursor resumed = ChangeFeedCursor.fromToken(saved, deserialize);
+```
+
+Keep this mapper separate from DTO-specific modules, coercions and polymorphic
+typing. The compatibility profile has these deliberately specific behaviors:
+
+- Object roots, arrays, scalars and null are supported. Integer tokens use
+  Integer, Long, then BigInteger by range; floating tokens use Double (including
+  overflow to infinity on read and negative zero). This does **not** relax finite
+  Float/Double write validation or promise decimal fidelity across providers.
+- Duplicate object keys keep the last value. One root is consumed; trailing
+  content is ignored, and empty Object input produces null before cursor-shape checks.
+  Comments, single quotes, unquoted names, leading-zero numbers, raw control
+  characters and nonnumeric literals such as `NaN` are rejected. The SDK rejects
+  a leading BOM, but permits one inside a string.
+- Use the shown released parser constraints and its numeric-length accounting,
+  not a total-token-character cap: decimal points, signs and exponent syntax
+  do not all count like integer digits.
+- Writers preserve keys, nulls, numeric values and string contents without type
+  metadata. The SDK escapes isolated UTF-16 surrogates in cursor JSON before
+  UTF-8/Base64URL encoding. Required JSON/wire encoding still occurs.
+
+Signal **JSON processing failures** with `UncheckedIOException`. Cursor parse
+failures become `CURSOR_EXPIRED/MALFORMED`.
+Other callback exceptions, invalid result structures or a null serialized string
+fail explicitly with `IllegalStateException` rather than being classified as
+corrupted JSON. Runtime failures while accessing callback-returned containers or
+values also use this sanitized contract-failure path, even if an accessor throws
+`UncheckedIOException` or a cursor exception. Malformed retention fields remain
+`CURSOR_EXPIRED/MALFORMED`; their values are not rendered into messages.
+Diagnostics identify the serialize/deserialize stage and callback/access exception class, or a fixed
+validation reason such as a null serializer result, unsupported neutral value,
+non-string map key or cycle. Original callback messages, causes, suppressed
+exceptions and payloads are omitted; keep application-side diagnostics if needed.
+
+Spanner uses its own internal Gson reader/writer, independently of these cursor
+functions. FIELD_DATA retains scalar lexical names (for example `2.00`, `1e+03`
+and `-0`), and the marker and legacy corruption fallbacks remain, with the JSON-null field
+metadata update correction described above:
+invalid marked/native JSON can return raw text, invalid field metadata falls
+back to legacy projection, and failed marked-container serialization retains the
+logged textual fallback. These are storage compatibility rules, not a
+universally portable JSON specification.
+
 ### create - Insert Only
 
 `create()` inserts a new document. If a document with the same key already
@@ -506,9 +920,7 @@ insert-only semantics with duplicate detection.
 ```java
 ResourceAddress addr = new ResourceAddress("mydb", "orders");
 MulticloudDbKey key = MulticloudDbKey.of("customer-456", "order-123");
-Map<String, Object> doc = new LinkedHashMap<>();
-doc.put("total", 99.95);
-doc.put("status", "pending");
+Map<String, Object> doc = Map.of("total", 99.95, "status", "pending");
 
 client.create(addr, key, doc);   // Fails if document already exists
 ```
@@ -525,12 +937,12 @@ client.create(addr, key, doc);   // Fails if document already exists
 ### read - Point Read
 
 `read()` performs a single-document read using the full key. Returns a
-`DocumentResult` wrapping the document as an `ObjectNode`, or `null` if not found.
+`DocumentResult` wrapping a detached mutable Map, or `null` if not found.
 
 ```java
 DocumentResult result = client.read(addr, MulticloudDbKey.of("customer-456", "order-123"));
 if (result != null) {
-    String status = result.document().path("status").asText();
+    String status = (String) result.document().get("status");
 }
 ```
 
@@ -547,14 +959,14 @@ can go directly to the partition/item without scanning.
 
 ### update - Replace Existing
 
-`update()` replaces an existing document. If the document does **not** exist,
+`update()` modifies an existing document. Cosmos and DynamoDB replace its body;
+Spanner retains its existing partial-update transaction and FIELD_DATA merge.
+If the document does **not** exist,
 the operation **fails** with a not-found error. Use this when you need strict
 update-only semantics.
 
 ```java
-Map<String, Object> updated = new LinkedHashMap<>();
-updated.put("total", 109.95);
-updated.put("status", "shipped");
+Map<String, Object> updated = Map.of("total", 109.95, "status", "shipped");
 
 client.update(addr, MulticloudDbKey.of("customer-456", "order-123"), updated);   // Fails if not exists
 ```
@@ -564,7 +976,7 @@ client.update(addr, MulticloudDbKey.of("customer-456", "order-123"), updated);  
 | Behavior | Cosmos DB | DynamoDB | Spanner |
 |----------|-----------|----------|---------|
 | Operation | `replaceItem()` | `putItem()` with `attribute_exists` condition | `newUpdateBuilder` mutation |
-| If exists | Replace | Replace | Replace |
+| If exists | Replace | Replace | Update supplied fields |
 | If not exists | Throws NOT_FOUND | Throws NOT_FOUND | Throws NOT_FOUND |
 | Return value | None (void) | None (void) | None (void) |
 
@@ -576,9 +988,7 @@ the same key. It is an insert-or-update in all providers.
 ```java
 ResourceAddress addr = new ResourceAddress("mydb", "orders");
 MulticloudDbKey key = MulticloudDbKey.of("customer-456", "order-123");
-Map<String, Object> doc = new LinkedHashMap<>();
-doc.put("total", 99.95);
-doc.put("status", "pending");
+Map<String, Object> doc = Map.of("total", 99.95, "status", "pending");
 
 client.upsert(addr, key, doc);   // Creates or replaces the document
 ```
@@ -629,9 +1039,7 @@ fields into the document** automatically. You don't need to manually set `"id"`
 or `"partitionKey"` in your JSON - the provider handles this:
 
 ```java
-Map<String, Object> doc = new LinkedHashMap<>();
-doc.put("name", "Alpha Fund");
-doc.put("type", "EQUITY");
+Map<String, Object> doc = Map.of("name", "Alpha Fund", "type", "EQUITY");
 
 // No need to set "id" or "partitionKey" in doc - injected by provider
 client.upsert(addr, MulticloudDbKey.of("acme", "port-1"), doc);
@@ -645,9 +1053,10 @@ client.upsert(addr, MulticloudDbKey.of("acme", "port-1"), doc);
 | **DynamoDB** | `"partitionKey"` = key.partitionKey(), `"sortKey"` = key.sortKey() | Added as DynamoDB item attributes |
 | **Spanner** | `"partitionKey"` = key.partitionKey(), `"sortKey"` = key.sortKey() or key.partitionKey() | Written as Spanner row columns |
 
-> **Important**: If your document JSON already contains an `"id"` field, it
-> will be **overwritten** by the key parameter. The key is always the source
-> of truth for the document's identity.
+> **Important**: The key is authoritative for each provider's key fields.
+> Cosmos overwrites `"id"`/`"partitionKey"`; DynamoDB and Spanner write
+> `"partitionKey"`/`"sortKey"`. This does not overwrite unrelated `"id"` fields
+> on every provider. Injection occurs in native requests, not in the caller's Map.
 
 ---
 
@@ -1166,10 +1575,44 @@ try {
     } else if (MulticloudDbErrorCategory.AUTHENTICATION_FAILED.equals(cat)) {
         refreshCredentials();
     } else {
-        log.error("Unexpected error", e);
+        log.error("Operation failed: provider={}, operation={}, category={}, status={}, retryable={}",
+                e.error().provider(), e.error().operation(), cat,
+                e.error().statusCode(), e.error().retryable());
     }
 }
 ```
+
+For native exceptions handled by the provider error mappers, the SDK already
+preserves the native message in both `e.getMessage()` and `e.error().message()`,
+and the original exception in `e.getCause()`. `getMessage()` alone does **not**
+format every structured field. Inside the catch block, inspect the envelope and
+optional diagnostics directly:
+
+```java
+MulticloudDbError error = e.error(); // provider, operation, category, statusCode, retryable
+Map<String, String> details = error.providerDetails();
+OperationDiagnostics diagnostics = e.diagnostics();
+String requestId = diagnostics == null ? details.get("requestId") : diagnostics.requestId();
+String nativeMessage = error.message();
+Throwable nativeCause = e.getCause();
+```
+
+Available details vary: Cosmos exposes activity ID as `requestId`, `subStatusCode`
+and `requestCharge`; DynamoDB exposes `requestId`, `errorCode` and `serviceName`;
+Spanner exposes `grpcStatus` and `errorMessage`, with no request ID supplied by
+the current mapper. Missing information is not synthesized, and these fields
+do not estimate document bytes. Native messages, causes and provider details
+can contain sensitive information: apply application redaction/access policy
+before logging them or a full exception. Raw exception logging is not
+automatically safe.
+
+Common write-validation errors instead identify the violated rule, actual Java
+type and allowed type/condition, or observed depth and maximum (root Map depth
+zero). They do not include document values, field names/Map keys or input
+`toString()` output. This is separate from the
+[cursor JSON callback boundary](#application-owned-json-processing), which
+sanitizes callback failures and does not retain the original callback exception
+or message. No new logging facility or general-purpose sanitizer is introduced.
 
 See [compatibility.md](compatibility.md) for the full error category mapping
 table across all providers.
@@ -1264,15 +1707,15 @@ point-in-time read of a whole collection, use `query()`.
 
 | Type / Method | Purpose |
 |---|---|
-| `ChangeFeedCursor` | An opaque, immutable position in the stream. Persist via `cursor.toToken()` / `ChangeFeedCursor.fromToken(String)`; the token wire format is intentionally opaque and may evolve across SDK versions. |
+| `ChangeFeedCursor` | An opaque, immutable position in the stream. Persist via `cursor.toToken(serialize)` / `ChangeFeedCursor.fromToken(token, deserialize)`; the token wire format is intentionally opaque and may evolve across SDK versions. |
 | `ChangeFeedCursor.now()` | A provider-agnostic sentinel meaning "the live tip at the time of the next read". The first `readChanges` call hydrates it. |
 | `client.listCursors(address)` | Discovers the current set of provider-side partitions and returns one cursor per partition, each positioned at the live tip. Use this to seed a multi-threaded reader. On Cosmos this fetches the feed ranges and runs a one-item warmup query per range to capture a live-tip continuation, so the RU cost scales with the partition count; cache the cursors for the lifetime of your reader rather than calling `listCursors` per page. |
 | `client.readChanges(address, cursor)` | Drains **one page** of events from `cursor` and returns a `ChangeFeedPage` carrying `events`, `nextCursor`, `hasMore`, and `terminal` flags. |
 | `CursorExpiredException` | Thrown when the SDK detects that a cursor can no longer be honoured (provider trimmed events, client-side 24h age cap, malformed/wrong-provider/wrong-resource token). |
 
 Cursors are **opaque to your application**. Persist them as the
-`String` returned by `cursor.toToken()` and restore them with
-`ChangeFeedCursor.fromToken(String)` — do not introspect the token
+`String` returned by `cursor.toToken(serialize)` and restore them with
+`ChangeFeedCursor.fromToken(token, deserialize)` — do not introspect the token
 structure.
 
 Check capability before you call:
@@ -1331,7 +1774,7 @@ while (true) {
     }
 
     cursor = page.nextCursor();
-    persist(cursor.toToken()); // save after every successful batch
+    persist(cursor.toToken(serialize)); // save after every successful batch
 
     if (!page.hasMore()) {
         // Caught up. Sleep briefly to avoid hot-spinning the provider.
@@ -1342,18 +1785,21 @@ while (true) {
 
 ### Persisting cursors across restarts
 
+Use the `serialize` and `deserialize` functions from
+[application-owned JSON processing](#application-owned-json-processing).
+
 `ChangeFeedCursor` is engineered so a single `String` is the complete state.
-Persist `cursor.toToken()` after **every successful** batch — typically in the
+Persist `cursor.toToken(serialize)` after **every successful** batch — typically in the
 same transaction as the downstream side-effect to guarantee at-least-once
 delivery:
 
 ```java
-String token = cursor.toToken();
+String token = cursor.toToken(serialize);
 saveTokenToDurableStore(workerId, token);
 
 // On restart:
 ChangeFeedCursor restored = ChangeFeedCursor.fromToken(
-        loadTokenFromDurableStore(workerId));
+        loadTokenFromDurableStore(workerId), deserialize);
 ```
 
 The token carries:
@@ -1422,7 +1868,7 @@ while (!Thread.currentThread().isInterrupted()) {
     ChangeFeedPage page = client.readChanges(address, cursor);
     for (ChangeEvent ev : page.events()) apply(ev);
     cursor = page.nextCursor();
-    persistPerWorker(workerId, cursor.toToken());
+    persistPerWorker(workerId, cursor.toToken(serialize));
     if (!page.hasMore()) Thread.sleep(500);
 }
 ```
@@ -1501,7 +1947,7 @@ the same path so no control-plane channels leak.
 | Provider | `ensureContainer()` behaviour | Failure → portable mapping |
 |---|---|---|
 | Cosmos DB | Sets an AVAD `ChangeFeedPolicy` on the container properties carrying the requested retention. | If the account lacks Continuous Backup, returns `UNSUPPORTED_CAPABILITY` (`reason=continuous_backup_required`). |
-| Spanner | Emits `CREATE CHANGE STREAM <table>_changes FOR <table> OPTIONS (value_capture_type = 'NEW_ROW', retention_period = '<value>')` after the table-create (the `NEW_ROW` capture type matches what the SDK's change-feed reader requires for full-row payloads). If a stream of the same name already exists with a different retention, `ensureContainer()` reads back the active retention via `INFORMATION_SCHEMA.CHANGE_STREAM_OPTIONS` and refuses to silently honour the mismatch — it throws `UNSUPPORTED_CAPABILITY` (`reason=extended_retention_not_enacted`, with both `requestedRetention` and `activeRetention` in `providerDetails`) so the divergence is loud rather than a silent retention drop. The stream name matches the reader's default convention so `listCursors()` / `readChanges()` transparently pick it up. | If the requested retention exceeds the database's native maximum, returns `UNSUPPORTED_CAPABILITY` (`reason=retention_exceeds_native_max`). |
+| Spanner | Emits `CREATE CHANGE STREAM <table>_changes FOR <table> OPTIONS (value_capture_type = 'NEW_ROW', retention_period = '<value>')` after the table-create (`NEW_ROW` requests new non-key column values; the reader still applies FIELD_DATA filtering). If a stream of the same name already exists with a different retention, `ensureContainer()` reads back the active retention via `INFORMATION_SCHEMA.CHANGE_STREAM_OPTIONS` and refuses to silently honour the mismatch — it throws `UNSUPPORTED_CAPABILITY` (`reason=extended_retention_not_enacted`, with both `requestedRetention` and `activeRetention` in `providerDetails`) so the divergence is loud rather than a silent retention drop. The stream name matches the reader's default convention so `listCursors()` / `readChanges()` transparently pick it up. | If the requested retention exceeds the database's native maximum, returns `UNSUPPORTED_CAPABILITY` (`reason=retention_exceeds_native_max`). |
 
 `ChangeFeedConfig` defaults (`ChangeFeedConfig.defaults()`) leave behaviour
 **bit-for-bit identical to v1** — the opt-in surface is purely additive.
@@ -1632,36 +2078,73 @@ if (client.capabilities().isSupported(Capability.WRITE_TIMESTAMP)) {
 
 ### System Property Stripping
 
-The `document()` field of `DocumentResult` is always stripped of provider
-system properties (`_ts`, `_etag`, `_rid`, `_self`, `_attachments`, `partitionKey`) before being returned, ensuring the same document shape regardless of which provider it was read from.
+Point-read projection retains each provider's existing behavior; neutral Maps
+do not guarantee identical field visibility:
+
+| Provider | Point-read payload |
+|---|---|
+| Cosmos | Removes root `_ts`, `_etag`, `_rid`, `_self`, `_attachments`, `id` and `partitionKey`. Nested fields with those names remain; `ttl` is not in this filter. |
+| DynamoDB | Retains mapped native attributes, including `partitionKey`, `sortKey` and `ttlExpiry` when present. |
+| Spanner | Omits internal `data`/`FIELD_DATA`; valid metadata selects document fields while retaining non-null key columns. Missing/malformed metadata uses legacy no-filter behavior, including null columns. |
+
+Cosmos query rows and change-feed bodies do not use its point-read filter.
+Do not infer feed completeness or cross-provider equality from the payload type.
 
 ---
 
 ## Document Size Enforcement
 
-The SDK enforces a **399 KB** (408,576 bytes) maximum document size before any
-data leaves the client. This limit applies to `create()`, `upsert()`, and
-`update()` on all providers.
+The former **399 KiB logical JSON estimate is no longer enforced**. It could not
+reliably predict native storage size: keys/TTL, metadata, native encoding and
+existing data all affect that size. No common input-Map byte estimate is used
+to predict native acceptance.
 
-### Why 399 KB, not 400 KB?
+The SDK adds no payload-size checks or size-warning logger. Size estimation and
+cross-provider size advisories are deferred; structural validation remains.
 
-Providers inject additional fields (`partitionKey`, `sortKey`, `id`, `ttlExpiry`) before writing. DynamoDB measures its 400 KB limit against the internal wire format, which can be larger than raw JSON bytes. The 1 KB safety margin prevents valid-looking documents from exceeding the wire limit after field injection.
+Native SDKs/services decide size acceptance. DynamoDB has a
+[400 KiB item limit](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Constraints.html#limits-items),
+Cosmos DB has a [2 MB item limit](https://learn.microsoft.com/en-us/azure/cosmos-db/concepts-limits#per-item-limits),
+and Spanner applies [column, row and mutation/commit limits](https://cloud.google.com/spanner/quotas).
+These measure different representations, not a common input-Map byte count.
+The same input can therefore succeed on one provider and fail on another.
+Spanner's partial `update()` preserves untouched columns and merges field
+metadata, so its final stored/commit size cannot be determined from the supplied
+fields alone. Cosmos and DynamoDB `update()` currently replace the document.
 
-### Validation Behaviour
+Native failures continue through the existing provider error normalization.
+For example, Cosmos HTTP 413 retains the default non-retryable `PROVIDER_ERROR`
+classification, with its native status and cause preserved. DynamoDB
+`ValidationException` maps to non-retryable `INVALID_REQUEST`; Spanner `INVALID_ARGUMENT` maps to
+`INVALID_REQUEST` with native retryability. Do not treat every provider quota
+error as a size error, or every `INVALID_REQUEST` as a size failure. Native
+validation may occur after network I/O and incur cost. Inspect the normalized
+category/status and documented provider constraints; do not blindly retry an
+unchanged oversized request. No automatic chunking, offload or bypass option is
+provided.
 
-```java
-try {
-    client.create(address, key, hugeDoc);
-} catch (MulticloudDbException e) {
-    if (MulticloudDbErrorCategory.INVALID_REQUEST.equals(e.error().category())) {
-        // Document rejected before reaching any provider
-        System.out.println("Document too large: " + e.getMessage());
-    }
-}
-```
+### Exact input validation and nesting
 
-Oversized documents are rejected **at the SDK layer** - no network call is made.
-The error category is always `INVALID_REQUEST`.
+`create()`, `update()` and `upsert()` still reject null roots, unsupported neutral
+values, non-string keys, non-finite floating values, cycles and excessive depth
+with non-retryable `INVALID_REQUEST` before provider delegation. Closed-client
+validation remains first. Input validation is not a guarantee of native success.
+
+The common depth limit is **32 nested Map/List levels below the document root**:
+the root Map is depth **0**, each Map or List value adds one level, empty
+containers count, and scalar values add none. The longest path determines depth;
+shared acyclic subtrees are allowed. Depth 32 is accepted and depth 33 rejected.
+For example, `{"field": []}` has depth 1, while `{"field": [{"child": {}}]}`
+has depth 3.
+
+This uses [DynamoDB's 32-level document limit](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.NamingRulesDataTypes.html#HowItWorks.DataTypes.Document)
+as the lowest common denominator; Cosmos permits 128 embedded object/array
+levels. DynamoDB's root item attribute map is not an extra nested `M`; each
+nested Map/List maps to one `M`/`L`. Their wire wrappers and added root scalar
+keys/TTL do not add document levels. Spanner maps root fields to columns and
+nested Map/List fields to marker-prefixed JSON STRINGs, not native JSON columns.
+The limit applies to submitted update fields, not untouched legacy data.
+It does not change cursor validation or provider read/query/feed parser limits.
 
 ---
 

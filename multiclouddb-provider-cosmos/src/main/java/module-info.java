@@ -8,7 +8,6 @@ module com.multiclouddb.provider.cosmos {
     requires com.multiclouddb.api;
     requires com.azure.cosmos;
     requires com.azure.identity;
-    requires com.fasterxml.jackson.databind;
     requires org.slf4j;
     // ServiceLoader registration
     provides com.multiclouddb.spi.MulticloudDbProviderAdapter

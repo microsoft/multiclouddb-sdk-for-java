@@ -5,15 +5,23 @@ This quickstart describes intended usage of the SDK’s portable contract in Jav
 ## Goal
 Run the same application code against Cosmos DB, DynamoDB, or Spanner by changing configuration only.
 
-## Install (planned)
+## Install this development revision
 
-Maven (example coordinates; final artifact names may differ):
+Follow [build from source](../../docs/getting-started.md#1-build-from-source)
+and install the same checkout revision first. There is no `multiclouddb-bundle`.
+For example, use API compile scope and Cosmos runtime scope:
 
 ```xml
 <dependency>
 	<groupId>com.microsoft.multiclouddb</groupId>
-	<artifactId>multiclouddb-bundle</artifactId>
-	<version>0.1.0</version>
+	<artifactId>multiclouddb-api</artifactId>
+	<version>0.1.0-beta.2-SNAPSHOT</version>
+</dependency>
+<dependency>
+	<groupId>com.microsoft.multiclouddb</groupId>
+	<artifactId>multiclouddb-provider-cosmos</artifactId>
+	<version>0.1.0-beta.2-SNAPSHOT</version>
+	<scope>runtime</scope>
 </dependency>
 ```
 
@@ -21,11 +29,17 @@ Gradle:
 
 ```gradle
 dependencies {
-	implementation "com.microsoft.multiclouddb:multiclouddb-bundle:0.1.0"
+	implementation "com.microsoft.multiclouddb:multiclouddb-api:0.1.0-beta.2-SNAPSHOT"
+	runtimeOnly "com.microsoft.multiclouddb:multiclouddb-provider-cosmos:0.1.0-beta.2-SNAPSHOT"
 }
 ```
 
-## Minimal portable usage (planned)
+For Gradle, enable `mavenLocal()` for the source-installed artifacts.
+DynamoDB uses `0.1.0-beta.2-SNAPSHOT`; Spanner independently uses
+`0.1.0-beta.1-SNAPSHOT`. Released beta dependencies do not expose these Map
+signatures merely because a different SNAPSHOT has been installed.
+
+## Minimal portable usage
 
 1. Load configuration (provider selection + connection/auth details).
 2. Construct `MulticloudDbClient` from configuration.
@@ -33,15 +47,20 @@ dependencies {
 
 ### Example (illustrative)
 
+Current development examples use `java.util.Map`; released beta point-read
+ObjectNode and feed JsonNode access requires migration to neutral data.
+Java fragments are method bodies with `com.multiclouddb.api.*` and
+`java.util.Map` imports, an application-provided `config`, and an open client.
+
 ```java
 MulticloudDbClient client = MulticloudDbClientFactory.create(config);
 
 ResourceAddress resource = new ResourceAddress("db", "collection");
-Key key = Key.of("partitionKey-123", "sortKey-456");
-JsonNode doc = objectMapper.createObjectNode().put("id", "123").put("name", "Ada");
+MulticloudDbKey key = MulticloudDbKey.of("partitionKey-123", "sortKey-456");
+Map<String, Object> doc = Map.of("id", "123", "name", "Ada");
 
 client.upsert(resource, key, doc);
-JsonNode got = client.read(resource, key);  // returns null if not found
+DocumentResult got = client.read(resource, key);  // null if not found
 client.delete(resource, key);
 
 // Portable query expression — works on all providers without changes
@@ -49,7 +68,7 @@ QueryPage page1 = client.query(resource, QueryRequest.builder()
 	.expression("status = @status AND STARTS_WITH(name, @prefix)")
 	.parameter("status", "active")
 	.parameter("prefix", "A")
-	.pageSize(50)
+	.maxPageSize(50)
 	.build());
 ```
 
@@ -247,7 +266,7 @@ QueryRequest request = QueryRequest.builder()
     .build();
 
 QueryPage page = client.query(address, request, OperationOptions.defaults());
-page.items().forEach(item -> System.out.println(item.toPrettyString()));
+page.items().forEach(System.out::println);
 ```
 
 ```java
@@ -293,8 +312,8 @@ OperationOptions optionsWithMeta = OperationOptions.builder()
     .build();
 
 DocumentResult result = client.read(address, key, optionsWithMeta);
-ObjectNode doc = result.document();
-DocumentMetadata meta = result.metadata();
+Map<String, Object> doc = result == null ? null : result.document();
+DocumentMetadata meta = result == null ? null : result.metadata();
 if (meta != null) {
     if (meta.lastModified() != null) System.out.println("Last written: " + meta.lastModified());
     if (meta.version() != null) System.out.println("ETag: " + meta.version());
@@ -306,26 +325,26 @@ if (meta != null) {
 ```java
 // Existing callers: pass OperationOptions.defaults() — no metadata overhead
 DocumentResult result = client.read(address, key, OperationOptions.defaults());
-ObjectNode doc = result.document();  // same as before
+Map<String, Object> doc = result == null ? null : result.document();
+// Null means the item was not found; a present payload is detached and mutable.
 ```
 
 ---
 
-## Uniform Document Size Limit
+## Write Validation and Native Size Limits
 
-The SDK enforces a **400 KB** maximum document size across all providers (driven by DynamoDB's limit). Documents exceeding the limit are rejected at the SDK layer before any I/O.
+Create, update and upsert validate neutral input and at most **32 nested Map/List
+levels below the root Map** before provider delegation. Root depth is zero;
+empty containers count, scalars do not. Unsupported values, invalid keys,
+non-finite numbers, cycles and excessive depth produce `INVALID_REQUEST`.
 
-```java
-// Oversized documents are rejected before any I/O
-ObjectNode largeDoc = buildLargeDocument();  // >400 KB
-try {
-    client.create(address, key, largeDoc, OperationOptions.defaults());
-} catch (MulticloudDbException e) {
-    if (e.error().category() == MulticloudDbErrorCategory.INVALID_REQUEST) {
-        System.out.println("Document too large: " + e.error().message());
-    }
-}
-```
+The existing 399 KiB logical JSON estimate has been removed. Native SDKs/services
+enforce their own size limits, so identical data can succeed on one provider and
+fail on another. Added keys/metadata, encoding and Spanner's retained columns
+during partial updates affect final size. A rejection may involve network calls
+and cost; do not blindly retry an unchanged oversized write. Passing input
+validation does not guarantee native success. See the
+[guide](../../docs/guide.md#document-size-enforcement).
 
 ---
 

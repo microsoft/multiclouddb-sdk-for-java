@@ -77,6 +77,10 @@ switch providers by changing a single properties file, with zero code changes.
 
 ### 1. Build
 
+These examples target this checkout's **development Map API**, not the released
+beta artifacts. Build the same revision as this README; see the
+[revision and dependency instructions](docs/getting-started.md#1-build-from-source).
+
 ```bash
 # Requires JDK 17+
 mvn clean install -DskipTests
@@ -89,14 +93,14 @@ mvn clean install -DskipTests
 <dependency>
     <groupId>com.microsoft.multiclouddb</groupId>
     <artifactId>multiclouddb-api</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0-beta.2-SNAPSHOT</version>
 </dependency>
 
 <!-- Pick one or more providers (runtime scope - swap without recompiling) -->
 <dependency>
     <groupId>com.microsoft.multiclouddb</groupId>
     <artifactId>multiclouddb-provider-cosmos</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0-beta.2-SNAPSHOT</version>
     <scope>runtime</scope>
 </dependency>
 
@@ -107,25 +111,36 @@ mvn clean install -DskipTests
 <dependency>
     <groupId>com.microsoft.multiclouddb</groupId>
     <artifactId>multiclouddb-provider-dynamo</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0-beta.2-SNAPSHOT</version>
     <scope>runtime</scope>
 </dependency>
 <dependency>
     <groupId>com.microsoft.multiclouddb</groupId>
     <artifactId>multiclouddb-provider-spanner</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0-beta.1-SNAPSHOT</version>
     <scope>runtime</scope>
 </dependency>
 -->
 ```
 
+These are the independent module versions in the root POM. `mvn install` installs
+them locally; it does not replace an explicitly declared released beta version.
+Build and consume API/providers from the same revision. Spanner's different
+version is intentional.
+
 ### 3. Write portable code
+
+This example uses the Map-based API. See
+[application mapping and migration](docs/guide.md#application-owned-mapping)
+for mapping examples, dependency requirements, and migration guidance.
+The API runtime is Jackson-free; native providers may still depend on Jackson.
+The Java fragment is an instance-method body (with the shown imports);
+declare or handle `java.io.IOException`.
 
 ```java
 import com.multiclouddb.api.*;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.util.Map;
+import java.util.Properties;
 
 // Configure - provider selected entirely by config, not code
 Properties props = new Properties();
@@ -144,27 +159,24 @@ MulticloudDbClientConfig config = MulticloudDbClientConfig.builder()
 MulticloudDbClient client = MulticloudDbClientFactory.create(config);
 
 // CRUD - same code for every provider
-ObjectMapper mapper = new ObjectMapper();
-ObjectNode doc = mapper.createObjectNode();
-doc.put("title", "Buy groceries");
-doc.put("completed", false);
+Map<String, Object> doc = Map.of("title", "Buy groceries", "completed", false);
 
 ResourceAddress todos = new ResourceAddress("mydb", "todos");
-Key key = Key.of("todo-1", "todo-1");   // partitionKey + sortKey
+MulticloudDbKey key = MulticloudDbKey.of("todo-1", "todo-1");
 
 client.upsert(todos, key, doc);                  // Create or replace (upsert)
 DocumentResult result = client.read(todos, key); // Point read → returns DocumentResult
-ObjectNode document = result.document();         // The document payload
+Map<String, Object> document = result == null ? null : result.document(); // Null if missing
 client.delete(todos, key);                       // Delete
 
 // Query with portable expressions - automatically translated per provider
 QueryRequest query = QueryRequest.builder()
         .expression("status = @status AND category = @cat")
         .parameters(Map.of("status", "active", "cat", "shopping"))
-        .pageSize(25)
+        .maxPageSize(25)
         .build();
 QueryPage page = client.query(todos, query);
-for (JsonNode item : page.items()) {
+for (Map<String, Object> item : page.items()) {
     System.out.println(item);
 }
 // Cosmos → SELECT * FROM c WHERE (c.status = @status AND c.category = @cat)
@@ -346,7 +358,7 @@ document:
 
 ```java
 // Key is always explicit - never extracted from the document
-client.upsert(addr, Key.of("tenant-1", "pos-42"), doc);
+client.upsert(addr, MulticloudDbKey.of("tenant-1", "pos-42"), doc);
 ```
 
 Some database SDKs (notably the Azure Cosmos DB SDK) extract the partition key
@@ -357,7 +369,11 @@ do this, for several reasons:
 
 2. **`read()` and `delete()` have no document.** These operations require a Key with nothing to extract from. Making writes work differently would create an inconsistent API.
 
-3. **The Key is always authoritative.** Providers overwrite any `id`/`partitionKey` fields in the document with the Key values (see [Document Field Injection](docs/guide.md#document-field-injection) in the developer guide). This prevents accidental mismatches.
+3. **The Key is authoritative for each provider's key fields.**
+   Cosmos DB writes `id`/`partitionKey`; DynamoDB and Spanner write
+   `partitionKey`/`sortKey`. An unrelated document `id` is not overwritten
+   on DynamoDB or Spanner. Injection occurs in the native request, not in
+   the caller's Map; see [Document Field Injection](docs/guide.md#document-field-injection).
 
 4. **Compile-time safety.** A missing Key is a compiler error. A missing field in a JSON document is a runtime error deep in the provider layer.
 
@@ -562,23 +578,17 @@ if (meta != null) {
 
 ## Document Size Enforcement
 
-All write operations are validated against a **399 KB** limit before any network
-call is made. Documents that exceed the limit are rejected with
-`MulticloudDbErrorCategory.INVALID_REQUEST`:
+The SDK no longer estimates or enforces a common document byte limit. Native
+SDKs/services decide size acceptance, so the same input can succeed on one
+provider and fail on another. Such failures may involve network calls and cost;
+do not blindly retry an unchanged oversized write.
 
-```java
-try {
-    client.create(address, key, largeDoc);
-} catch (MulticloudDbException e) {
-    if (e.error().category() == MulticloudDbErrorCategory.INVALID_REQUEST) {
-        System.out.println("Document exceeds 399 KB limit");
-    }
-}
-```
-
-The limit is 399 KB (not 400 KB) because providers inject additional fields
-before writing — see [Developer Guide](docs/guide.md#document-size-enforcement)
-for details.
+Create, update and upsert still validate neutral values and **32 nested Map/List
+levels below the root Map** before provider delegation. Root depth is zero;
+empty containers count and scalar values do not add a level. Passing these
+checks does not guarantee storage success. See the
+[Developer Guide](docs/guide.md#document-size-enforcement) for native accounting,
+partial-update limitations and the depth contract.
 
 ---
 
@@ -604,6 +614,12 @@ if (diag != null) {
 Sample applications are maintained in a **separate repository**:
 
 **[microsoft/multiclouddb-sdk-for-java-samples](https://github.com/microsoft/multiclouddb-sdk-for-java-samples)**
+
+That repository has its own dependency versions and release lifecycle. Installing
+this checkout does not migrate those applications automatically. To use the Map
+API, align their dependencies and payload/cursor access with the
+[migration guide](docs/guide.md#migrating-from-beta2); external samples have not
+been validated by this documentation example.
 
 | Sample | Description | Port | Guide |
 |--------|-------------|------|-------|

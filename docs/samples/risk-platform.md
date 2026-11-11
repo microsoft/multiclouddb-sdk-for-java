@@ -20,6 +20,11 @@ dark-themed executive dashboard for portfolio risk analytics.
 
 ## Features
 
+This external sample's dependency versions may target released beta APIs. Before
+using this development Map API, follow the
+[sample-version compatibility note](index.md) and migrate payload/cursor access.
+The SDK's documentation checks do not validate this external application's build.
+
 | Feature | Description |
 |---------|-------------|
 | **Multi-Tenant Isolation** | Database-per-tenant model — each tenant's data in a separate Cosmos DB database or DynamoDB table namespace |

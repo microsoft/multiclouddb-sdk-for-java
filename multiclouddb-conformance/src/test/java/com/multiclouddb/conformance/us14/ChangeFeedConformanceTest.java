@@ -18,6 +18,7 @@ import com.multiclouddb.api.changefeed.internal.PartitionPosition;
 import com.multiclouddb.conformance.ConformanceHarness;
 import org.junit.jupiter.api.*;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -121,8 +122,8 @@ public abstract class ChangeFeedConformanceTest {
     void cursorTokenRoundTrip() {
         List<ChangeFeedCursor> cursors = client.listCursors(getAddress());
         for (ChangeFeedCursor c : cursors) {
-            String wire = c.toToken();
-            ChangeFeedCursor revived = ChangeFeedCursor.fromToken(wire);
+            String wire = c.toToken(com.multiclouddb.conformance.ApplicationJson::write);
+            ChangeFeedCursor revived = ChangeFeedCursor.fromToken(wire, com.multiclouddb.conformance.ApplicationJson::read);
             assertEquals(c.token().providerId(), revived.token().providerId());
             assertEquals(c.token().resource(), revived.token().resource());
             assertEquals(c.token().anchor(), revived.token().anchor());
@@ -147,6 +148,36 @@ public abstract class ChangeFeedConformanceTest {
                     + propagationTimeout().toMillis() + "ms");
             assertEquals(ChangeType.CREATE, ev.type(),
                     "first event for a fresh key must be CREATE");
+            assertNotNull(ev.data());
+            Map<?, ?> data = assertInstanceOf(Map.class, ev.data(),
+                    "the fresh-key CREATE must carry the selected object payload");
+            assertNumericValue(data.get("v"), BigDecimal.ONE);
+        } finally {
+            ConformanceHarness.safeDelete(client, getAddress(), key);
+        }
+    }
+
+    static void assertNumericValue(Object value, BigDecimal expected) {
+        assertTrue(value instanceof Number || value instanceof String,
+                "the selected payload must retain a Number or numeric String");
+        BigDecimal actual = assertDoesNotThrow(() -> new BigDecimal(value.toString()),
+                "the selected payload must contain a valid decimal number");
+        assertEquals(0, expected.compareTo(actual), "payload must preserve the exact written numeric value");
+    }
+
+    @Test
+    @Order(3)
+    @DisplayName("FR-cf-003: a collected null-valued field remains present in the payload")
+    void nullValuedFieldRemainsPresent() throws Exception {
+        ChangeFeedCursor[] cursors = client.listCursors(getAddress()).toArray(new ChangeFeedCursor[0]);
+        MulticloudDbKey key = ConformanceHarness.uniqueKey("cf-null-field");
+        try {
+            client.upsert(getAddress(), key, java.util.Collections.singletonMap("v", null));
+            ChangeEvent event = waitForEventByKey(cursors, key, propagationTimeout());
+            assertNotNull(event, "expected the null-field event for key " + key);
+            Map<?, ?> data = assertInstanceOf(Map.class, event.data());
+            assertTrue(data.containsKey("v"), "a collected null-valued field must not become absent");
+            assertNull(data.get("v"));
         } finally {
             ConformanceHarness.safeDelete(client, getAddress(), key);
         }
@@ -247,14 +278,14 @@ public abstract class ChangeFeedConformanceTest {
                     client.listCursors(getAddress()).toArray(new ChangeFeedCursor[0]));
             // Persist as wire form
             String[] wires = new String[resumeCursors.length];
-            for (int i = 0; i < wires.length; i++) wires[i] = resumeCursors[i].toToken();
+            for (int i = 0; i < wires.length; i++) wires[i] = resumeCursors[i].toToken(com.multiclouddb.conformance.ApplicationJson::write);
 
             client.upsert(getAddress(), second, Map.of("v", 1));
 
             // Restore and read
             ChangeFeedCursor[] restored = new ChangeFeedCursor[wires.length];
             for (int i = 0; i < wires.length; i++) {
-                restored[i] = ChangeFeedCursor.fromToken(wires[i]);
+                restored[i] = ChangeFeedCursor.fromToken(wires[i], com.multiclouddb.conformance.ApplicationJson::read);
             }
             ChangeEvent secondEvent = waitForEventByKey(restored, second, propagationTimeout());
             assertNotNull(secondEvent, "second event must surface on restored cursors");
@@ -277,9 +308,9 @@ public abstract class ChangeFeedConformanceTest {
                 longAgo,
                 CursorAnchor.CONTINUING,
                 List.of(new PartitionPosition("any", null)));
-        String wire = CursorTokenCodec.encode(aged);
+        String wire = CursorTokenCodec.encode(aged, com.multiclouddb.conformance.ApplicationJson::write);
         CursorExpiredException ex = assertThrows(CursorExpiredException.class,
-                () -> ChangeFeedCursor.fromToken(wire));
+                () -> ChangeFeedCursor.fromToken(wire, com.multiclouddb.conformance.ApplicationJson::read));
         assertEquals(CursorTokenCodec.REASON_TOKEN_AGED_OUT,
                 ex.error().providerDetails().get("reason"));
     }
@@ -330,7 +361,7 @@ public abstract class ChangeFeedConformanceTest {
     @DisplayName("FR-cf-011: malformed Base64 garbage raises CursorExpiredException(MALFORMED)")
     void malformedTokenRaises() {
         CursorExpiredException ex = assertThrows(CursorExpiredException.class,
-                () -> ChangeFeedCursor.fromToken("!!! not a token !!!"));
+                () -> ChangeFeedCursor.fromToken("!!! not a token !!!", com.multiclouddb.conformance.ApplicationJson::read));
         assertEquals(CursorTokenCodec.REASON_MALFORMED,
                 ex.error().providerDetails().get("reason"));
     }
