@@ -11,6 +11,7 @@ import com.google.cloud.spanner.Type.StructField;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Modifier;
 import java.util.List;
 import java.util.Map;
 
@@ -45,6 +46,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * </ol>
  */
 class SpannerRowMapperTest {
+    @Test
+    void mapperRemainsPackagePrivate() {
+        int visibility = Modifier.PUBLIC | Modifier.PROTECTED | Modifier.PRIVATE;
+        assertEquals(0, SpannerRowMapper.class.getModifiers() & visibility);
+        for (var method : SpannerRowMapper.class.getDeclaredMethods()) {
+            if (!Modifier.isPrivate(method.getModifiers())) {
+                assertEquals(0, method.getModifiers() & visibility, method.getName());
+            }
+        }
+    }
+
     @Test
     void overLimitNumericMetadataRetainsUnlistedAndNullColumns() {
         Struct row = Struct.newBuilder().set("data").to("[\"kept\"," + "1".repeat(1001) + "]")

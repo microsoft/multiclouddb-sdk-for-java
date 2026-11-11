@@ -193,7 +193,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         checkOpen(OperationNames.CREATE);
         try {
             CosmosContainer container = getContainer(address);
-            Map<String, Object> doc = NativeDocuments.write(document);
+            Map<String, Object> doc = ItemMapper.write(document);
             doc.put(CosmosConstants.FIELD_ID, key.sortKey() != null ? key.sortKey() : key.partitionKey());
             doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
             if (options != null && options.ttlSeconds() != null) {
@@ -230,9 +230,9 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
             PartitionKey pk = resolvePartitionKey(key);
             String cosmosId = key.sortKey() != null ? key.sortKey() : key.partitionKey();
             CosmosItemRequestOptions readOpts = new CosmosItemRequestOptions();
-            CosmosItemResponse<?> response = container.readItem(cosmosId, pk, readOpts, Map.class);
+            var response = container.readItem(cosmosId, pk, readOpts, Map.class);
             logItemDiagnostics(OperationNames.READ, address, response);
-            Object raw = response.getItem();
+            Map<?, ?> raw = response.getItem();
             if (raw == null) return null;
 
             DocumentMetadata metadata = null;
@@ -242,13 +242,13 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
                     metaBuilder.version(response.getETag());
                 }
                 // _ts is a Unix epoch second — expose as lastModified
-                Object timestamp = NativeDocuments.get(raw, CosmosConstants.SYS_TIMESTAMP);
+                Object timestamp = raw.get(CosmosConstants.SYS_TIMESTAMP);
                 if (timestamp instanceof Number number) {
                     metaBuilder.lastModified(Instant.ofEpochSecond(number.longValue()));
                 }
                 metadata = metaBuilder.build();
             }
-            return new DocumentResult(NativeDocuments.document(raw), metadata);
+            return new DocumentResult(ItemMapper.document(raw), metadata);
         } catch (CosmosException e) {
             if (e.getStatusCode() == 404) {
                 return null;
@@ -278,7 +278,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         checkOpen(OperationNames.UPDATE);
         try {
             CosmosContainer container = getContainer(address);
-            Map<String, Object> doc = NativeDocuments.write(document);
+            Map<String, Object> doc = ItemMapper.write(document);
             String cosmosId = key.sortKey() != null ? key.sortKey() : key.partitionKey();
             doc.put(CosmosConstants.FIELD_ID, cosmosId);
             doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
@@ -312,7 +312,7 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
         checkOpen(OperationNames.UPSERT);
         try {
             CosmosContainer container = getContainer(address);
-            Map<String, Object> doc = NativeDocuments.write(document);
+            Map<String, Object> doc = ItemMapper.write(document);
             doc.put(CosmosConstants.FIELD_ID, key.sortKey() != null ? key.sortKey() : key.partitionKey());
             doc.put(CosmosConstants.FIELD_PARTITION_KEY, key.partitionKey());
             if (options != null && options.ttlSeconds() != null) {
@@ -990,10 +990,10 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
      * Converts a Cosmos SDK response item into a plain
      * {@code Map<String, Object>} for return on the public API surface.
      *
-     * @param node the JSON node returned by the Cosmos SDK; may be {@code null}
-     * @return a map representation, or {@code null} if {@code node} is {@code null}
+     * @param item the native query result item returned by the Cosmos SDK; may be {@code null}
+     * @return a map representation, or {@code null} if {@code item} is {@code null}
      */
-    private Map<String, Object> toMap(Object node) {
-        return NativeDocuments.queryRow(node);
+    private Map<String, Object> toMap(Object item) {
+        return ItemMapper.queryRow(item);
     }
 }

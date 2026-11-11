@@ -280,18 +280,6 @@ class CosmosMapContractTest {
                 .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
     }
 
-    @Test
-    void nativeRequestTooLargeIsNotRetryable() {
-        var nativeFailure = mock(com.azure.cosmos.CosmosException.class);
-        when(nativeFailure.getStatusCode()).thenReturn(413);
-        when(nativeFailure.getMessage()).thenReturn("Request too large");
-        var failure = CosmosErrorMapper.map(nativeFailure, "upsert");
-        assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, failure.error().category());
-        assertFalse(failure.error().retryable());
-        assertEquals(413, failure.error().statusCode());
-        assertEquals("upsert", failure.error().operation());
-    }
-
     private static List<Map<String, Object>> fixtures() {
         var numbers = List.<Number>of((byte) -2, (short) 3, 4, Long.MIN_VALUE, Long.MAX_VALUE,
                 0.1F, Float.MIN_VALUE, Float.MAX_VALUE, -0.0F, -0.0D, Double.MIN_VALUE, Double.MAX_VALUE,
@@ -403,7 +391,7 @@ class CosmosMapContractTest {
             clearInvocations(container);
             var failure = assertThrows(MulticloudDbException.class,
                     () -> client.upsert(ADDRESS, KEY, Map.of("body", "x".repeat(409600))));
-            assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, failure.error().category());
+            assertEquals(MulticloudDbErrorCategory.PROVIDER_ERROR, failure.error().category());
             assertFalse(failure.error().retryable());
             assertEquals(413, failure.error().statusCode());
             assertEquals(nativeSizeFailure.getMessage(), failure.getMessage());
@@ -434,6 +422,41 @@ class CosmosMapContractTest {
             assertEquals(Instant.ofEpochSecond(123), result.metadata().lastModified());
             assertEquals("version", result.metadata().version());
             assertNativeTree(before, MAPPER.valueToTree(raw));
+
+            clearInvocations(response);
+            assertNull(client.read(ADDRESS, KEY).metadata());
+            verify(response, never()).getETag();
+            raw.put("_ts", "123");
+            when(response.getETag()).thenReturn(null);
+            var missingMetadata = client.read(ADDRESS, KEY,
+                    OperationOptions.builder().includeMetadata(true).build()).metadata();
+            assertNull(missingMetadata.version());
+            assertNull(missingMetadata.lastModified(), "text timestamps are not coerced into numbers");
+            when(response.getItem()).thenReturn(Map.of());
+            assertTrue(client.read(ADDRESS, KEY).document().isEmpty());
+            when(response.getItem()).thenReturn(null);
+            clearInvocations(response);
+            assertNull(client.read(ADDRESS, KEY, OperationOptions.builder().includeMetadata(true).build()));
+            verify(response, never()).getETag();
+
+            CosmosException nativeReadFailure = mock(CosmosException.class);
+            when(nativeReadFailure.getStatusCode()).thenReturn(404);
+            when(container.readItem(anyString(), any(PartitionKey.class),
+                    any(CosmosItemRequestOptions.class), eq(Map.class))).thenThrow(nativeReadFailure);
+            assertNull(client.read(ADDRESS, KEY));
+            when(nativeReadFailure.getStatusCode()).thenReturn(503);
+            when(nativeReadFailure.getMessage()).thenReturn("Service unavailable");
+            when(nativeReadFailure.getActivityId()).thenReturn("read-request");
+            clearInvocations(container);
+            var readFailure = assertThrows(MulticloudDbException.class, () -> client.read(ADDRESS, KEY));
+            assertEquals(MulticloudDbErrorCategory.TRANSIENT_FAILURE, readFailure.error().category());
+            assertEquals(OperationNames.READ, readFailure.error().operation());
+            assertEquals(503, readFailure.error().statusCode());
+            assertTrue(readFailure.error().retryable());
+            assertSame(nativeReadFailure, readFailure.getCause());
+            assertEquals("read-request", readFailure.diagnostics().requestId());
+            verify(container).readItem(eq(KEY.sortKey()), eq(new PartitionKey(KEY.partitionKey())),
+                    any(CosmosItemRequestOptions.class), eq(Map.class));
         }
     }
 

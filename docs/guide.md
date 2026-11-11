@@ -642,6 +642,11 @@ boolean or accessor is required.
 | DynamoDB | Use the native `hasNewImage()` / `hasOldImage()` presence flags for the selected image (new for create/update, old for delete). An absent SDK auto-constructed empty map becomes null; a supplied empty image remains an empty Map. A native `NULL` attribute remains a null-valued field, not an absent image. |
 | Spanner | Respect `value_capture_type` and modification type: `NEW_VALUES` / `NEW_ROW` do not collect old images, so delete data is null even when `old_values` is `{}`. Modes collecting old values can supply a delete before-image. Missing fields, SQL null and selected JSON null produce null; a collected `{}` or an object emptied by `FIELD_DATA` filtering remains an empty Map. Existing numeric decoding/filtering is unchanged. |
 
+For Cosmos AVAD DELETE, an absent `previous` with a supplied empty `current`
+still yields `{}`. This indicates a supplied event payload, not proof of a
+captured document image, before-image, completeness, or post-image. Missing
+both bodies yields null; a supplied nonempty fallback body remains available.
+
 For Spanner updates in old-and-new capture modes, a missing/SQL-null new image
 retains the existing old-image fallback; a selected JSON null is not replaced
 with another image. If capture metadata is absent or unrecognized, the reader
@@ -702,14 +707,12 @@ handled internally by its provider, not application callbacks.
 | Spanner | Typed mutations/rows; nested Map/List values use marked JSON STRINGs; FIELD_DATA selects visible fields | Protobuf/gRPC and required persisted JSON. Integer/Long use INT64, Float/Double use FLOAT64; root Byte/Short/BigInteger/BigDecimal retain STRING fallback. Native BYTES rows retain Base64 text conversion |
 
 Spanner's JSON marker, FIELD_DATA and update transaction are existing storage
-contracts, not redundant serialization to remove. In change feeds, `column_types`
-identifies every retained scalar INT64 field after FIELD_DATA filtering; an
-absent, null or filtered earlier column does not skip later fields. In-range integer
-strings and integral numbers become Long without rounding; null/absence remain.
-Missing/null/empty type metadata retains legacy representation. Malformed
-declarations or invalid/overflowing declared INT64 values report
-`PROVIDER_ERROR/readChanges/invalid_document_payload`. Other types and nested
-numeric-looking strings are not inferred to be integers.
+contracts, not redundant serialization to remove. Change-feed images retain
+native JSON representations: numeric-looking strings remain Strings, integer
+tokens become Integer/Long/BigInteger according to range, and fractional or
+exponential tokens become Double. `column_types` is not used to convert or
+validate image values. This does not promise numerical parity with point reads
+or other providers.
 
 The API does not require a JSON library, but native provider SDKs may still depend
 on one. These dependencies are not isolated from your application's dependencies.
@@ -740,13 +743,13 @@ round-trip preservation is not guaranteed.
 Other existing parse-failure policies remain in force:
 
 - Invalid `FIELD_DATA` metadata disables field filtering on row reads, including
-  the legacy null-column behavior; updates retain the incomplete-metadata policy.
+  the legacy null-column behavior; updates do not stamp replacement metadata.
+  Malformed-surrogate field-name metadata can trigger this no-filter/no-stamp
+  fallback and expose columns previously excluded by metadata.
   Change-feed metadata failures strip `FIELD_DATA` but keep the other fields.
-- Change-feed image JSON failures return `{"raw": originalImageJson}` when no
-  INT64 columns are declared; with INT64 declarations they fail with
-  `PROVIDER_ERROR/readChanges/invalid_document_payload`. Key JSON failures use
-  `malformed_envelope`, and invalid column-type declarations use
-  `invalid_document_payload`. Nested marker STRINGs are not recursively decoded
+- Change-feed image JSON failures return `{"raw": originalImageJson}` regardless
+  of column-type metadata. Key JSON failures use `malformed_envelope`.
+  Nested marker STRINGs are not recursively decoded
   in change-feed images, so this is not a universal rejection of every event
   containing such stored text.
 
@@ -2068,8 +2071,9 @@ metadata, so its final stored/commit size cannot be determined from the supplied
 fields alone. Cosmos and DynamoDB `update()` currently replace the document.
 
 Native failures continue through the existing provider error normalization.
-For example, Cosmos HTTP 413 and DynamoDB `ValidationException` map to
-non-retryable `INVALID_REQUEST`; Spanner `INVALID_ARGUMENT` maps to
+For example, Cosmos HTTP 413 retains the default non-retryable `PROVIDER_ERROR`
+classification, with its native status and cause preserved. DynamoDB
+`ValidationException` maps to non-retryable `INVALID_REQUEST`; Spanner `INVALID_ARGUMENT` maps to
 `INVALID_REQUEST` with native retryability. Do not treat every provider quota
 error as a size error, or every `INVALID_REQUEST` as a size failure. Native
 validation may occur after network I/O and incur cost. Inspect the normalized

@@ -3,6 +3,7 @@
 package com.multiclouddb.api.changefeed.internal;
 
 import com.multiclouddb.api.TestJson;
+import com.multiclouddb.api.BudgetedGraph;
 import com.multiclouddb.api.changefeed.ChangeFeedCursor;
 import com.multiclouddb.api.changefeed.CursorExpiredException;
 import java.io.IOException;
@@ -202,6 +203,72 @@ class JsonSupportTest {
         assertEquals(Double.POSITIVE_INFINITY, JsonSupport.read("1e999", TestJson.DESERIALIZE));
         assertNull(JsonSupport.read("null", TestJson.DESERIALIZE));
         assertEquals(true, JsonSupport.read("true", TestJson.DESERIALIZE));
+    }
+
+    @Test
+    void publicCallbackValidatesEachSharedContainerAndEdgeOnce() {
+        var counts = new BudgetedGraph(2048);
+        Object shared = counts.list("leaf");
+        for (int i = 0; i < 40; i++) {
+            shared = i % 2 == 0 ? counts.map(shared, shared) : counts.list(shared, shared);
+        }
+        var root = new LinkedHashMap<String, Object>();
+        root.put("v", 1);
+        root.put("p", "cosmos");
+        root.put("r", "database/collection");
+        root.put("i", System.currentTimeMillis());
+        root.put("a", "CONTINUING");
+        root.put("s", List.of());
+        root.put("extra", shared);
+        root.put("alias", shared);
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        assertDoesNotThrow(() -> ChangeFeedCursor.fromToken("e30", (text, target) -> {
+            assertEquals(Object.class, target);
+            calls.incrementAndGet();
+            return root;
+        }));
+        assertEquals(1, calls.get());
+        assertEquals(41, counts.containers());
+        assertEquals(81, counts.edges());
+        assertTrue(counts.accesses() <= 8 * counts.edges() + 4 * counts.containers());
+        assertSame(root.get("extra"), root.get("alias"));
+    }
+
+    @Test
+    void completedSiblingsDoNotHideFailedSubtreesOrAccessorFailures() throws IOException {
+        var shared = new ArrayList<Object>(List.of("ok"));
+        var failing = new ArrayList<Object>(List.of(shared, new Object()));
+        var root = new LinkedHashMap<String, Object>();
+        root.put("completed", shared);
+        root.put("failed", failing);
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        IllegalStateException unsupported = assertThrows(IllegalStateException.class,
+                () -> ChangeFeedCursor.fromToken("e30", (text, target) -> {
+                    calls.incrementAndGet();
+                    return root;
+                }));
+        assertEquals(1, calls.get());
+        assertEquals("Application JSON deserialize failed: unsupported neutral value.", unsupported.getMessage());
+        assertSanitized(unsupported, null);
+        failing.set(1, "fixed");
+        assertSame(root, JsonSupport.read("{}", (s, t) -> root));
+        shared.add(failing);
+        assertThrows(IllegalStateException.class, () -> JsonSupport.read("{}", (s, t) -> root));
+        shared.remove(1);
+        shared.add(new Object());
+        assertThrows(IllegalStateException.class, () -> JsonSupport.read("{}", (s, t) -> root));
+
+        RuntimeException original = new IllegalArgumentException(SECRET);
+        var broken = new java.util.AbstractMap<String, Object>() {
+            @Override public java.util.Set<Entry<String, Object>> entrySet() { throw original; }
+        };
+        root.put("failed", List.of(broken, broken));
+        shared.remove(1);
+        IllegalStateException accessFailure = assertThrows(IllegalStateException.class,
+                () -> JsonSupport.read("{}", (s, t) -> root));
+        assertEquals("Application JSON deserialize failed: result access threw java.lang.IllegalArgumentException.",
+                accessFailure.getMessage());
+        assertSanitized(accessFailure, original);
     }
 
     @Test

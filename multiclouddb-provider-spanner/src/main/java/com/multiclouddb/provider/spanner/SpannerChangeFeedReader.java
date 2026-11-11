@@ -558,7 +558,6 @@ final class SpannerChangeFeedReader {
         String modType = modTypeRaw != null ? modTypeRaw : "UPDATE";
         ChangeType type = mapModType(modType);
         String captureType = getStringOrNull(rec, "value_capture_type");
-        List<String> int64Columns = int64Columns(rec);
 
         List<Struct> mods = getStructListOrEmpty(rec, "mods");
         List<ChangeEvent> out = new ArrayList<>(mods.size());
@@ -567,7 +566,7 @@ final class SpannerChangeFeedReader {
             String eventId = txnId + ":" + (commitTs != null ? commitTs.toString() : "") + ":"
                     + recordSeq + ":" + idx;
             MulticloudDbKey key = extractKey(mod);
-            Object data = extractValues(mod, type, captureType, int64Columns);
+            Object data = extractValues(mod, type, captureType);
             Instant eventInstant = commitTs != null
                     ? Instant.ofEpochSecond(commitTs.getSeconds(), commitTs.getNanos())
                     : Instant.EPOCH;
@@ -604,9 +603,9 @@ final class SpannerChangeFeedReader {
                     providerId, OperationNames.READ_CHANGES, false,
                     Map.of("reason", "missing_partition_key")));
         }
-        Object node;
+        Object parsedKeys;
         try {
-            node = SpannerJson.read(keysJson);
+            parsedKeys = SpannerRowMapper.readJson(keysJson);
         } catch (java.io.IOException | IllegalArgumentException e) {
             throw new MulticloudDbException(new MulticloudDbError(
                     MulticloudDbErrorCategory.PROVIDER_ERROR,
@@ -614,51 +613,20 @@ final class SpannerChangeFeedReader {
                     providerId, OperationNames.READ_CHANGES, false,
                     Map.of("reason", "malformed_envelope")), e);
         }
-        if (!(node instanceof Map<?, ?> fields) || fields.get("partitionKey") == null) {
+        if (!(parsedKeys instanceof Map<?, ?> keys) || keys.get("partitionKey") == null) {
             throw new MulticloudDbException(new MulticloudDbError(
                     MulticloudDbErrorCategory.PROVIDER_ERROR,
                     "Spanner change-stream record's 'keys' JSON has no 'partitionKey' field: " + keysJson,
                     providerId, OperationNames.READ_CHANGES, false,
                     Map.of("reason", "missing_partition_key")));
         }
-        String pk = SpannerJson.text(fields.get("partitionKey"));
-        Object skNode = fields.get("sortKey");
-        if (skNode != null) return MulticloudDbKey.of(pk, SpannerJson.text(skNode));
+        String pk = SpannerRowMapper.text(keys.get("partitionKey"));
+        Object sortKeyValue = keys.get("sortKey");
+        if (sortKeyValue != null) return MulticloudDbKey.of(pk, SpannerRowMapper.text(sortKeyValue));
         return MulticloudDbKey.of(pk);
     }
 
-    /**
-     * Missing/null/empty metadata preserves legacy values without inference.
-     * Present malformed declarations fail explicitly rather than silently losing type information.
-     */
-    private static List<String> int64Columns(Struct record) {
-        List<String> columns = new ArrayList<>();
-        Map<String, String> declared = new HashMap<>();
-        try {
-            for (Struct column : getStructListOrEmpty(record, "column_types")) {
-                if (column == null) throw invalidPayload(OperationNames.READ_CHANGES);
-                String name = getStringOrNull(column, "name");
-                String json = getStringOrNull(column, "type");
-                if (name == null || json == null) {
-                    throw invalidPayload(OperationNames.READ_CHANGES);
-                }
-                Object descriptor = SpannerJson.read(json);
-                if (!(descriptor instanceof Map<?, ?> fields) || !(fields.get("code") instanceof String code)) {
-                    throw invalidPayload(OperationNames.READ_CHANGES);
-                }
-                if (declared.putIfAbsent(name, code) != null) {
-                    throw invalidPayload(OperationNames.READ_CHANGES);
-                }
-                if ("INT64".equals(code)) columns.add(name);
-            }
-        } catch (java.io.IOException
-                 | IllegalArgumentException | IllegalStateException invalid) {
-            throw invalidPayload(OperationNames.READ_CHANGES);
-        }
-        return columns;
-    }
-
-    private Object extractValues(Struct mod, ChangeType type, String captureType, List<String> int64Columns) {
+    private Object extractValues(Struct mod, ChangeType type, String captureType) {
         boolean newOnly = "NEW_VALUES".equals(captureType) || "NEW_ROW".equals(captureType);
         boolean oldAndNew = "OLD_AND_NEW_VALUES".equals(captureType)
                 || "NEW_ROW_AND_OLD_VALUES".equals(captureType);
@@ -685,56 +653,13 @@ final class SpannerChangeFeedReader {
         if (json == null) return null;
         Object raw;
         try {
-            raw = SpannerJson.read(json);
+            raw = SpannerRowMapper.readJson(json);
         } catch (java.io.IOException | IllegalArgumentException e) {
-            if (!int64Columns.isEmpty()) {
-                throw invalidPayload(OperationNames.READ_CHANGES);
-            }
             Map<String, Object> wrap = new java.util.LinkedHashMap<>();
             wrap.put("raw", json);
             return wrap;
         }
-        raw = filterByFieldData(raw);
-        // Normalize only retained, metadata-declared columns, outside the legacy raw fallback.
-        if (raw instanceof Map<?, ?> fields) {
-            Map<String, Object> object = SpannerJson.object(fields);
-            for (String column : int64Columns) {
-                Object value = object.get(column);
-                if (value != null) {
-                    object.put(column, decodeInt64(value));
-                }
-            }
-            return object;
-        }
-        return raw;
-    }
-
-    private static long decodeInt64(Object value) {
-        if (value instanceof Integer integer) return integer.longValue();
-        if (value instanceof Long number) return number;
-        if (value instanceof java.math.BigInteger integer && integer.bitLength() < 64) return integer.longValue();
-        if (value instanceof String text) {
-            int start = text.startsWith("-") ? 1 : 0;
-            if (start == text.length()) throw invalidPayload(OperationNames.READ_CHANGES);
-            for (int i = start; i < text.length(); i++) {
-                if (text.charAt(i) < '0' || text.charAt(i) > '9') {
-                    throw invalidPayload(OperationNames.READ_CHANGES);
-                }
-            }
-            try {
-                return Long.parseLong(text);
-            } catch (NumberFormatException invalid) {
-                throw invalidPayload(OperationNames.READ_CHANGES);
-            }
-        }
-        throw invalidPayload(OperationNames.READ_CHANGES);
-    }
-
-    private static MulticloudDbException invalidPayload(String operation) {
-        return new MulticloudDbException(new MulticloudDbError(
-                MulticloudDbErrorCategory.PROVIDER_ERROR,
-                "Provider response cannot be represented as neutral data.",
-                ProviderId.SPANNER, operation, false, Map.of("reason", "invalid_document_payload")));
+        return filterByFieldData(raw);
     }
 
     /**
@@ -765,15 +690,15 @@ final class SpannerChangeFeedReader {
      */
     private static Object filterByFieldData(Object raw) {
         if (!(raw instanceof Map<?, ?> obj)) return raw;
-        Object fdNode = obj.get(SpannerConstants.FIELD_DATA);
+        Object fieldMetadataValue = obj.get(SpannerConstants.FIELD_DATA);
         if (!obj.containsKey(SpannerConstants.FIELD_DATA)) return obj;
         // Always strip FIELD_DATA itself — it is an SDK-internal metadata column
         // and must never surface in ChangeEvent.data().
         obj.remove(SpannerConstants.FIELD_DATA);
-        if (!(fdNode instanceof String fdValue) || !fdValue.startsWith("[")) return obj;
+        if (!(fieldMetadataValue instanceof String fdValue) || !fdValue.startsWith("[")) return obj;
         java.util.Set<String> allowed;
         try {
-            allowed = new java.util.HashSet<>(SpannerJson.fieldNames(fdValue));
+            allowed = new java.util.HashSet<>(SpannerRowMapper.fieldNames(fdValue));
         } catch (java.io.IOException | IllegalArgumentException e) {
             // Malformed metadata — match SpannerRowMapper's "treat as legacy row".
             return obj;
@@ -788,7 +713,7 @@ final class SpannerChangeFeedReader {
             // includes the document's PK/SK fields — matching Cosmos AVAD
             // (which carries id+partitionKey) and Dynamo NEW_AND_OLD_IMAGES
             // (which carries pk+sk attrs). Without this whitelist, a portable
-            // consumer reading event.data().get("partitionKey") would see the
+            // consumer reading "partitionKey" from a Map-valued event.data() would see the
             // value on Cosmos/Dynamo but null on Spanner.
             if (allowed.contains(name)
                     || SpannerConstants.FIELD_PARTITION_KEY.equals(name)

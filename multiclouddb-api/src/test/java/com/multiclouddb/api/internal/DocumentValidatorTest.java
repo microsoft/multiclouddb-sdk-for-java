@@ -4,6 +4,7 @@ package com.multiclouddb.api.internal;
 
 import com.multiclouddb.api.MulticloudDbException;
 import com.multiclouddb.api.MulticloudDbErrorCategory;
+import com.multiclouddb.api.BudgetedGraph;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -102,6 +103,67 @@ class DocumentValidatorTest {
         assertSame(shared, input.get("a"));
         assertSame(shared, input.get("b"));
         assertEquals(Arrays.asList(null, 1, "v"), new ArrayList<>(shared));
+    }
+
+    @Test
+    void validatesSharedGraphsOncePerIdentityWithinADeterministicBudget() {
+        var counts = new BudgetedGraph(2048);
+        Object shared = counts.list("leaf");
+        for (int i = 0; i < 31; i++) {
+            shared = i % 2 == 0 ? counts.map(shared, shared) : counts.list(shared, shared);
+        }
+        Map<String, Object> root = Map.of("a", shared, "b", shared);
+        assertDoesNotThrow(() -> DocumentValidator.validate(root, "create"));
+        assertEquals(32, counts.containers());
+        assertEquals(63, counts.edges());
+        assertTrue(counts.accesses() <= 8 * counts.edges() + 4 * counts.containers());
+        assertSame(root.get("a"), root.get("b"));
+    }
+
+    @Test
+    void checksCachedSubtreeHeightAtEveryDeeperReuseIncludingEmptyLeaves() {
+        for (boolean empty : List.of(false, true)) {
+            for (int deepest : new int[]{32, 33}) {
+                Object leaf = empty ? new ArrayList<>() : new ArrayList<>(List.of("leaf"));
+                Object shared = Map.of("nested", leaf);
+                Object deeper = shared;
+                for (int i = 0; i < deepest - 2; i++) deeper = List.of(deeper);
+                var root = new LinkedHashMap<String, Object>();
+                root.put("shallow", shared);
+                root.put("deeper", deeper);
+                if (deepest == 32) {
+                    assertDoesNotThrow(() -> DocumentValidator.validate(root, "create"));
+                } else {
+                    assertInvalid(assertThrows(MulticloudDbException.class,
+                            () -> DocumentValidator.validate(root, "update")), "update");
+                }
+            }
+        }
+    }
+
+    @Test
+    void failedOrMutatedSubtreesAreNeverReusedAcrossValidationCalls() {
+        var shared = new ArrayList<Object>(List.of("ok"));
+        var failing = new ArrayList<Object>(List.of(shared, new Object()));
+        var root = new LinkedHashMap<String, Object>();
+        root.put("completed", shared);
+        root.put("failed", failing);
+        assertThrows(MulticloudDbException.class, () -> DocumentValidator.validate(root, "create"));
+        failing.set(1, "fixed");
+        assertDoesNotThrow(() -> DocumentValidator.validate(root, "create"));
+        shared.add(failing);
+        assertThrows(MulticloudDbException.class, () -> DocumentValidator.validate(root, "create"));
+        shared.remove(1);
+        shared.add(new Object());
+        assertThrows(MulticloudDbException.class, () -> DocumentValidator.validate(root, "create"));
+
+        var broken = new java.util.AbstractMap<String, Object>() {
+            @Override public java.util.Set<Entry<String, Object>> entrySet() {
+                throw new IllegalArgumentException("access failure");
+            }
+        };
+        assertThrows(IllegalArgumentException.class,
+                () -> DocumentValidator.validate(Map.of("a", broken, "b", broken), "create"));
     }
 
     @Test

@@ -9,6 +9,10 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Validate shared Map/List subgraphs once per call, retaining cycle checks and
+  checking cached subtree height at every write-depth reuse. Cursor callback
+  results use the same completed-identity approach without a document-depth
+  limit. This bounds validation traversal, not native serialization expansion.
 - Keep invalid cursor retention values out of error messages and sanitize runtime
   failures while accessing callback results. Malformed retention fields retain
   `MALFORMED`; callback contract/access failures use `IllegalStateException`

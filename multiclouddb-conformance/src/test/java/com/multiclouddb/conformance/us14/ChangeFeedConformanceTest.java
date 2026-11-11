@@ -18,6 +18,7 @@ import com.multiclouddb.api.changefeed.internal.PartitionPosition;
 import com.multiclouddb.conformance.ConformanceHarness;
 import org.junit.jupiter.api.*;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -150,12 +151,18 @@ public abstract class ChangeFeedConformanceTest {
             assertNotNull(ev.data());
             Map<?, ?> data = assertInstanceOf(Map.class, ev.data(),
                     "the fresh-key CREATE must carry the selected object payload");
-            Number value = assertInstanceOf(Number.class, data.get("v"),
-                    "the selected CREATE payload must retain the written numeric field");
-            assertEquals(1L, value.longValue(), "CREATE payload must preserve the written value");
+            assertNumericValue(data.get("v"), BigDecimal.ONE);
         } finally {
             ConformanceHarness.safeDelete(client, getAddress(), key);
         }
+    }
+
+    static void assertNumericValue(Object value, BigDecimal expected) {
+        assertTrue(value instanceof Number || value instanceof String,
+                "the selected payload must retain a Number or numeric String");
+        BigDecimal actual = assertDoesNotThrow(() -> new BigDecimal(value.toString()),
+                "the selected payload must contain a valid decimal number");
+        assertEquals(0, expected.compareTo(actual), "payload must preserve the exact written numeric value");
     }
 
     @Test

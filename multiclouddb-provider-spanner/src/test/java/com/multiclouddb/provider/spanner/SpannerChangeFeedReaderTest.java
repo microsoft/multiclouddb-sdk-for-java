@@ -12,8 +12,6 @@ import com.google.cloud.spanner.ResultSets;
 import com.google.cloud.spanner.Value;
 import com.google.cloud.Timestamp;
 import com.multiclouddb.api.OperationOptions;
-import com.multiclouddb.api.MulticloudDbException;
-import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.changefeed.ChangeEvent;
 import com.multiclouddb.api.changefeed.ChangeType;
 import com.multiclouddb.api.ProviderId;
@@ -33,13 +31,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Native-result fixtures for selected change images, metadata-driven decoding
+ * Native-result fixtures for selected change images, native JSON representations
  * and cursor timing. These tests do not require a running Spanner service.
  */
 class SpannerChangeFeedReaderTest {
@@ -84,17 +81,18 @@ class SpannerChangeFeedReaderTest {
         }
         String rejected = "{\"nested\":" + "[".repeat(1000) + "null" + "]".repeat(1000) + "}";
         assertEquals(Map.of("raw", rejected), readValues("UPDATE", rejected, null).data());
-        assertSafePayloadFailure(() -> readValues("UPDATE", rejected, null, List.of(column("v", "INT64"))));
+        assertEquals(Map.of("raw", rejected),
+                readValues("UPDATE", rejected, null, List.of(column("v", "INT64"))).data());
     }
 
     @Test
-    void overLimitNumericMetadataKeepsUnlistedFieldsBeforeInt64Normalization() throws Exception {
-        String json = SpannerJson.write(Map.of("data", "[\"kept\"," + "1".repeat(1001) + "]",
+    void overLimitNumericFieldMetadataKeepsUnlistedFields() throws Exception {
+        String json = SpannerRowMapper.writeJson(Map.of("data", "[\"kept\"," + "1".repeat(1001) + "]",
                 "kept", "a", "unlisted", "b", "v", "2"));
         for (String operation : List.of("INSERT", "UPDATE", "DELETE")) {
             assertEquals(Map.of("kept", "a", "unlisted", "b", "v", "2"),
                     readValues(operation, json, json).data());
-            assertEquals(Map.of("kept", "a", "unlisted", "b", "v", 2L),
+            assertEquals(Map.of("kept", "a", "unlisted", "b", "v", "2"),
                     readValues(operation, json, json, List.of(column("v", "INT64"))).data());
         }
     }
@@ -110,20 +108,21 @@ class SpannerChangeFeedReaderTest {
             ChangeEvent event = readValues("UPDATE", json, null);
             assertEquals(Map.of("raw", json), event.data());
             assertNotNull(event.data());
-            assertSafePayloadFailure(() -> readValues("UPDATE", json, null, List.of(column("v", "INT64"))));
+            assertEquals(Map.of("raw", json),
+                    readValues("UPDATE", json, null, List.of(column("v", "INT64"))).data());
         }
         for (String invalid : List.of("\\ud800", "\\udc00")) {
-            String metadataImage = SpannerJson.write(Map.of("data", "[\"" + invalid + "\"]", "s", 1, "extra", 2));
+            String metadataImage = SpannerRowMapper.writeJson(Map.of("data", "[\"" + invalid + "\"]", "s", 1, "extra", 2));
             assertEquals(Map.of("s", 1, "extra", 2), readValues("UPDATE", metadataImage, null).data());
         }
         String marker = SpannerConstants.JSON_VALUE_MARKER + "{\"s\":\"\\ud800\"}";
         assertEquals(Map.of("nested", marker),
-                readValues("UPDATE", SpannerJson.write(Map.of("nested", marker)), null).data(),
+                readValues("UPDATE", SpannerRowMapper.writeJson(Map.of("nested", marker)), null).data(),
                 "change images do not recursively decode JSON marker strings");
     }
 
     @Test
-    void nativeInt64StringsDecodeInSelectedCreateUpdateAndDeleteImages() {
+    void nativeNumericStringsRemainStringsInSelectedCreateUpdateAndDeleteImages() {
         List<Struct> columns = List.of(column("v", "INT64"), column("text", "STRING"),
                 column("data", "STRING"), column("stale", "INT64"));
         String newer = "{\"v\":\"1\",\"text\":\"1\",\"stale\":\"not-an-integer\","
@@ -132,7 +131,7 @@ class SpannerChangeFeedReaderTest {
         for (String operation : List.of("INSERT", "UPDATE", "DELETE")) {
             ChangeEvent event = readValues(operation, newer, older, columns);
             long expected = operation.equals("DELETE") ? -2 : 1;
-            assertEquals(Map.of("v", expected, "text", Long.toString(expected)), event.data());
+            assertEquals(Map.of("v", Long.toString(expected), "text", Long.toString(expected)), event.data());
             assertEquals(operation.equals("INSERT") ? ChangeType.CREATE
                     : operation.equals("DELETE") ? ChangeType.DELETE : ChangeType.UPDATE, event.type());
             assertEquals(com.multiclouddb.api.MulticloudDbKey.of("tenant", "record"), event.key());
@@ -141,25 +140,25 @@ class SpannerChangeFeedReaderTest {
     }
 
     @Test
-    void allDeclaredInt64ColumnsDecodeInSelectedImages() {
-        List<Struct> columns = List.of(column("first", "INT64"), column("second", "INT64"),
-                column("third", "INT64"), column("text", "STRING"));
-        String newer = "{\"first\":\"1\",\"second\":\"9223372036854775807\","
-                + "\"third\":9007199254740993,\"text\":\"1\"}";
-        String older = "{\"first\":\"-2\",\"second\":\"-9223372036854775808\","
-                + "\"third\":-9007199254740993,\"text\":\"-2\"}";
+    void nativeJsonNumbersRetainParserTypesWithoutColumnCoercion() {
+        List<Struct> columns = List.of(column("integer", "INT64"), column("long", "INT64"),
+                column("min", "INT64"), column("max", "INT64"), column("big", "INT64"),
+                column("fraction", "INT64"), column("exponent", "INT64"), column("text", "INT64"));
+        String image = "{\"integer\":1,\"long\":9007199254740993,"
+                + "\"min\":-9223372036854775808,\"max\":9223372036854775807,"
+                + "\"big\":9223372036854775808,\"fraction\":1.5,\"exponent\":1e3,"
+                + "\"text\":\"9223372036854775808\"}";
+        Map<String, Object> expected = Map.of("integer", 1, "long", 9007199254740993L,
+                "min", Long.MIN_VALUE, "max", Long.MAX_VALUE,
+                "big", new java.math.BigInteger("9223372036854775808"),
+                "fraction", 1.5, "exponent", 1000.0, "text", "9223372036854775808");
         for (String operation : List.of("INSERT", "UPDATE", "DELETE")) {
-            Map<String, Object> expected = operation.equals("DELETE")
-                    ? Map.of("first", -2L, "second", Long.MIN_VALUE,
-                            "third", -9007199254740993L, "text", "-2")
-                    : Map.of("first", 1L, "second", Long.MAX_VALUE,
-                            "third", 9007199254740993L, "text", "1");
-            assertEquals(expected, readValues(operation, newer, older, columns).data());
+            assertEquals(expected, readValues(operation, image, image, columns).data());
         }
     }
 
     @Test
-    void absentNullOrFilteredFirstInt64DoesNotSkipLaterColumns() {
+    void columnMetadataDoesNotChangeNullMissingOrFilteredFields() {
         List<Struct> columns = List.of(column("first", "INT64"), column("second", "INT64"),
                 column("data", "STRING"));
         for (String operation : List.of("INSERT", "UPDATE", "DELETE")) {
@@ -170,71 +169,27 @@ class SpannerChangeFeedReaderTest {
                 if (image.contains("\"first\":null")) {
                     expected.put("first", null);
                 }
-                expected.put("second", 2L);
+                expected.put("second", "2");
                 assertEquals(expected, readValues(operation, image, image, columns).data());
             }
         }
     }
 
     @Test
-    void invalidLaterInt64FailsSafelyEvenWhenFirstIsAbsentNullOrFiltered() {
-        List<Struct> columns = List.of(column("first", "INT64"), column("second", "INT64"),
-                column("data", "STRING"));
-        for (String first : List.of("\"first\":\"1\",", "", "\"first\":null,",
-                "\"first\":\"filtered\",\"data\":\"[\\\"second\\\"]\",")) {
-            for (String value : List.of("\"9223372036854775808\"", "\"-9223372036854775809\"",
-                    "9223372036854775808", "\"1.5\"", "true", "\"private-native-payload\"")) {
-                String image = "{" + first + "\"second\":" + value + "}";
-                for (String operation : List.of("INSERT", "UPDATE", "DELETE")) {
-                    assertSafePayloadFailure(() -> readValues(operation, image, image, columns));
-                }
-            }
-        }
-    }
-
-    @Test
-    void declaredInt64PreservesSignedRangeAndIntegralJsonWithoutRounding() {
-        for (long value : new long[]{Long.MIN_VALUE, -9007199254740993L, -1, 0, 1,
-                9007199254740993L, Long.MAX_VALUE}) {
-            for (String json : List.of("{\"v\":\"" + value + "\"}", "{\"v\":" + value + "}")) {
-                assertEquals(Map.of("v", value),
-                        readValues("INSERT", json, null, List.of(column("v", "INT64"))).data());
-            }
-        }
-    }
-
-    @Test
-    void invalidDeclaredInt64FailsSafelyRatherThanReturningRawPayload() {
-        List<Struct> columns = List.of(column("v", "INT64"));
-        for (String value : List.of("\"9223372036854775808\"", "\"-9223372036854775809\"",
-                "9223372036854775808", "-9223372036854775809", "\"1.5\"", "1.5", "1.0",
-                "\"1e0\"", "\"NaN\"", "\"Infinity\"", "\"\"", "\" 1\"", "\"+1\"",
-                "\"\u0661\"", "true", "{}", "[]", "\"private-native-payload\"")) {
-            for (String operation : List.of("INSERT", "UPDATE", "DELETE")) {
-                String image = "{\"v\":" + value + "}";
-                assertSafePayloadFailure(() -> readValues(operation,
-                        operation.equals("DELETE") ? "{\"v\":\"1\"}" : image,
-                        operation.equals("DELETE") ? image : "{\"v\":\"1\"}", columns));
-            }
-        }
-        assertSafePayloadFailure(() -> readValues("INSERT", "{\"v\":", null, columns));
-    }
-
-    @Test
-    void int64MetadataDoesNotCollapseNullMissingEmptyOrFallbackImages() {
+    void columnMetadataDoesNotChangeImageAvailabilityOrSelection() {
         List<Struct> columns = List.of(column("v", "INT64"));
         assertEquals(java.util.Collections.singletonMap("v", null),
                 readValues("INSERT", "{\"v\":null}", null, columns).data());
         assertNull(readValues("UPDATE", "null", null, columns).data());
         assertEquals(Map.of(), readValues("INSERT", "{}", "{\"v\":\"2\"}", columns).data());
         assertNull(readValues("UPDATE", null, null, columns).data());
-        assertEquals(Map.of("v", 2L),
+        assertEquals(Map.of("v", "2"),
                 readValues("UPDATE", null, "{\"v\":\"2\"}", columns).data());
-        assertEquals(Map.of("v", 3L),
+        assertEquals(Map.of("v", "3"),
                 readValues("DELETE", "{\"v\":\"3\"}", null, columns).data());
         assertEquals(Map.of(), readValues("DELETE", "{\"v\":\"3\"}", "{}", columns).data());
         for (String operation : List.of("INSERT", "UPDATE", "DELETE")) {
-            assertEquals(Map.of("v", 1L),
+            assertEquals(Map.of("v", "1"),
                     readValues(operation, operation.equals("DELETE") ? "not-json" : "{\"v\":\"1\"}",
                             operation.equals("DELETE") ? "{\"v\":\"1\"}" : "not-json", columns).data(),
                     "unselected images must not be decoded");
@@ -242,13 +197,13 @@ class SpannerChangeFeedReaderTest {
     }
 
     @Test
-    void missingMetadataDoesNotInferTypesAndNonInt64ColumnsStayUnchanged() {
+    void columnMetadataDoesNotCoerceJsonValues() {
         String json = "{\"v\":\"1\"}";
         Map<String, Object> text = Map.of("v", "1");
         assertEquals(text, readValues("INSERT", json, null).data());
         assertEquals(text, readValues("INSERT", json, null, List.of()).data());
         assertEquals(text, readValues("INSERT", json, null, List.of(column("other", "INT64"))).data());
-        for (String type : List.of("STRING", "NUMERIC", "BYTES", "JSON")) {
+        for (String type : List.of("INT64", "STRING", "NUMERIC", "BYTES", "JSON")) {
             assertEquals(text, readValues("INSERT", json, null, List.of(column("v", type))).data());
         }
         Struct arrayColumn = columnType("v", Value.json(
@@ -260,31 +215,20 @@ class SpannerChangeFeedReaderTest {
     }
 
     @Test
-    void typeMetadataSupportsJsonAndStringTransportButRejectsMalformedDeclarations() {
-        assertEquals(Map.of("v", 1L),
+    void malformedColumnMetadataDoesNotAffectPayload() {
+        Map<String, Object> expected = Map.of("v", "1");
+        assertEquals(expected,
                 readValues("INSERT", "{\"v\":\"1\"}", null,
                         List.of(columnType("v", Value.string("{\"code\":\"INT64\"}")))).data());
         for (String invalid : List.of("not-json", "null", "{}", "{\"code\":1}",
                 "{\"code\":\"\\ud800\"}", "{\"code\":\"\\udc00\"}")) {
-            assertSafePayloadFailure(() -> readValues("INSERT", "{\"v\":\"1\"}", null,
-                    List.of(columnType("v", Value.json(invalid)))));
+            assertEquals(expected, readValues("INSERT", "{\"v\":\"1\"}", null,
+                    List.of(columnType("v", Value.json(invalid)))).data());
         }
-        assertSafePayloadFailure(() -> readValues("INSERT", "{\"v\":\"1\"}", null,
-                List.of(columnType("v", Value.json(null)))));
-        assertSafePayloadFailure(() -> readValues("INSERT", "{\"v\":\"1\"}", null,
-                List.of(column("v", "INT64"), column("v", "STRING"))));
-    }
-
-    private static void assertSafePayloadFailure(org.junit.jupiter.api.function.Executable action) {
-        MulticloudDbException failure = assertThrows(MulticloudDbException.class, action);
-        assertEquals(MulticloudDbErrorCategory.PROVIDER_ERROR, failure.error().category());
-        assertEquals(ProviderId.SPANNER, failure.error().provider());
-        assertEquals("readChanges", failure.error().operation());
-        assertFalse(failure.error().retryable());
-        assertEquals(Map.of("reason", "invalid_document_payload"), failure.error().providerDetails());
-        assertEquals("Provider response cannot be represented as neutral data.", failure.error().message());
-        assertNull(failure.getCause());
-        assertEquals(0, failure.getSuppressed().length);
+        assertEquals(expected, readValues("INSERT", "{\"v\":\"1\"}", null,
+                List.of(columnType("v", Value.json(null)))).data());
+        assertEquals(expected, readValues("INSERT", "{\"v\":\"1\"}", null,
+                List.of(column("v", "INT64"), column("v", "STRING"))).data());
     }
 
     private static Struct column(String name, String code) {
@@ -319,7 +263,7 @@ class SpannerChangeFeedReaderTest {
                             : json.equals("{}") || json.startsWith("{\"data\":") ? Map.of()
                             : json.equals("{\"nullable\":null}") ? java.util.Collections.singletonMap("nullable", null)
                             : json.equals("[]") ? List.of()
-                            : json.equals("\"scalar\"") ? "scalar" : Map.of("v", 7L);
+                            : json.equals("\"scalar\"") ? "scalar" : Map.of("v", "7");
                     // For UPDATE, collected old values remain the existing fallback for a SQL-null new image.
                     if (operation.equals("UPDATE") && !newOnly && json == null) expected = Map.of();
                     assertEquals(expected, event.data(), mode + "/" + operation + "/" + json);

@@ -39,6 +39,7 @@ final class DocumentValidator {
             throw invalid("Document root is null; expected a non-null Map<String, Object>.", operation);
         }
         var active = new IdentityHashMap<Object, Boolean>();
+        var completed = new IdentityHashMap<Object, Integer>();
         var stack = new ArrayDeque<Frame>();
         Object value = document;
         while (true) {
@@ -47,17 +48,22 @@ final class DocumentValidator {
                     throw invalid("Document contains a cycle through container type " + value.getClass().getName()
                             + "; only acyclic Map/List values are allowed.", operation);
                 }
-                // Before entering a container, the stack contains its ancestors,
-                // including the root Map. Thus the root itself enters at depth zero.
-                if (stack.size() > MAX_NESTING_DEPTH) {
-                    throw invalid("Document nesting depth " + stack.size() + " exceeds maximum "
+                // A shared subtree may be reached again through a deeper path.
+                Integer height = completed.get(value);
+                int depth = stack.size() + (height == null ? 0 : height);
+                if (depth > MAX_NESTING_DEPTH) {
+                    throw invalid("Document nesting depth " + depth + " exceeds maximum "
                             + MAX_NESTING_DEPTH + " (root Map depth 0); container type "
                             + value.getClass().getName() + ".", operation);
                 }
-                active.put(value, Boolean.TRUE);
-                Iterator<?> children = value instanceof Map<?, ?> map
-                        ? map.entrySet().iterator() : ((List<?>) value).iterator();
-                stack.push(new Frame(value, children));
+                if (height == null) {
+                    active.put(value, Boolean.TRUE);
+                    Iterator<?> children = value instanceof Map<?, ?> map
+                            ? map.entrySet().iterator() : ((List<?>) value).iterator();
+                    stack.push(new Frame(value, children));
+                } else if (!stack.isEmpty()) {
+                    stack.peek().height = Math.max(stack.peek().height, height + 1);
+                }
             } else if (value instanceof Number number) {
                 Class<?> kind = number.getClass();
                 if (kind != Byte.class && kind != Short.class && kind != Integer.class
@@ -74,13 +80,18 @@ final class DocumentValidator {
                 throw invalid("Unsupported document value type " + value.getClass().getName()
                         + "; expected Map, List, String, Boolean, null, or exactly " + NUMBER_TYPES + ".", operation);
             }
-            while (!stack.isEmpty() && !stack.peek().children().hasNext()) {
-                active.remove(stack.pop().container());
+            while (!stack.isEmpty() && !stack.peek().children.hasNext()) {
+                Frame finished = stack.pop();
+                active.remove(finished.container);
+                completed.put(finished.container, finished.height);
+                if (!stack.isEmpty()) {
+                    stack.peek().height = Math.max(stack.peek().height, finished.height + 1);
+                }
             }
             if (stack.isEmpty()) return;
             Frame frame = stack.peek();
-            Object child = frame.children().next();
-            if (frame.container() instanceof Map<?, ?>) {
+            Object child = frame.children.next();
+            if (frame.container instanceof Map<?, ?>) {
                 Map.Entry<?, ?> entry = (Map.Entry<?, ?>) child;
                 if (!(entry.getKey() instanceof String)) {
                     String keyType = entry.getKey() == null ? "null" : entry.getKey().getClass().getName();
@@ -94,7 +105,16 @@ final class DocumentValidator {
         }
     }
 
-    private record Frame(Object container, Iterator<?> children) {}
+    private static final class Frame {
+        private final Object container;
+        private final Iterator<?> children;
+        private int height;
+
+        private Frame(Object container, Iterator<?> children) {
+            this.container = container;
+            this.children = children;
+        }
+    }
 
     private static MulticloudDbException invalid(String message, String operation) {
         return new MulticloudDbException(new MulticloudDbError(

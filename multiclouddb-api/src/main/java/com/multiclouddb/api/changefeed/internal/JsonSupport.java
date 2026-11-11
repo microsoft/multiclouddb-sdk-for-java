@@ -97,15 +97,19 @@ final class JsonSupport {
 
     private static Object validated(Object root) {
         var active = new IdentityHashMap<Object, Boolean>();
+        var completed = new IdentityHashMap<Object, Boolean>();
         var stack = new ArrayDeque<Frame>();
         Object value = root;
         while (true) {
             if (value instanceof Map<?, ?> || value instanceof List<?>) {
-                if (active.put(value, true) != null) throw contractFailure("deserialize", "cycle");
-                Object container = value;
-                Iterator<?> children = access(() -> container instanceof Map<?, ?> map
-                        ? map.entrySet().iterator() : ((List<?>) container).iterator());
-                stack.push(new Frame(value, children));
+                if (active.containsKey(value)) throw contractFailure("deserialize", "cycle");
+                if (!completed.containsKey(value)) {
+                    active.put(value, true);
+                    Object container = value;
+                    Iterator<?> children = access(() -> container instanceof Map<?, ?> map
+                            ? map.entrySet().iterator() : ((List<?>) container).iterator());
+                    stack.push(new Frame(value, children));
+                }
             } else if (value == null || value instanceof String || value instanceof Boolean
                     || value instanceof Byte || value instanceof Short || value instanceof Integer
                     || value instanceof Long || value instanceof Float || value instanceof Double
@@ -115,7 +119,9 @@ final class JsonSupport {
                 throw contractFailure("deserialize", "unsupported neutral value");
             }
             while (!stack.isEmpty() && !access(() -> stack.peek().children().hasNext())) {
-                active.remove(stack.pop().container());
+                Object finished = stack.pop().container();
+                active.remove(finished);
+                completed.put(finished, true);
             }
             if (stack.isEmpty()) return root;
             Frame frame = stack.peek();

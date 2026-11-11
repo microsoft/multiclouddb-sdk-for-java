@@ -6,10 +6,12 @@ package com.multiclouddb.provider.dynamo;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
+import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +19,33 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class DynamoItemMapperTest {
+    @Test
+    void mapperRemainsPackagePrivate() {
+        int visibility = Modifier.PUBLIC | Modifier.PROTECTED | Modifier.PRIVATE;
+        assertEquals(0, DynamoItemMapper.class.getModifiers() & visibility);
+        for (var method : DynamoItemMapper.class.getDeclaredMethods()) {
+            if (!Modifier.isPrivate(method.getModifiers())) {
+                assertEquals(0, method.getModifiers() & visibility, method.getName());
+            }
+        }
+    }
+
+    @Test
+    void documentMappingPreservesNullAndRejectsInvalidKeysAndValues() {
+        assertTrue(DynamoItemMapper.mapToAttributeMap(null).isEmpty());
+        for (Map<?, ?> invalid : List.of(Map.of(1, "value"), Collections.singletonMap(null, "value"))) {
+            assertEquals("Document keys must be non-null strings.",
+                    assertThrows(IllegalArgumentException.class,
+                            () -> DynamoItemMapper.mapToAttributeMap(invalid)).getMessage());
+            assertEquals("Document keys must be non-null strings.",
+                    assertThrows(IllegalArgumentException.class,
+                            () -> DynamoItemMapper.mapToAttributeMap(Map.of("nested", List.of(invalid)))).getMessage());
+        }
+        assertEquals("Unsupported document value.",
+                assertThrows(IllegalArgumentException.class,
+                        () -> DynamoItemMapper.mapToAttributeMap(Map.of("nested", List.of(new Object())))).getMessage());
+    }
+
     @Test
     void neutralValuesRoundTripWithoutAliasingNativeOrCallerContainers() {
         List<Object> children = new ArrayList<>(Arrays.asList(null, false, Map.of("n", 2)));

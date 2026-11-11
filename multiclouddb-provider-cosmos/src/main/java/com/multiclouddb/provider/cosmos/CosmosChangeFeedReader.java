@@ -408,8 +408,8 @@ final class CosmosChangeFeedReader {
      * instead of a hard failure.
      */
     private ChangeEvent mapEvent(Object envelope) {
-        Object metadata = NativeDocuments.get(envelope, "metadata");
-        String op = textOrEmpty(NativeDocuments.get(metadata, "operationType")).toLowerCase(java.util.Locale.ROOT);
+        Object metadata = ItemMapper.get(envelope, "metadata");
+        String op = textOrEmpty(ItemMapper.get(metadata, "operationType")).toLowerCase(java.util.Locale.ROOT);
 
         ChangeType type;
         switch (op) {
@@ -428,9 +428,9 @@ final class CosmosChangeFeedReader {
         // empty object; in that case the surfaced body is empty but the
         // metadata block still carries id + partitionKey, which we recover
         // below.
-        Object body = NativeDocuments.get(envelope, type == ChangeType.DELETE ? "previous" : "current");
+        Object body = ItemMapper.get(envelope, type == ChangeType.DELETE ? "previous" : "current");
         if (body == null) {
-            body = NativeDocuments.get(envelope, type == ChangeType.DELETE ? "current" : "previous");
+            body = ItemMapper.get(envelope, type == ChangeType.DELETE ? "current" : "previous");
         }
         boolean missingImage = body == null;
         boolean avadEnvelope = !op.isEmpty() || envelope instanceof Map<?, ?> map
@@ -447,8 +447,8 @@ final class CosmosChangeFeedReader {
         //    nested object keyed by the partition-key path segment, e.g.
         //    `{"partitionKey":"<value>"}` for a container with `/partitionKey`,
         //    so we extract the first leaf text value).
-        String id = textOrEmpty(NativeDocuments.get(body, "id"));
-        if (id.isBlank()) id = textOrEmpty(NativeDocuments.get(metadata, "id"));
+        String id = textOrEmpty(ItemMapper.get(body, "id"));
+        if (id.isBlank()) id = textOrEmpty(ItemMapper.get(metadata, "id"));
 
         String pk = textOrEmpty(firstPresent(body, "partitionKey", "pk", "_pk"));
         if (pk.isBlank()) pk = extractMetadataPartitionKey(metadata);
@@ -473,18 +473,18 @@ final class CosmosChangeFeedReader {
         // Prefer the AVAD metadata's conflict-resolution timestamp (`crts`)
         // which is the authoritative ordering instant for the change record;
         // fall back to `_ts` (second-resolution wall clock) on the body.
-        long tsSeconds = NativeDocuments.asLong(NativeDocuments.get(metadata, "crts"),
-                NativeDocuments.asLong(NativeDocuments.get(body, "_ts"), 0L));
+        long tsSeconds = ItemMapper.asLong(ItemMapper.get(metadata, "crts"),
+                ItemMapper.asLong(ItemMapper.get(body, "_ts"), 0L));
         Instant commitTs = tsSeconds > 0
                 ? Instant.ofEpochSecond(tsSeconds)
                 : Instant.now();
 
         // _etag is a stable per-version identifier; pair with id+ts as a
         // last-resort eventId when the SDK strips it.
-        String eventId = textOrEmpty(NativeDocuments.get(body, "_etag"));
+        String eventId = textOrEmpty(ItemMapper.get(body, "_etag"));
         if (eventId.isBlank()) eventId = id + "@" + tsSeconds;
 
-        Object data = missingImage && avadEnvelope ? null : NativeDocuments.changeData(body);
+        Object data = missingImage && avadEnvelope ? null : ItemMapper.changeData(body);
         return new ChangeEvent(key, type, commitTs, data, eventId);
     }
 
@@ -497,7 +497,7 @@ final class CosmosChangeFeedReader {
      * less common shape where the value is shipped as a bare string.
      */
     private static String extractMetadataPartitionKey(Object metadata) {
-        Object pk = NativeDocuments.get(metadata, "partitionKey");
+        Object pk = ItemMapper.get(metadata, "partitionKey");
         if (pk instanceof Map<?, ?> map && !map.isEmpty()) {
             return textOrEmpty(map.values().iterator().next());
         }
@@ -507,14 +507,14 @@ final class CosmosChangeFeedReader {
         return textOrEmpty(pk);
     }
 
-    private static String textOrEmpty(Object node) {
-        return NativeDocuments.text(node);
+    private static String textOrEmpty(Object value) {
+        return ItemMapper.text(value);
     }
 
     private static Object firstPresent(Object item, String... fields) {
         for (String f : fields) {
-            Object n = NativeDocuments.get(item, f);
-            if (n != null) return n;
+            Object value = ItemMapper.get(item, f);
+            if (value != null) return value;
         }
         return null;
     }

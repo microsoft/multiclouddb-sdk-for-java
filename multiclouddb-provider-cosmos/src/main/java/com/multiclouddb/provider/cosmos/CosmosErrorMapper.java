@@ -46,7 +46,7 @@ public final class CosmosErrorMapper {
 
     private static MulticloudDbErrorCategory mapCategory(int statusCode, int subStatusCode) {
         return switch (statusCode) {
-            case 400, 413 -> MulticloudDbErrorCategory.INVALID_REQUEST;
+            case 400 -> MulticloudDbErrorCategory.INVALID_REQUEST;
             case 401 -> MulticloudDbErrorCategory.AUTHENTICATION_FAILED;
             case 403 -> MulticloudDbErrorCategory.AUTHORIZATION_FAILED;
             case 404 -> MulticloudDbErrorCategory.NOT_FOUND;

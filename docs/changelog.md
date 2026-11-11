@@ -37,8 +37,8 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   native SDK/service size enforcement; identical input may succeed on one provider
   and fail on another. Common create/update/upsert validation permits 32 nested
   Map/List levels below the root Map (depth zero), with neutral-type, key,
-  finite-number and cycle checks retained. Cosmos HTTP 413 is normalized as
-  non-retryable `INVALID_REQUEST`.
+  finite-number and cycle checks retained. Cosmos HTTP 413 retains the baseline
+  non-retryable `PROVIDER_ERROR` classification.
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 - **Breaking:** Replace Jackson payload types with Map/Object in point-read
   and change-feed results; applications own object mapping. Cursor persistence
@@ -239,8 +239,8 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Fixed:**
 
-- Decode every retained metadata-declared INT64 change-feed column to Long;
-  reject invalid or overflowing values without changing STRING fields.
+- Retain native JSON representations for Spanner change-feed values, including
+  numeric strings. Metadata-driven INT64 normalization remains deferred.
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 - Default `ORDER BY` no longer fires for aggregate / `GROUP BY` queries (GoogleSQL rejects with `column not aggregated`). It also no longer duplicates primary-key columns when the caller already sorts by them, and `ORDER BY` detection ignores string literals (so `WHERE comment = ''please ORDER BY date''` is no longer a false positive).
 - Legacy / pre-`FIELD_DATA` rows preserve every column on read and `update()`. When `FIELD_DATA` is absent or malformed, the reader applies the historical "no metadata => no filtering" rule; `update()` deliberately leaves `FIELD_DATA` alone so the reader''s fallback continues to project all legacy columns. A subsequent `upsert()` or `create()` promotes the row into the metadata regime.

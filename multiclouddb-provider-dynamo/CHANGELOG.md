@@ -9,6 +9,9 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Make `DynamoItemMapper` and its conversion methods package-private provider
+  implementation details. Applications should use the portable client API rather
+  than calling the native mapper directly.
 - Map supported values directly to/from DynamoDB AttributeValue without Jackson
   trees, preserving existing numeric conversions and selected change-feed images.
   Use native image-presence flags: absent images become null, supplied empty

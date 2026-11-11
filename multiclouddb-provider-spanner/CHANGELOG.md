@@ -16,6 +16,9 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Make `SpannerRowMapper` and its conversion method package-private provider
+  implementation details. Applications should use the portable client API rather
+  than calling the native mapper directly.
 - Normalize missing/null change-feed images to null and respect capture mode:
   `NEW_VALUES`/`NEW_ROW` delete events have no collected payload, even when native
   old values are `{}`. Collected empty images and null-valued fields are preserved,
@@ -23,12 +26,13 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 - Map values to Spanner typed mutations and detached row Maps, preserving
   existing storage formats and numeric conversions. Keep JSON processing
-  internal to the provider and correct numeric lexical-length accounting.
+  internal to `SpannerRowMapper` and correct numeric lexical-length accounting.
   Add direct `com.google.code.gson:gson:2.15.0` and JPMS `requires com.google.gson`.
   Common write validation now rejects null document roots before native I/O.
   **Breaking result-type migration:** see the [migration guide](../docs/guide.md#migrating-from-beta2).
   **Compatibility:** strict JSON parsing rejects unpaired UTF-16 surrogates;
-  legacy marked rows may return raw text. Review
+  legacy marked rows may return raw text. Malformed field-name metadata can
+  disable filtering and metadata stamping, exposing previously excluded columns. Review
   [existing-data guidance](../docs/guide.md#spanner-json-unicode-compatibility) before upgrading.
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 - `upsert(address, key, document)` now uses Spanner `INSERT_OR_UPDATE` (was `REPLACE`). `REPLACE` is internally delete-then-insert, which change streams surface as `mod_type=INSERT` — making a second upsert of the same key appear as `ChangeType.CREATE` instead of `ChangeType.UPDATE`. `INSERT_OR_UPDATE` matches the `UPDATE` / `MODIFY` behaviour of Cosmos AVAD and DynamoDB Streams. The observable upsert semantics are unchanged: `FIELD_DATA` continues to project only the new document''s fields on read, so `CrudConformanceTests.upsertOverwrites` still passes.
@@ -48,9 +52,9 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
-- Decode every retained metadata-declared INT64 change-feed column to Long;
-  reject invalid or overflowing values without changing STRING fields.
-  ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
+- Treat top-level JSON `null` in `FIELD_DATA` as malformed metadata during
+  partial updates, preserving old columns without stamping a replacement field
+  list. A valid empty array remains distinct.
 - **Default `ORDER BY` no longer fires for aggregate / `GROUP BY` queries.** The provider previously appended `ORDER BY partitionKey, sortKey` to every SELECT, which GoogleSQL rejects on aggregates with `column not aggregated`. The default is now suppressed when the SQL contains an aggregate function or `GROUP BY`; caller-supplied `ORDER BY` is honoured verbatim. The default also no longer duplicates primary-key columns when the caller already sorts by them — only the missing key is appended as a tiebreaker — and `ORDER BY` detection ignores string literals so `WHERE comment = ''please ORDER BY date''` is no longer a false positive.
 - **Legacy / pre-`FIELD_DATA` rows preserve every column on read and `update()`.** When `FIELD_DATA` is absent or malformed, `SpannerRowMapper` applies the historical "no metadata => no filtering" rule including nulls; `update()` deliberately leaves `FIELD_DATA` alone so the reader''s fallback continues to project all legacy columns. A subsequent `upsert()` or `create()` promotes the row into the metadata regime by writing a complete `FIELD_DATA` stamp.
 - `ensureDatabase()` / `ensureContainer()` no longer leak raw `RuntimeException` on non-Spanner failures. `InterruptedException` surfaces as `MulticloudDbException(TRANSIENT_FAILURE, retryable=true)` (with the interrupt flag restored); non-Spanner causes inside the admin `ExecutionException` surface as `MulticloudDbException(PROVIDER_ERROR)` preserving the original cause.

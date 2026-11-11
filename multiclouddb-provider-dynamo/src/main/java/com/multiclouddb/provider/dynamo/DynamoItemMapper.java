@@ -12,16 +12,12 @@ import java.util.List;
 import java.util.Map;
 
 /** Maps neutral document values directly to DynamoDB attributes and back. */
-public final class DynamoItemMapper {
+final class DynamoItemMapper {
     private DynamoItemMapper() {
     }
 
     /** Converts a document to a detached native attribute map. */
-    public static Map<String, AttributeValue> mapToAttributeMap(Map<String, Object> document) {
-        return objectToAttributes(document);
-    }
-
-    private static Map<String, AttributeValue> objectToAttributes(Map<?, ?> document) {
+    static Map<String, AttributeValue> mapToAttributeMap(Map<?, ?> document) {
         Map<String, AttributeValue> result = new LinkedHashMap<>();
         if (document == null) return result;
         for (var entry : document.entrySet()) {
@@ -43,7 +39,7 @@ public final class DynamoItemMapper {
                     ? decimal.stripTrailingZeros().toString() : number.toString();
             return AttributeValue.fromN(text);
         }
-        if (value instanceof Map<?, ?> map) return AttributeValue.fromM(objectToAttributes(map));
+        if (value instanceof Map<?, ?> map) return AttributeValue.fromM(mapToAttributeMap(map));
         if (value instanceof List<?> list) {
             List<AttributeValue> items = new ArrayList<>(list.size());
             for (Object item : list) items.add(documentValueToAttribute(item));
@@ -53,7 +49,7 @@ public final class DynamoItemMapper {
     }
 
     /** Converts native attributes into detached mutable neutral Maps and Lists. */
-    public static Map<String, Object> attributeMapToMap(Map<String, AttributeValue> item) {
+    static Map<String, Object> attributeMapToMap(Map<String, AttributeValue> item) {
         Map<String, Object> result = new LinkedHashMap<>();
         for (var entry : item.entrySet()) {
             result.put(entry.getKey(), attributeToValue(entry.getValue()));
@@ -96,7 +92,7 @@ public final class DynamoItemMapper {
     }
 
     /** Converts a query parameter using the existing parameter-coercion policy. */
-    public static AttributeValue toAttributeValue(Object value) {
+    static AttributeValue toAttributeValue(Object value) {
         if (value == null) return AttributeValue.fromNul(true);
         if (value instanceof String text) return AttributeValue.fromS(text);
         if (value instanceof Number number) return AttributeValue.fromN(number.toString());

@@ -128,14 +128,14 @@ public final class CursorTokenCodec {
      * @throws IllegalStateException if JSON processing fails or the callback violates its contract
      */
     public static String encode(CursorToken token, Function<Object, String> serializer) {
-        Map<String, Object> node = new LinkedHashMap<>();
-        node.put("v", CursorToken.VERSION);
-        node.put("p", token.providerId().id());
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("v", CursorToken.VERSION);
+        payload.put("p", token.providerId().id());
         if (token.resource() != null) {
-            node.put("r", token.resource().database() + "/" + token.resource().collection());
+            payload.put("r", token.resource().database() + "/" + token.resource().collection());
         }
-        node.put("i", token.issuedAtEpochMillis());
-        node.put("a", token.anchor().name());
+        payload.put("i", token.issuedAtEpochMillis());
+        payload.put("a", token.anchor().name());
 
         // Encode the effective age cap ONLY when it exceeds the baseline. A
         // token minted at the 24h baseline omits "e" so the wire form stays
@@ -147,22 +147,22 @@ public final class CursorTokenCodec {
         // window here so a persisted token can outlive 24h client-side up to
         // the server-side retention.
         if (token.effectiveRetentionMillis() > MAX_TOKEN_AGE_MILLIS) {
-            node.put("e", token.effectiveRetentionMillis());
+            payload.put("e", token.effectiveRetentionMillis());
         }
 
-        List<Object> arr = new ArrayList<>();
+        List<Object> partitionEntries = new ArrayList<>();
         for (PartitionPosition pos : token.partitions()) {
-            Map<String, Object> p = new LinkedHashMap<>();
-            p.put("id", pos.partitionId());
+            Map<String, Object> partitionFields = new LinkedHashMap<>();
+            partitionFields.put("id", pos.partitionId());
             if (pos.continuation() != null) {
-                p.put("c", pos.continuation());
+                partitionFields.put("c", pos.continuation());
             }
-            arr.add(p);
+            partitionEntries.add(partitionFields);
         }
-        node.put("s", arr);
+        payload.put("s", partitionEntries);
 
         try {
-            byte[] json = escapeSurrogates(JsonSupport.write(node, serializer)).getBytes(StandardCharsets.UTF_8);
+            byte[] json = escapeSurrogates(JsonSupport.write(payload, serializer)).getBytes(StandardCharsets.UTF_8);
             return B64_ENC.encodeToString(json);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to encode change-feed cursor token", e);
@@ -239,9 +239,9 @@ public final class CursorTokenCodec {
         }
 
         ResourceAddress resource = null;
-        Object resourceNode = JsonSupport.access(() -> root.get("r"));
-        if (resourceNode != null) {
-            String r = JsonSupport.access(() -> CursorFieldCoercions.text(resourceNode, "null"));
+        Object resourceValue = JsonSupport.access(() -> root.get("r"));
+        if (resourceValue != null) {
+            String r = JsonSupport.access(() -> CursorFieldCoercions.text(resourceValue, "null"));
             int slash = r.indexOf('/');
             if (slash <= 0 || slash == r.length() - 1) {
                 throw expired(REASON_MALFORMED,
@@ -263,13 +263,13 @@ public final class CursorTokenCodec {
         // baseline floor so a malformed/tiny value cannot silently shorten
         // the portable guarantee.
         long effectiveRetentionMillis = MAX_TOKEN_AGE_MILLIS;
-        Object eNode = JsonSupport.access(() -> root.get("e"));
-        if (eNode != null) {
-            if (!JsonSupport.access(() -> CursorFieldCoercions.canConvertToLong(eNode))) {
+        Object retentionValue = JsonSupport.access(() -> root.get("e"));
+        if (retentionValue != null) {
+            if (!JsonSupport.access(() -> CursorFieldCoercions.canConvertToLong(retentionValue))) {
                 throw expired(REASON_MALFORMED,
                         "token effective-retention 'e' is not a long", null);
             }
-            long encoded = JsonSupport.access(() -> CursorFieldCoercions.asLong(eNode, 0));
+            long encoded = JsonSupport.access(() -> CursorFieldCoercions.asLong(retentionValue, 0));
             if (encoded <= 0) {
                 throw expired(REASON_MALFORMED,
                         "token effective-retention 'e' must be > 0", null);
@@ -278,8 +278,8 @@ public final class CursorTokenCodec {
         }
 
         List<PartitionPosition> partitions = new ArrayList<>();
-        Object arr = JsonSupport.access(() -> root.get("s"));
-        if (!(arr instanceof List<?> entries)) {
+        Object partitionValues = JsonSupport.access(() -> root.get("s"));
+        if (!(partitionValues instanceof List<?> entries)) {
             throw expired(REASON_MALFORMED, "token missing or non-array partitions 's'", null);
         }
         var iterator = JsonSupport.access(entries::iterator);
@@ -374,8 +374,8 @@ public final class CursorTokenCodec {
     }
 
     private static String textRequired(Map<?, ?> root, String field) {
-        Object n = JsonSupport.access(() -> root.get(field));
-        if (!(n instanceof String text) || text.isBlank()) {
+        Object value = JsonSupport.access(() -> root.get(field));
+        if (!(value instanceof String text) || text.isBlank()) {
             throw expired(REASON_MALFORMED, "token missing required field '" + field + "'", null);
         }
         return text;

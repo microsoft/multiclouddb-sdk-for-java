@@ -21,10 +21,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * therefore have no emulator coverage today:
  *
  * <ul>
- *   <li>{@code filterByFieldData(JsonNode)} — Finding #1. Whitelists the
+ *   <li>{@code filterByFieldData(Object)} — Finding #1. Whitelists the
  *       SDK-written columns named in {@code FIELD_DATA} while also preserving
  *       {@code partitionKey} / {@code sortKey}, so cross-provider consumers
- *       calling {@code ChangeEvent.data().get("partitionKey")} see the value
+ *       reading {@code partitionKey} from a Map-valued {@code ChangeEvent.data()} see the value
  *       on Spanner just as they would on Cosmos AVAD and Dynamo
  *       {@code NEW_AND_OLD_IMAGES}.</li>
  *   <li>{@code mapModType(String)} — Finding #16. Locale.ROOT-safe
@@ -144,12 +144,12 @@ class SpannerChangeFeedReaderHelpersTest {
     }
 
     @Test
-    @DisplayName("filterByFieldData passes non-object JsonNode through unchanged")
-    void filterByFieldData_nonObject_passthrough() throws Exception {
+    @DisplayName("filterByFieldData passes non-Map neutral values through unchanged")
+    void filterByFieldData_nonMap_passthrough() throws Exception {
         Object arr = new java.util.ArrayList<>();
         assertSame(arr, invokeFilter(arr));
-        Object txt = 7;
-        assertSame(txt, invokeFilter(txt));
+        Object number = 7;
+        assertSame(number, invokeFilter(number));
     }
 
     // ── mapModType (Finding #16) ────────────────────────────────────────────

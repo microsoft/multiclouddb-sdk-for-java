@@ -16,8 +16,8 @@ import java.util.Map;
 import java.util.Objects;
 
 /** Detached native Map requests and responses, without an SDK-owned JSON tree. */
-final class NativeDocuments {
-    private NativeDocuments() {
+final class ItemMapper {
+    private ItemMapper() {
     }
 
     static Map<String, Object> write(Map<String, Object> document) {

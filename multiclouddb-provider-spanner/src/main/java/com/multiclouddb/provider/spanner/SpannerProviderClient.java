@@ -337,7 +337,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
                 if (!existing.isNull(0)) {
                     String existingJson = existing.getString(0);
                     try {
-                        List<String> parsed = SpannerJson.fieldNames(existingJson);
+                        List<String> parsed = SpannerRowMapper.fieldNames(existingJson);
                         mergedFields.addAll(parsed);
                         hadValidPriorMetadata = true;
                     } catch (java.io.IOException ignored) {
@@ -531,7 +531,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      */
     private static String serialiseFieldNames(List<String> fieldNames, String op) {
         try {
-            return SpannerJson.write(fieldNames);
+            return SpannerRowMapper.writeJson(fieldNames);
         } catch (java.io.IOException e) {
             throw new MulticloudDbException(new MulticloudDbError(
                     MulticloudDbErrorCategory.PROVIDER_ERROR,
@@ -1512,7 +1512,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
             // user strings that happen to start with '{' or '['.
             try {
                 mutation.set(column).to(
-                        SpannerConstants.JSON_VALUE_MARKER + SpannerJson.write(value));
+                        SpannerConstants.JSON_VALUE_MARKER + SpannerRowMapper.writeJson(value));
             } catch (java.io.IOException ex) {
                 // Preserve the legacy plain-container fallback only on serialization failure.
                 LOG.debug("JSON serialise failed for column '{}', falling back to toString(): {}",
