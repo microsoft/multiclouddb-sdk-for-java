@@ -340,17 +340,22 @@ names**:
 | **DynamoDB** | `partitionKey` (hash key attribute) | `sortKey` (range key attribute) |
 | **Spanner** | `partitionKey` (primary key column) | `sortKey` (primary key column) |
 
-This means a document read back from **Cosmos DB** looks like:
+This means the native stored document in **Cosmos DB** looks like:
 
 ```json
 {"id": "pos-42", "partitionKey": "tenant-1", "name": "Alpha Fund"}
 ```
 
-while the same document read back from **DynamoDB** looks like:
+while the native item in **DynamoDB** looks like:
 
 ```json
 {"sortKey": "pos-42", "partitionKey": "tenant-1", "name": "Alpha Fund"}
 ```
+
+Point-read projection is separate: Cosmos removes root `id` and `partitionKey`,
+whereas DynamoDB retains its key attributes. See
+[system property stripping](#system-property-stripping); the returned shapes
+are not identical merely because all payloads now use Maps.
 
 A convention-based overload - `upsert(address, document)` - would need to look
 for `sortKey` on DynamoDB/Spanner but `id` on Cosmos DB. That requires
@@ -550,7 +555,7 @@ Keep these points in mind:
 
 #### Manual mapping
 
-The JDK-only [PlainCustomerMapping example](https://github.com/microsoft/multiclouddb-sdk-for-java/blob/b2c58ff1a277d8918b4497bea699410c3a2ad746/multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/PlainCustomerMapping.java)
+The JDK-only [PlainCustomerMapping example](https://github.com/microsoft/multiclouddb-sdk-for-java/blob/ca0011ad2d4f9555a6a5d391ed1689b7e46156ce/multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/PlainCustomerMapping.java)
 illustrates handwritten mapping:
 
 ```java
@@ -623,6 +628,8 @@ Point-read/feed Maps and Lists are detached and mutable. QueryPage retains an
 unmodifiable list and top-level row Maps, with nested mutability. Released
 numeric conversion behavior remains. Writes follow the
 [32-level nesting contract and native size enforcement](#document-size-enforcement).
+These detachment guarantees describe provider-returned data. Directly constructing
+`DocumentResult` or `ChangeEvent` retains the supplied payload, without copying it.
 
 #### Change-feed payloads
 
@@ -688,6 +695,21 @@ Cursor and read/query/feed parser limits are unchanged.
 The API no longer supplies Jackson transitively for compilation or through JPMS.
 Applications that use Jackson must declare their own Jackson dependencies and
 appropriate `requires` directives (for example, `requires com.fasterxml.jackson.databind;`).
+For the Jackson examples in this guide, add an application dependency:
+
+```xml
+<dependency>
+    <groupId>com.fasterxml.jackson.core</groupId>
+    <artifactId>jackson-databind</artifactId>
+    <version>2.18.6</version>
+</dependency>
+```
+
+Use the [source-installed module versions](getting-started.md#2-add-dependencies)
+for this development API; installing the reactor does not change a consumer's
+explicit release dependency. JSON library/version compatibility remains the
+application's responsibility, including mediation with native provider dependencies.
+
 Spanner now declares its explicit internal Gson 2.15 dependency; this does not add a
 JSON-library requirement to the common API.
 
@@ -713,6 +735,11 @@ tokens become Integer/Long/BigInteger according to range, and fractional or
 exponential tokens become Double. `column_types` is not used to convert or
 validate image values. This does not promise numerical parity with point reads
 or other providers.
+
+Spanner still binds a top-level document field with a null value as STRING null
+without schema introspection; that can fail for a non-STRING column. Common
+support for null values does not remove this native schema limitation. Nested
+nulls inside marked JSON STRINGs follow the JSON representation instead.
 
 The API does not require a JSON library, but native provider SDKs may still depend
 on one. These dependencies are not isolated from your application's dependencies.
@@ -744,6 +771,10 @@ Other existing parse-failure policies remain in force:
 
 - Invalid `FIELD_DATA` metadata disables field filtering on row reads, including
   the legacy null-column behavior; updates do not stamp replacement metadata.
+  The JSON literal `null` is malformed metadata, not an empty field-name list.
+  `[]` is a valid empty list; legacy null/numeric/boolean array-element coercion
+  is retained. The JSON-null update fallback now preserves old fields instead
+  of failing while merging a null list.
   Malformed-surrogate field-name metadata can trigger this no-filter/no-stamp
   fallback and expose columns previously excluded by metadata.
   Change-feed metadata failures strip `FIELD_DATA` but keep the other fields.
@@ -873,7 +904,8 @@ exceptions and payloads are omitted; keep application-side diagnostics if needed
 
 Spanner uses its own internal Gson reader/writer, independently of these cursor
 functions. FIELD_DATA retains scalar lexical names (for example `2.00`, `1e+03`
-and `-0`), and the marker, null handling and legacy corruption fallbacks remain:
+and `-0`), and the marker and legacy corruption fallbacks remain, with the JSON-null field
+metadata update correction described above:
 invalid marked/native JSON can return raw text, invalid field metadata falls
 back to legacy projection, and failed marked-container serialization retains the
 logged textual fallback. These are storage compatibility rules, not a
@@ -1021,9 +1053,10 @@ client.upsert(addr, MulticloudDbKey.of("acme", "port-1"), doc);
 | **DynamoDB** | `"partitionKey"` = key.partitionKey(), `"sortKey"` = key.sortKey() | Added as DynamoDB item attributes |
 | **Spanner** | `"partitionKey"` = key.partitionKey(), `"sortKey"` = key.sortKey() or key.partitionKey() | Written as Spanner row columns |
 
-> **Important**: If your document JSON already contains an `"id"` field, it
-> will be **overwritten** by the key parameter. The key is always the source
-> of truth for the document's identity.
+> **Important**: The key is authoritative for each provider's key fields.
+> Cosmos overwrites `"id"`/`"partitionKey"`; DynamoDB and Spanner write
+> `"partitionKey"`/`"sortKey"`. This does not overwrite unrelated `"id"` fields
+> on every provider. Injection occurs in native requests, not in the caller's Map.
 
 ---
 
@@ -1914,7 +1947,7 @@ the same path so no control-plane channels leak.
 | Provider | `ensureContainer()` behaviour | Failure → portable mapping |
 |---|---|---|
 | Cosmos DB | Sets an AVAD `ChangeFeedPolicy` on the container properties carrying the requested retention. | If the account lacks Continuous Backup, returns `UNSUPPORTED_CAPABILITY` (`reason=continuous_backup_required`). |
-| Spanner | Emits `CREATE CHANGE STREAM <table>_changes FOR <table> OPTIONS (value_capture_type = 'NEW_ROW', retention_period = '<value>')` after the table-create (the `NEW_ROW` capture type matches what the SDK's change-feed reader requires for full-row payloads). If a stream of the same name already exists with a different retention, `ensureContainer()` reads back the active retention via `INFORMATION_SCHEMA.CHANGE_STREAM_OPTIONS` and refuses to silently honour the mismatch — it throws `UNSUPPORTED_CAPABILITY` (`reason=extended_retention_not_enacted`, with both `requestedRetention` and `activeRetention` in `providerDetails`) so the divergence is loud rather than a silent retention drop. The stream name matches the reader's default convention so `listCursors()` / `readChanges()` transparently pick it up. | If the requested retention exceeds the database's native maximum, returns `UNSUPPORTED_CAPABILITY` (`reason=retention_exceeds_native_max`). |
+| Spanner | Emits `CREATE CHANGE STREAM <table>_changes FOR <table> OPTIONS (value_capture_type = 'NEW_ROW', retention_period = '<value>')` after the table-create (`NEW_ROW` requests new non-key column values; the reader still applies FIELD_DATA filtering). If a stream of the same name already exists with a different retention, `ensureContainer()` reads back the active retention via `INFORMATION_SCHEMA.CHANGE_STREAM_OPTIONS` and refuses to silently honour the mismatch — it throws `UNSUPPORTED_CAPABILITY` (`reason=extended_retention_not_enacted`, with both `requestedRetention` and `activeRetention` in `providerDetails`) so the divergence is loud rather than a silent retention drop. The stream name matches the reader's default convention so `listCursors()` / `readChanges()` transparently pick it up. | If the requested retention exceeds the database's native maximum, returns `UNSUPPORTED_CAPABILITY` (`reason=retention_exceeds_native_max`). |
 
 `ChangeFeedConfig` defaults (`ChangeFeedConfig.defaults()`) leave behaviour
 **bit-for-bit identical to v1** — the opt-in surface is purely additive.
@@ -2045,8 +2078,17 @@ if (client.capabilities().isSupported(Capability.WRITE_TIMESTAMP)) {
 
 ### System Property Stripping
 
-The `document()` field of `DocumentResult` is always stripped of provider
-system properties (`_ts`, `_etag`, `_rid`, `_self`, `_attachments`, `partitionKey`) before being returned, ensuring the same document shape regardless of which provider it was read from.
+Point-read projection retains each provider's existing behavior; neutral Maps
+do not guarantee identical field visibility:
+
+| Provider | Point-read payload |
+|---|---|
+| Cosmos | Removes root `_ts`, `_etag`, `_rid`, `_self`, `_attachments`, `id` and `partitionKey`. Nested fields with those names remain; `ttl` is not in this filter. |
+| DynamoDB | Retains mapped native attributes, including `partitionKey`, `sortKey` and `ttlExpiry` when present. |
+| Spanner | Omits internal `data`/`FIELD_DATA`; valid metadata selects document fields while retaining non-null key columns. Missing/malformed metadata uses legacy no-filter behavior, including null columns. |
+
+Cosmos query rows and change-feed bodies do not use its point-read filter.
+Do not infer feed completeness or cross-provider equality from the payload type.
 
 ---
 

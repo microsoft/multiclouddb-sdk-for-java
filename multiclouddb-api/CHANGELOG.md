@@ -40,6 +40,13 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   See the [migration guide](../docs/guide.md#migrating-from-beta2).
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 
+### Documentation
+
+- Align development Map examples with source-installed module versions and
+  application-owned mapping/cursor callbacks. Clarify missing point-read payloads
+  and result ownership. These documentation corrections do not change runtime
+  behavior.
+
 ## [0.1.0-beta.2] — 2026-06-17
 
 ### Added

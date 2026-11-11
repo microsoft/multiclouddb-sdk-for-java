@@ -3,6 +3,14 @@
 Sample applications demonstrating the Multicloud DB SDK's portable API are
 maintained in a **separate repository**:
 
+The external samples have their own revisions and dependency versions. Their
+released-beta examples are not automatically compatible with this development
+Map API. Align the sample's POM and payload/cursor code using the
+[migration guide](../guide.md#migrating-from-beta2) and
+[source-installed module versions](../getting-started.md#2-add-dependencies).
+Building this SDK does not update those consumers, and the documentation checks
+here do not establish that the external applications build or run against it.
+
 :material-github: **[microsoft/multiclouddb-sdk-for-java-samples](https://github.com/microsoft/multiclouddb-sdk-for-java-samples)**
 
 Each sample runs against **Azure Cosmos DB**, **Amazon DynamoDB**, or

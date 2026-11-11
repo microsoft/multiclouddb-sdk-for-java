@@ -1,9 +1,10 @@
 # Portable API Surface
 
-The Multicloud DB SDK's portable API surface covers capabilities that work
-identically across all three providers. The features listed below require no
-runtime capability checks - they are guaranteed to work on Azure Cosmos DB,
-Amazon DynamoDB, and Google Cloud Spanner. Some providers offer additional
+The Multicloud DB SDK exposes common API entry points across Azure Cosmos DB,
+Amazon DynamoDB, and Google Cloud Spanner. The development Map API does not
+normalize every native payload shape or numeric representation; see
+[Payload and numeric limitations](#payload-and-numeric-limitations).
+Some providers offer additional
 capabilities (e.g., `CROSS_PARTITION_QUERY`, `ORDER_BY`, `LIKE`); use
 `client.capabilities()` to discover what the current provider supports.
 
@@ -11,8 +12,9 @@ capabilities (e.g., `CROSS_PARTITION_QUERY`, `ORDER_BY`, `LIKE`); use
 
 ## What Works Everywhere
 
-Every capability listed below is fully supported on **all** providers. There are
-no asterisks, no provider-specific caveats, and no runtime checks required.
+The operations below have common entry points. Native schema/size constraints
+and the serialization limitations documented below still apply; successful
+structural validation is not a storage-success guarantee.
 
 ### CRUD Operations
 
@@ -97,10 +99,33 @@ The raw HTTP or gRPC status code is also available via `error.statusCode()`.
 | `CURSOR_EXPIRED` (change-feed) | HTTP 410 GONE (`reason="PROVIDER_TRIMMED"`)  | `TrimmedDataAccessException` (`reason="PROVIDER_TRIMMED"`), `ExpiredIteratorException` (`reason="ITERATOR_EXPIRED"`)  | `INVALID_ARGUMENT` / `OUT_OF_RANGE` / `NOT_FOUND` for partition outside retention (`reason="PROVIDER_TRIMMED"`)  |
 | `PROVIDER_ERROR`  | Other  | Other  | INTERNAL, Other  |
 
+Cosmos HTTP413 follows the non-retryable `PROVIDER_ERROR` default, while DynamoDB
+size-related `ValidationException` and Spanner `INVALID_ARGUMENT` use
+`INVALID_REQUEST`. Native status/cause are retained. The removed 399 KiB input
+gate is not replaced by a size check or WARN observer; error-category alignment
+and size observability remain separate work.
+
 > ¹ DynamoDB uses `ConditionalCheckFailedException` for both the 409 (duplicate-key on `create`) and 412
 > (precondition failure on conditional `update`/`upsert`) cases - both currently map to `CONFLICT`.
 > The portable API does not yet expose ETag-based conditional updates; when it does, the 412-equivalent
 > path will be split into a dedicated `PRECONDITION_FAILED` category (tracked in issue #29).
+
+## Payload and numeric limitations
+
+Point reads return `DocumentResult` or null for a missing item. Its Map payload
+and provider-produced feed Maps/Lists are detached and mutable. QueryPage copies
+only the list and top-level row Maps as read-only containers. See
+[ownership](guide.md#input-and-result-ownership) and
+[field visibility](guide.md#system-property-stripping).
+
+`ChangeEvent.data() == null` means unavailable; a supplied empty Map is still a
+payload, not proof of a captured/full document image. Spanner capture mode
+affects availability, and nested marked JSON STRINGs are not recursively decoded
+in feed images. Metadata-driven INT64 conversion is deferred. DynamoDB retains
+its exponent/overflow decoding limitations, and Spanner retains column-sensitive
+numeric/null mappings. See [numeric guidance](guide.md#supported-values-and-numeric-precision)
+and [Spanner stored-data compatibility](guide.md#spanner-json-unicode-compatibility).
+These retained gaps are not repaired or newly capability-gated by the Map migration.
 
 ## Change-Feed History Retention
 
@@ -117,7 +142,7 @@ target provider does not declare the `EXTENDED_CHANGE_FEED_HISTORY` capability.
 | Provider | Declares `EXTENDED_CHANGE_FEED_HISTORY` | How it is honoured | Practical ceiling |
 |---|---|---|---|
 | Cosmos DB | ✅ | `ensureContainer()` provisions an AVAD `ChangeFeedPolicy` carrying the requested retention. The account must have Continuous Backup enabled; the SDK normalises the "continuous backup required" failure to `UNSUPPORTED_CAPABILITY` (`reason=continuous_backup_required`). | Up to **30 days** on a Continuous Backup 30-day tier; 7 days is the most common ceiling. |
-| Spanner | ✅ | `ensureContainer()` emits `CREATE CHANGE STREAM <table>_changes FOR <table> OPTIONS (value_capture_type = 'NEW_ROW', retention_period = '<value>')` after the table-create (the `NEW_ROW` capture type matches what the SDK's change-feed reader requires for full-row payloads). Requests beyond the database's native maximum are normalised to `UNSUPPORTED_CAPABILITY` (`reason=retention_exceeds_native_max`). If a stream of the same name already exists with a different retention, `ensureContainer()` reads back the active retention via `INFORMATION_SCHEMA.CHANGE_STREAM_OPTIONS` and surfaces the mismatch as `UNSUPPORTED_CAPABILITY` (`reason=extended_retention_not_enacted`) so the divergence cannot be silently swallowed. | **7 days** natively; up to **1 year** only on a database explicitly configured for extended retention. |
+| Spanner | ✅ | `ensureContainer()` emits `CREATE CHANGE STREAM <table>_changes FOR <table> OPTIONS (value_capture_type = 'NEW_ROW', retention_period = '<value>')` after the table-create (`NEW_ROW` requests new non-key column values; the reader still applies FIELD_DATA filtering). Requests beyond the database's native maximum are normalised to `UNSUPPORTED_CAPABILITY` (`reason=retention_exceeds_native_max`). If a stream of the same name already exists with a different retention, `ensureContainer()` reads back the active retention via `INFORMATION_SCHEMA.CHANGE_STREAM_OPTIONS` and surfaces the mismatch as `UNSUPPORTED_CAPABILITY` (`reason=extended_retention_not_enacted`) so the divergence cannot be silently swallowed. | **7 days** natively; up to **1 year** only on a database explicitly configured for extended retention. |
 | DynamoDB | ❌ | DynamoDB Streams is fixed at 24 h server-side. Calling `client(...).provisionSchema(...)` (or any container-create call) with an `extendedRetention` opt-in fails fast at client-build time. | Drain Streams into a customer-provisioned Kafka cluster (outside the SDK) for >24 h today. SDK-managed archive-on-read via Kafka (customer-provisioned brokers) is on the v1.x roadmap. |
 
 **Cost is provider-shaped** — extending the change-feed history window changes

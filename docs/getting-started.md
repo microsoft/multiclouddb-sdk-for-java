@@ -20,9 +20,16 @@ mvn -version     # must be 3.9+
 
 ## 1. Build from Source
 
+This guide targets the **development Map-based API in this revision**. Released
+beta artifacts have different point-read/change-feed signatures. Check out the
+branch or commit that matches the documentation you are reading before
+installing. A fresh clone starts on the repository's default branch; if you are
+reading another revision, switch to that revision first.
+
 ```bash
 git clone https://github.com/microsoft/multiclouddb-sdk-for-java.git
 cd multiclouddb-sdk-for-java
+# Check out the matching documentation revision before this install.
 mvn clean install -DskipTests
 ```
 
@@ -31,21 +38,23 @@ mvn clean install -DskipTests
 ## 2. Add Dependencies
 
 Add the portable API as a compile dependency and one or more providers as
-runtime dependencies:
+runtime dependencies. These versions match the root POM of this checkout;
+`mvn install` does not redirect an explicitly declared released version to a
+SNAPSHOT:
 
 ```xml
 <!-- Portable API (compile scope) -->
 <dependency>
     <groupId>com.microsoft.multiclouddb</groupId>
     <artifactId>multiclouddb-api</artifactId>
-    <version>0.1.0-beta.1</version>
+    <version>0.1.0-beta.2-SNAPSHOT</version>
 </dependency>
 
 <!-- Pick a provider (runtime scope - swap without recompiling) -->
 <dependency>
     <groupId>com.microsoft.multiclouddb</groupId>
     <artifactId>multiclouddb-provider-cosmos</artifactId>
-    <version>0.1.0-beta.1</version>
+    <version>0.1.0-beta.2-SNAPSHOT</version>
     <scope>runtime</scope>
 </dependency>
 ```
@@ -59,15 +68,27 @@ runtime dependencies:
     <dependency>
         <groupId>com.microsoft.multiclouddb</groupId>
         <artifactId>multiclouddb-provider-dynamo</artifactId>
-        <version>0.1.0-beta.1</version>
+        <version>0.1.0-beta.2-SNAPSHOT</version>
         <scope>runtime</scope>
     </dependency>
     ```
 
-    Spanner support is source-available but its Maven artifact is not yet
-    published. Do not add `multiclouddb-provider-spanner` as a normal Maven
-    dependency until it is published; instead, build it from source if you
-    need to evaluate it locally.
+    Spanner has an independent module version. After installing this same
+    reactor locally, use:
+
+    ```xml
+    <dependency>
+        <groupId>com.microsoft.multiclouddb</groupId>
+        <artifactId>multiclouddb-provider-spanner</artifactId>
+        <version>0.1.0-beta.1-SNAPSHOT</version>
+        <scope>runtime</scope>
+    </dependency>
+    ```
+
+Use the source-installed versions together. These coordinates do not claim a
+published Map-API release. If you choose a released beta instead, use that
+release's documentation and migrate before using the examples below.
+
 ---
 
 ## 3. Write Portable Code
@@ -75,9 +96,12 @@ runtime dependencies:
 The following examples target the coordinated development SNAPSHOT reactor,
 not the previous released beta signatures. See
 [application mapping and migration](guide.md#application-owned-mapping).
+Create `src/main/resources/app.properties` from Step 6. This is an instance-method
+fragment with the shown imports; declare or handle `java.io.IOException`.
 
 ```java
 import com.multiclouddb.api.*;
+import com.multiclouddb.api.changefeed.*;
 import java.util.Map;
 import java.util.Properties;
 
@@ -109,7 +133,7 @@ MulticloudDbKey key = MulticloudDbKey.of("todo-1", "todo-1");
 
 client.upsert(todos, key, doc);                  // Create or replace
 DocumentResult result = client.read(todos, key); // Point read
-Map<String, Object> document = result.document(); // Detached mutable payload
+Map<String, Object> document = result == null ? null : result.document(); // Null if missing
 client.delete(todos, key);                       // Delete
 }
 ```
@@ -119,6 +143,10 @@ client.delete(todos, key);                       // Delete
 ## 4. Query with Portable Expressions
 
 Write a WHERE-clause filter once - the SDK translates it for each provider:
+
+Run this fragment inside the open-client `try` block above. Later feed fragments
+also require an open client; the snippets are method-body examples, not separate
+top-level Java statements.
 
 ```java
 QueryRequest query = QueryRequest.builder()
@@ -228,6 +256,9 @@ per provider partition), and `readChanges` (one page at a time).
 For persistence, use `serialize` from the
 [JSON callback example](guide.md#application-owned-json-processing);
 in-memory cursors do not require JSON configuration.
+`persist(String)` below is your application's durable checkpoint function, not
+an SDK method. Supply its implementation and the JSON callback before compiling
+this method-body fragment; handle interruption or declare `InterruptedException`.
 
 ```java
 ResourceAddress orders = new ResourceAddress("appdb", "orders");

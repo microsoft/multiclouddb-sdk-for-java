@@ -21,6 +21,10 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- Cache completed container identities during common write/cursor validation.
+  Write validation rechecks subtree height at each reuse depth; cycles and writes
+  beyond the 32-level boundary remain rejected. This does not bound native serialization
+  of a shared graph by its distinct edges.
 - Keep invalid cursor retention values out of error messages and sanitize runtime
   failures while accessing callback results. Malformed retention fields retain
   `MALFORMED`; callback contract/access failures use `IllegalStateException`
@@ -51,6 +55,10 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Documentation:**
 
+- Development Map examples now use the coordinated source-installed API/Cosmos/
+  Dynamo `0.1.0-beta.2-SNAPSHOT` and Spanner `0.1.0-beta.1-SNAPSHOT`.
+  Correct Map example symbols, payload ownership, explicit JSON callbacks and
+  native-to-Map field visibility without changing runtime behavior.
 - `MulticloudDbClient.delete(...)` is documented as idempotent on every provider — a missing key is a silent no-op. Callers needing to detect a missing key should use `read(...)`.
 
 ### [0.1.0-beta.1] - 2026-04-23
@@ -159,7 +167,7 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Added:**
 
-- Change-feed reader backed by DynamoDB Streams (`DescribeStream`, `GetShardIterator`, `GetRecords`). `listCursors` returns one cursor per open shard at the live tip with a pre-resolved `LATEST` iterator (`@@ITER:<iterator>` continuation), avoiding silent event loss between mint and first read. `readChanges` drains one shard''s page per call, rotates the partition list across shards, transitions to an `AFTER_SEQUENCE_NUMBER` continuation on the first observed record, and absorbs shard splits/closes. `TrimmedDataAccessException` → `CursorExpiredException(reason=PROVIDER_TRIMMED)`; `ExpiredIteratorException` → `reason=ITERATOR_EXPIRED`. Change-event payloads preserve the full DynamoDB type system via the shared `DynamoItemMapper`. The target table must have `StreamSpecification(NEW_AND_OLD_IMAGES)` enabled; otherwise `UNSUPPORTED_CAPABILITY(reason="stream_not_enabled")`.
+- Change-feed reader backed by DynamoDB Streams (`DescribeStream`, `GetShardIterator`, `GetRecords`). `listCursors` returns one cursor per open shard at the live tip with a pre-resolved `LATEST` iterator (`@@ITER:<iterator>` continuation), avoiding silent event loss between mint and first read. `readChanges` drains one shard''s page per call, rotates the partition list across shards, transitions to an `AFTER_SEQUENCE_NUMBER` continuation on the first observed record, and absorbs shard splits/closes. `TrimmedDataAccessException` → `CursorExpiredException(reason=PROVIDER_TRIMMED)`; `ExpiredIteratorException` → `reason=ITERATOR_EXPIRED`. Change-event payloads use the shared `DynamoItemMapper`; binary support and numeric exponent/overflow decoding are not added by this migration. The target table must have `StreamSpecification(NEW_AND_OLD_IMAGES)` enabled; otherwise `UNSUPPORTED_CAPABILITY(reason="stream_not_enabled")`.
 - `DynamoCapabilities` declares `EXTENDED_CHANGE_FEED_HISTORY_UNSUPPORTED` (DynamoDB Streams is fixed at 24h server-side; SDK-managed archive-on-read via customer-provisioned Kafka is on the v1.x roadmap). Callers that opt in to `ChangeFeedConfig.extendedRetention(...)` fail fast at client-build time via the API-module factory gate; the `DynamoProviderClient` constructor mirrors the gate for SPI-direct integrators.
 - Default sort-key ordering: scan paths sort items per-page by sort key ascending, matching DynamoDB''s native `Query` API and the Cosmos provider''s default. Per-page only.
 - Typed `CLIENT_CLOSED` envelope on every post-close entry point. `close()` is idempotent and also disposes the embedded `DynamoDbStreamsClient`.
@@ -204,7 +212,7 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 - Change-feed reader backed by Spanner change streams via the `READ_<stream>` TVF (single-use read-only transaction; 5-second bounded window per call). `listCursors` bootstraps the partition tree with a `NULL` partition token and anchors each cursor''s bookmark at `max(now, childStart)` so `now()` cursors honour their live-tip contract on the emulator. `readChanges` drains a bounded window, absorbs `child_partitions_record` rows (splits/merges), rotates the partition list, and surfaces `isTerminal()=true` when a cursor''s sole partition closes without children. Each `data_change_record.mod` becomes one `ChangeEvent` with a stable `providerEventId` (`<server_transaction_id>:<commit_ts>:<record_sequence>:<mod_index>`). `INVALID_ARGUMENT` / `NOT_FOUND` / `OUT_OF_RANGE` on the TVF → `CursorExpiredException(reason=PROVIDER_TRIMMED)`.
 - Per-collection change-stream name resolution: defaults to `<collection>_changes`; override via the `changeStream.<collection>` connection key.
-- Extended-retention provisioning: `SpannerProviderClient.ensureContainer(address)` emits an idempotent `CREATE CHANGE STREAM <name> FOR <table> OPTIONS (value_capture_type = ''NEW_ROW'', retention_period = ''<value>'')` when the user opted in. `value_capture_type = ''NEW_ROW''` ensures `mods.new_values` carries the full post-image (the GoogleSQL default of `OLD_AND_NEW_VALUES` only carries the mutated columns). The duplicate-name path reads back the active `retention_period` from `INFORMATION_SCHEMA.CHANGE_STREAM_OPTIONS` and throws `UNSUPPORTED_CAPABILITY(reason="extended_retention_not_enacted")` on mismatch. `INVALID_ARGUMENT` from `updateDatabaseDdl(...)` mentioning `retention_period` → `UNSUPPORTED_CAPABILITY(reason="retention_exceeds_native_max")`. `SpannerCapabilities` declares `EXTENDED_CHANGE_FEED_HISTORY_CAP` (default 24h; up to 7d natively).
+- Extended-retention provisioning: `SpannerProviderClient.ensureContainer(address)` emits an idempotent `CREATE CHANGE STREAM <name> FOR <table> OPTIONS (value_capture_type = ''NEW_ROW'', retention_period = ''<value>'')` when the user opted in. `value_capture_type = ''NEW_ROW''` requests new non-key column values in `mods.new_values` (the GoogleSQL default of `OLD_AND_NEW_VALUES` only carries the mutated columns). The duplicate-name path reads back the active `retention_period` from `INFORMATION_SCHEMA.CHANGE_STREAM_OPTIONS` and throws `UNSUPPORTED_CAPABILITY(reason="extended_retention_not_enacted")` on mismatch. `INVALID_ARGUMENT` from `updateDatabaseDdl(...)` mentioning `retention_period` → `UNSUPPORTED_CAPABILITY(reason="retention_exceeds_native_max")`. `SpannerCapabilities` declares `EXTENDED_CHANGE_FEED_HISTORY_CAP` (default 24h; up to 7d natively).
 - Typed `CLIENT_CLOSED` envelope replacing prior raw `IllegalStateException` from `checkOpen()`. `close()` is idempotent; post-close errors attribute the failing operation instead of `"checkOpen"`.
 
 **Changed:**
@@ -215,11 +223,13 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   Normalize missing/null change-feed images to null and respect capture mode:
   NEW_VALUES/NEW_ROW deletes have no payload; collected empty images and
   null-valued fields remain preserved.
+  Payload availability does not guarantee a complete captured document image.
   Add direct `com.google.code.gson:gson:2.15.0` and JPMS `requires com.google.gson`.
   Common write validation now rejects null document roots before native I/O.
   **Breaking result-type migration:** see the [migration guide](guide.md#migrating-from-beta2).
   **Compatibility:** strict JSON parsing rejects unpaired UTF-16 surrogates;
-  legacy marked rows may return raw text. Review
+  legacy marked rows may return raw text. Malformed field metadata disables
+  filtering/stamping and can expose previously excluded columns. Review
   [existing-data guidance](guide.md#spanner-json-unicode-compatibility) before upgrading.
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 - `upsert(address, key, document)` uses Spanner `INSERT_OR_UPDATE` (was `REPLACE`). `REPLACE` is internally delete-then-insert, which change streams surface as `mod_type=INSERT` — making a second upsert of the same key appear as `ChangeType.CREATE` instead of `ChangeType.UPDATE`. `INSERT_OR_UPDATE` matches Cosmos AVAD and DynamoDB Streams.
@@ -239,6 +249,8 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Fixed:**
 
+- Treat top-level JSON `null` FIELD_DATA as malformed metadata on partial update:
+  preserve old columns without stamping a replacement list. `[]` remains valid.
 - Retain native JSON representations for Spanner change-feed values, including
   numeric strings. Metadata-driven INT64 normalization remains deferred.
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))

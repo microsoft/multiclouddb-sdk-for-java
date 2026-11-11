@@ -3,6 +3,10 @@
 All configuration flows through `MulticloudDbClientConfig` or a `.properties` file.
 Select a provider and supply its connection and auth properties.
 
+There is no client-level POJO mapper or JSON serializer option. Cursor
+persistence receives [application-owned callbacks](guide.md#application-owned-json-processing)
+on each `toToken`/`fromToken` call; CRUD, queries and in-memory cursors need none.
+
 ---
 
 ## Common Properties
@@ -201,11 +205,12 @@ multiclouddb.connection.consistencyLevel=EVENTUAL
 
 ## Google Cloud Spanner
 
-!!! info "Maven artifact coming soon"
+!!! info "Development module version"
 
-    The Spanner provider source code and conformance tests are included in
-    the repository, but Maven artifacts are not yet published. You can build
-    from source to use the Spanner provider today.
+    For this Map-based API, install the same source revision and use Spanner
+    `0.1.0-beta.1-SNAPSHOT` with API `0.1.0-beta.2-SNAPSHOT`.
+    See [Quick Start](getting-started.md#2-add-dependencies); an older released
+    artifact is not a substitute for this development API.
 
 === "Emulator"
 

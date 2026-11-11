@@ -5,15 +5,23 @@ This quickstart describes intended usage of the SDK’s portable contract in Jav
 ## Goal
 Run the same application code against Cosmos DB, DynamoDB, or Spanner by changing configuration only.
 
-## Install (planned)
+## Install this development revision
 
-Maven (example coordinates; final artifact names may differ):
+Follow [build from source](../../docs/getting-started.md#1-build-from-source)
+and install the same checkout revision first. There is no `multiclouddb-bundle`.
+For example, use API compile scope and Cosmos runtime scope:
 
 ```xml
 <dependency>
 	<groupId>com.microsoft.multiclouddb</groupId>
-	<artifactId>multiclouddb-bundle</artifactId>
-	<version>0.1.0</version>
+	<artifactId>multiclouddb-api</artifactId>
+	<version>0.1.0-beta.2-SNAPSHOT</version>
+</dependency>
+<dependency>
+	<groupId>com.microsoft.multiclouddb</groupId>
+	<artifactId>multiclouddb-provider-cosmos</artifactId>
+	<version>0.1.0-beta.2-SNAPSHOT</version>
+	<scope>runtime</scope>
 </dependency>
 ```
 
@@ -21,11 +29,17 @@ Gradle:
 
 ```gradle
 dependencies {
-	implementation "com.microsoft.multiclouddb:multiclouddb-bundle:0.1.0"
+	implementation "com.microsoft.multiclouddb:multiclouddb-api:0.1.0-beta.2-SNAPSHOT"
+	runtimeOnly "com.microsoft.multiclouddb:multiclouddb-provider-cosmos:0.1.0-beta.2-SNAPSHOT"
 }
 ```
 
-## Minimal portable usage (planned)
+For Gradle, enable `mavenLocal()` for the source-installed artifacts.
+DynamoDB uses `0.1.0-beta.2-SNAPSHOT`; Spanner independently uses
+`0.1.0-beta.1-SNAPSHOT`. Released beta dependencies do not expose these Map
+signatures merely because a different SNAPSHOT has been installed.
+
+## Minimal portable usage
 
 1. Load configuration (provider selection + connection/auth details).
 2. Construct `MulticloudDbClient` from configuration.
@@ -35,6 +49,8 @@ dependencies {
 
 Current development examples use `java.util.Map`; released beta point-read
 ObjectNode and feed JsonNode access requires migration to neutral data.
+Java fragments are method bodies with `com.multiclouddb.api.*` and
+`java.util.Map` imports, an application-provided `config`, and an open client.
 
 ```java
 MulticloudDbClient client = MulticloudDbClientFactory.create(config);
@@ -52,7 +68,7 @@ QueryPage page1 = client.query(resource, QueryRequest.builder()
 	.expression("status = @status AND STARTS_WITH(name, @prefix)")
 	.parameter("status", "active")
 	.parameter("prefix", "A")
-	.pageSize(50)
+	.maxPageSize(50)
 	.build());
 ```
 
@@ -250,7 +266,7 @@ QueryRequest request = QueryRequest.builder()
     .build();
 
 QueryPage page = client.query(address, request, OperationOptions.defaults());
-page.items().forEach(item -> System.out.println(item.toPrettyString()));
+page.items().forEach(System.out::println);
 ```
 
 ```java
@@ -296,8 +312,8 @@ OperationOptions optionsWithMeta = OperationOptions.builder()
     .build();
 
 DocumentResult result = client.read(address, key, optionsWithMeta);
-Map<String, Object> doc = result.document();
-DocumentMetadata meta = result.metadata();
+Map<String, Object> doc = result == null ? null : result.document();
+DocumentMetadata meta = result == null ? null : result.metadata();
 if (meta != null) {
     if (meta.lastModified() != null) System.out.println("Last written: " + meta.lastModified());
     if (meta.version() != null) System.out.println("ETag: " + meta.version());
@@ -309,7 +325,8 @@ if (meta != null) {
 ```java
 // Existing callers: pass OperationOptions.defaults() — no metadata overhead
 DocumentResult result = client.read(address, key, OperationOptions.defaults());
-Map<String, Object> doc = result.document();  // detached mutable payload
+Map<String, Object> doc = result == null ? null : result.document();
+// Null means the item was not found; a present payload is detached and mutable.
 ```
 
 ---

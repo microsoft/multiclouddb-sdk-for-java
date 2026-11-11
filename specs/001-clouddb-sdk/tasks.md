@@ -7,7 +7,9 @@ description: "Tasks for implementing Multicloud DB SDK (Java)"
 **Input**: Design documents from `specs/001-clouddb-sdk/`  
 **Prerequisites**: plan.md (required), spec.md (required), research.md, data-model.md, contracts/openapi.yaml, quickstart.md
 
-**Tech stack (from plan.md)**: Java 17 (LTS), multi-module Maven, SLF4J API, Jackson `JsonNode`, JUnit 5 + Mockito
+**Current tech stack**: Java 17 (LTS), multi-module Maven, SLF4J API,
+neutral Map/List/Object payloads, JUnit 5 + Mockito. JSON dependencies belong to
+applications/providers/tests, not the common API runtime.
 
 ## Format: `- [ ] T### [P?] [US?] Description with file path`
 

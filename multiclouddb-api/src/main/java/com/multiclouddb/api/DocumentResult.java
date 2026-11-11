@@ -13,8 +13,10 @@ import java.util.Objects;
  * Usage:
  * <pre>{@code
  * DocumentResult result = client.read(address, key);
- * Map<String, Object> doc = result.document();
- * DocumentMetadata meta = result.metadata(); // may be null if includeMetadata=false
+ * if (result != null) {
+ *     Map<String, Object> doc = result.document();
+ *     DocumentMetadata meta = result.metadata(); // may be null if includeMetadata=false
+ * }
  * }</pre>
  *
  * @see MulticloudDbClient#read(ResourceAddress, MulticloudDbKey, OperationOptions)
