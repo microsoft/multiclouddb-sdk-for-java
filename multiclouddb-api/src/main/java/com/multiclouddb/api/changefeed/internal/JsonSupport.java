@@ -113,7 +113,7 @@ final class JsonSupport {
             } else if (value == null || value instanceof String || value instanceof Boolean
                     || value instanceof Byte || value instanceof Short || value instanceof Integer
                     || value instanceof Long || value instanceof Float || value instanceof Double
-                    || value instanceof BigInteger || value instanceof BigDecimal) {
+                    || value.getClass() == BigInteger.class || value.getClass() == BigDecimal.class) {
                 // Read-side overflow/number policy belongs to the compatible reader, not write validation.
             } else {
                 throw contractFailure("deserialize", "unsupported neutral value");

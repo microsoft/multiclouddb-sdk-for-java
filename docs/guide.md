@@ -598,9 +598,11 @@ string ordering places `"10"` before `"2"`).
 Provider schema and representation rules still apply; see
 [provider mapping and serialization](#provider-mapping-and-serialization) and
 [Spanner JSON compatibility](#spanner-json-unicode-compatibility). In particular,
-Spanner change feeds can retain nested Map/List fields as marked JSON STRINGs
-rather than decoded containers. The LCD recommendation does not promise a common
-nested feed shape. The [write-depth contract and native size limits](#document-size-enforcement)
+Spanner change feeds currently expose SDK-encoded nested Map/List fields as
+marked JSON STRINGs rather than decoded containers. This is a
+[known SDK portability issue](#known-spanner-nested-value-decoding-issue),
+not an accepted provider limitation; the LCD recommendation does not fix it.
+The [write-depth contract and native size limits](#document-size-enforcement)
 also apply; the integer recommendation is not a new numeric validation bound.
 
 For example, choose String before calling the SDK:
@@ -748,6 +750,27 @@ JPMS applications require
 `com.multiclouddb.api`; opening DTO packages to an application mapper is the
 application's responsibility.
 
+##### Known Spanner nested-value decoding issue
+
+Spanner stores nested Map/List fields in STRING columns using the SDK's
+`\u0001mcdb:json:` prefix followed by JSON. For example, `profile` containing
+`{"name":"Alice"}` and `tags` containing `["vip","active"]` are encoded this way.
+Point reads and queries restore these values as a Map and a List, respectively.
+Change feeds currently parse the outer image JSON and apply field filtering,
+but do not decode these field values: included `profile` and `tags` values
+remain Strings containing the internal prefix and JSON.
+
+This is a **known SDK portability issue**, not an accepted native-provider
+constraint. The planned correction will consistently restore SDK-marked
+Map/List values while preserving literal user strings, including strings
+escaped because they resemble the marker. It will add point-read/query/feed
+parity regressions for containers and literal strings. This correction is
+not implemented yet.
+
+The issue concerns the values and types of fields included in a payload.
+It is separate from capture-mode/image availability and does not imply a
+complete before- or post-image guarantee.
+
 ##### Spanner JSON Unicode compatibility
 
 Spanner's internal Gson 2.15 reader uses strict parsing and rejects **unpaired
@@ -780,9 +803,9 @@ Other existing parse-failure policies remain in force:
   Change-feed metadata failures strip `FIELD_DATA` but keep the other fields.
 - Change-feed image JSON failures return `{"raw": originalImageJson}` regardless
   of column-type metadata. Key JSON failures use `malformed_envelope`.
-  Nested marker STRINGs are not recursively decoded
-  in change-feed images, so this is not a universal rejection of every event
-  containing such stored text.
+  The [known nested-value decoding issue](#known-spanner-nested-value-decoding-issue)
+  currently leaves marker STRINGs undecoded in change-feed images, so this is
+  not a universal rejection of every event containing such stored text.
 
 Inspect and correct affected stored values and metadata before upgrading; do not
 assume all existing data is unaffected. Escaping a lone surrogate as `\uXXXX`
@@ -807,6 +830,16 @@ structures without copying their containers, then extracts immutable cursor stat
 Do not modify returned Maps/Lists during the entire `fromToken` call. After it
 returns, the cursor retains none of those containers and is unaffected by their
 later modification. Validation is not a concurrent-mutation snapshot.
+
+Numeric callback results must be exactly Byte, Short, Integer, Long, Float,
+Double, BigInteger or BigDecimal. BigInteger/BigDecimal subclasses and other
+Number implementations are rejected with the existing unsupported-neutral-value
+`IllegalStateException`. This narrows the callback input contract: previously
+accepted BigInteger/BigDecimal subclasses could override `toString()` and make
+cursor text locale-dependent. Standard numeric formatting, scale/exponent text
+and cursor wire behavior are unchanged; the read-side overflow profile below
+still applies. Callbacks remain responsible for deterministic parsing and must
+not locale-format values into strings.
 
 Both functions must be thread-safe, deterministic, and must not mutate or retain
 their arguments. Pass the corresponding function explicitly to each persistence

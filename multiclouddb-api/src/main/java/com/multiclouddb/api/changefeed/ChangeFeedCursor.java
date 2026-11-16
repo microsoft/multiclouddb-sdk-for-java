@@ -111,6 +111,9 @@ public final class ChangeFeedCursor {
      * values and preserve the released JSON number/parser profile. Declare JSON
      * processing failures with {@link java.io.UncheckedIOException}. This method
      * retains neither the callback nor its returned containers.
+     * Numeric callback results must be exactly Byte, Short, Integer, Long, Float,
+     * Double, BigInteger or BigDecimal; subclasses of BigInteger/BigDecimal and
+     * other Number implementations are rejected as unsupported neutral values.
      * Returned Maps and Lists must not be modified until this method returns;
      * later modifications do not affect the restored cursor.
      *

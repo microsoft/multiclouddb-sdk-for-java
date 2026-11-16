@@ -5,14 +5,69 @@ package com.multiclouddb.api.changefeed.internal;
 
 import com.multiclouddb.api.TestJson;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import com.multiclouddb.api.changefeed.ChangeFeedCursor;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@Isolated("Changes JVM default locales; restores them before returning")
 class CursorFieldCoercionsCompatibilityTest {
     private record Coercion(String json, int integer, long longValue, String text, boolean fitsLong) {}
+
+    @Test
+    void standardNumericTextAndPublicCursorWireAreLocaleIndependent() {
+        List<Number> numbers = List.of((byte) -128, (short) 32767, Integer.MIN_VALUE, Long.MAX_VALUE,
+                1234.5f, -0.0d, Double.MIN_VALUE, Double.POSITIVE_INFINITY,
+                new BigInteger("-9223372036854775809"), new BigDecimal("1234.5000"),
+                new BigDecimal("1E+20"));
+        List<String> expected = List.of("-128", "32767", "-2147483648", "9223372036854775807",
+                "1234.5", "-0.0", "4.9E-324", "Infinity", "-9223372036854775809",
+                "1234.5000", "1E+20");
+        Locale original = Locale.getDefault();
+        Locale format = Locale.getDefault(Locale.Category.FORMAT);
+        Locale display = Locale.getDefault(Locale.Category.DISPLAY);
+        long issuedAt = System.currentTimeMillis();
+        var baselineWires = new ArrayList<String>();
+        try {
+            for (Locale defaultLocale : List.of(Locale.US, Locale.GERMANY, Locale.FRANCE)) {
+                for (Locale formatLocale : List.of(Locale.US, Locale.GERMANY, Locale.FRANCE)) {
+                    Locale.setDefault(defaultLocale);
+                    Locale.setDefault(Locale.Category.FORMAT, formatLocale);
+                    for (int i = 0; i < numbers.size(); i++) {
+                        Number value = numbers.get(i);
+                        assertEquals(expected.get(i), CursorFieldCoercions.text(value, null));
+                        int[] callbacks = {0};
+                        ChangeFeedCursor cursor = ChangeFeedCursor.fromToken("e30", (text, target) -> {
+                            assertEquals(Object.class, target);
+                            callbacks[0]++;
+                            return Map.of("v", 1, "p", "cosmos", "i", issuedAt, "a", "CONTINUING",
+                                    "s", List.of(Map.of("id", value, "c", value)));
+                        });
+                        assertEquals(1, callbacks[0]);
+                        assertEquals(expected.get(i), cursor.token().partitions().get(0).partitionId());
+                        assertEquals(expected.get(i), cursor.token().partitions().get(0).continuation());
+                        String wire = cursor.toToken(TestJson.SERIALIZE);
+                        assertEquals(cursor.token(),
+                                ChangeFeedCursor.fromToken(wire, TestJson.DESERIALIZE).token());
+                        if (baselineWires.size() < numbers.size()) baselineWires.add(wire);
+                        else assertEquals(baselineWires.get(i), wire);
+                    }
+                }
+            }
+        } finally {
+            Locale.setDefault(original);
+            Locale.setDefault(Locale.Category.FORMAT, format);
+            Locale.setDefault(Locale.Category.DISPLAY, display);
+        }
+    }
 
     @Test
     void matchesExistingFieldCoercionForAdmittedJsonKinds() throws IOException {

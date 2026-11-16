@@ -19,6 +19,80 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class DocumentValidatorTest {
     @Test
+    void consumesFlatPrefixAndNestedSuffixThroughOneRootIterator() {
+        var shared = new ArrayList<Object>(List.of("leaf"));
+        for (List<Object> values : List.<List<Object>>of(
+                Arrays.asList(null, "text", true, 1, new BigDecimal("1.00")),
+                Arrays.asList(null, 1, shared, false, shared, List.of()),
+                Arrays.asList(Map.of(), "suffix", shared))) {
+            int[] reads = new int[values.size()];
+            Map<String, Object> root = singlePassRoot(values, reads);
+            assertDoesNotThrow(() -> DocumentValidator.validate(root, "create"));
+            for (int count : reads) assertEquals(1, count);
+        }
+    }
+
+    @Test
+    void flatValidationFailsBeforeReadingLaterFieldsAndKeepsDiagnostics() {
+        for (Object invalid : List.of(new Object(), Double.NaN,
+                new java.util.concurrent.atomic.AtomicInteger(1))) {
+            int[] reads = new int[3];
+            Map<String, Object> root = singlePassRoot(Arrays.asList("prefix", invalid, List.of()), reads);
+            var failure = assertThrows(MulticloudDbException.class,
+                    () -> DocumentValidator.validate(root, "update"));
+            assertInvalid(failure, "update");
+            assertArrayEquals(new int[]{1, 1, 0}, reads);
+            var nestedFailure = assertThrows(MulticloudDbException.class,
+                    () -> DocumentValidator.validate(Map.of("nested", List.of(invalid)), "update"));
+            assertEquals(nestedFailure.getMessage(), failure.getMessage());
+        }
+        var nullKey = new LinkedHashMap<String, Object>();
+        nullKey.put(null, "secret");
+        assertSafeDiagnostic(nullKey,
+                "Document Map key has type null; expected a non-null java.lang.String.", "secret");
+    }
+
+    @Test
+    void rootRemainsActiveAcrossTheLazyTransitionAndCompletedChildren() {
+        for (boolean afterEmptyChild : List.of(false, true)) {
+            for (boolean throughList : List.of(false, true)) {
+                var root = new LinkedHashMap<String, Object>();
+                root.put("prefix", 1);
+                if (afterEmptyChild) root.put("empty", List.of());
+                root.put("cycle", throughList ? List.of(root) : root);
+                assertSafeDiagnostic(root,
+                        "Document contains a cycle through container type " + root.getClass().getName()
+                                + "; only acyclic Map/List values are allowed.", "secret");
+            }
+        }
+    }
+
+    private static Map<String, Object> singlePassRoot(List<Object> values, int[] reads) {
+        var entries = new ArrayList<Map.Entry<String, Object>>();
+        for (int i = 0; i < values.size(); i++) {
+            int index = i;
+            entries.add(new java.util.AbstractMap.SimpleImmutableEntry<>("field" + i, values.get(i)) {
+                @Override public Object getValue() {
+                    assertEquals(0, reads[index]++, "Root entry must not be revisited");
+                    return super.getValue();
+                }
+            });
+        }
+        return new java.util.AbstractMap<>() {
+            private int iterators;
+            @Override public java.util.Set<Entry<String, Object>> entrySet() {
+                return new java.util.AbstractSet<>() {
+                    @Override public java.util.Iterator<Entry<String, Object>> iterator() {
+                        assertEquals(0, iterators++, "Root iterator must not be restarted");
+                        return entries.iterator();
+                    }
+                    @Override public int size() { return entries.size(); }
+                };
+            }
+        };
+    }
+
+    @Test
     void countsOnlyContainersBelowTheRootIncludingEmptyContainers() {
         assertDoesNotThrow(() -> DocumentValidator.validate(Map.of(), "create"));
         assertDoesNotThrow(() -> DocumentValidator.validate(Map.of("scalar", 1), "create"));

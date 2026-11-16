@@ -10,6 +10,8 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.io.UncheckedIOException;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -23,6 +25,37 @@ class JsonSupportTest {
     private static final String SECRET = "private-callback-payload-847219";
     private static final String SECRET_TOKEN = Base64.getUrlEncoder().withoutPadding()
             .encodeToString(SECRET.getBytes(StandardCharsets.UTF_8));
+
+    @Test
+    void rejectsBigNumberSubclassesBeforePublicCursorTextCoercion() {
+        int[] stringCalls = {0};
+        BigInteger integer = new BigInteger("1234567") {
+            @Override public String toString() { stringCalls[0]++; return "1.234.567"; }
+        };
+        BigDecimal decimal = new BigDecimal("1234.50") {
+            @Override public String toString() { stringCalls[0]++; return "1234,50"; }
+        };
+        for (Number value : List.of(integer, decimal)) {
+            IllegalStateException direct = assertThrows(IllegalStateException.class,
+                    () -> JsonSupport.read("0", (text, target) -> value));
+            int[] callbacks = {0};
+            IllegalStateException publicFailure = assertThrows(IllegalStateException.class,
+                    () -> ChangeFeedCursor.fromToken("e30", (text, target) -> {
+                        assertEquals(Object.class, target);
+                        callbacks[0]++;
+                        return Map.of("v", 1, "p", "cosmos", "i", System.currentTimeMillis(),
+                                "a", "CONTINUING", "s", List.of(Map.of("id", value, "c", value)));
+                    }));
+            assertEquals(1, callbacks[0]);
+            for (IllegalStateException failure : List.of(direct, publicFailure)) {
+                assertEquals("Application JSON deserialize failed: unsupported neutral value.",
+                        failure.getMessage());
+                assertNull(failure.getCause());
+                assertSanitized(failure, null);
+            }
+        }
+        assertEquals(0, stringCalls[0]);
+    }
 
     @Test
     void callbackDiagnosticsSurvivePublicCursorBoundariesWithoutOriginalExceptions() {

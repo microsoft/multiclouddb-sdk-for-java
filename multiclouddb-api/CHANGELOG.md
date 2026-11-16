@@ -9,6 +9,12 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **Breaking:** Narrow cursor deserializer callback numeric results to the exact
+  Byte, Short, Integer, Long, Float, Double, BigInteger and BigDecimal classes.
+  Previously accepted BigInteger/BigDecimal subclasses now fail with the existing
+  unsupported-neutral-value `IllegalStateException`, preventing overridden
+  `toString()` from introducing locale-dependent cursor text. Standard numeric
+  coercion, scale/exponent text and cursor wire behavior are unchanged.
 - Validate shared Map/List subgraphs once per call, retaining cycle checks and
   checking cached subtree height at every write-depth reuse. Cursor callback
   results use the same completed-identity approach without a document-depth

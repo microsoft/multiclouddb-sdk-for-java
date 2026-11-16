@@ -21,6 +21,7 @@ import java.util.Map;
  */
 final class DocumentValidator {
     static final int MAX_NESTING_DEPTH = 32;
+    private static final int ACTIVE = -1;
     private static final String NUMBER_TYPES = "Byte, Short, Integer, Long, Float, Double, BigInteger or BigDecimal";
 
     private DocumentValidator() {
@@ -38,18 +39,31 @@ final class DocumentValidator {
         if (document == null) {
             throw invalid("Document root is null; expected a non-null Map<String, Object>.", operation);
         }
-        var active = new IdentityHashMap<Object, Boolean>();
-        var completed = new IdentityHashMap<Object, Integer>();
+        Iterator<?> children = document.entrySet().iterator();
+        while (children.hasNext()) {
+            Object value = entryValue((Map.Entry<?, ?>) children.next(), operation);
+            if (value instanceof Map<?, ?> || value instanceof List<?>) {
+                validateNested(document, children, value, operation);
+                return;
+            }
+            validateScalar(value, operation);
+        }
+    }
+
+    private static void validateNested(Map<String, Object> document, Iterator<?> rootChildren,
+                                       Object value, String operation) {
+        var states = new IdentityHashMap<Object, Integer>();
         var stack = new ArrayDeque<Frame>();
-        Object value = document;
+        states.put(document, ACTIVE);
+        stack.push(new Frame(document, rootChildren));
         while (true) {
             if (value instanceof Map<?, ?> || value instanceof List<?>) {
-                if (active.containsKey(value)) {
+                Integer height = states.get(value);
+                if (height != null && height == ACTIVE) {
                     throw invalid("Document contains a cycle through container type " + value.getClass().getName()
                             + "; only acyclic Map/List values are allowed.", operation);
                 }
                 // A shared subtree may be reached again through a deeper path.
-                Integer height = completed.get(value);
                 int depth = stack.size() + (height == null ? 0 : height);
                 if (depth > MAX_NESTING_DEPTH) {
                     throw invalid("Document nesting depth " + depth + " exceeds maximum "
@@ -57,33 +71,19 @@ final class DocumentValidator {
                             + value.getClass().getName() + ".", operation);
                 }
                 if (height == null) {
-                    active.put(value, Boolean.TRUE);
+                    states.put(value, ACTIVE);
                     Iterator<?> children = value instanceof Map<?, ?> map
                             ? map.entrySet().iterator() : ((List<?>) value).iterator();
                     stack.push(new Frame(value, children));
                 } else if (!stack.isEmpty()) {
                     stack.peek().height = Math.max(stack.peek().height, height + 1);
                 }
-            } else if (value instanceof Number number) {
-                Class<?> kind = number.getClass();
-                if (kind != Byte.class && kind != Short.class && kind != Integer.class
-                        && kind != Long.class && kind != Float.class && kind != Double.class
-                        && kind != BigInteger.class && kind != BigDecimal.class) {
-                    throw invalid("Unsupported document number type " + kind.getName()
-                            + "; expected exactly " + NUMBER_TYPES + ".", operation);
-                }
-                if (number instanceof Float f && !Float.isFinite(f)
-                        || number instanceof Double d && !Double.isFinite(d)) {
-                    throw invalid("Document number of type " + kind.getName() + " must be finite.", operation);
-                }
-            } else if (value != null && !(value instanceof String) && !(value instanceof Boolean)) {
-                throw invalid("Unsupported document value type " + value.getClass().getName()
-                        + "; expected Map, List, String, Boolean, null, or exactly " + NUMBER_TYPES + ".", operation);
+            } else {
+                validateScalar(value, operation);
             }
             while (!stack.isEmpty() && !stack.peek().children.hasNext()) {
                 Frame finished = stack.pop();
-                active.remove(finished.container);
-                completed.put(finished.container, finished.height);
+                states.put(finished.container, finished.height);
                 if (!stack.isEmpty()) {
                     stack.peek().height = Math.max(stack.peek().height, finished.height + 1);
                 }
@@ -92,16 +92,38 @@ final class DocumentValidator {
             Frame frame = stack.peek();
             Object child = frame.children.next();
             if (frame.container instanceof Map<?, ?>) {
-                Map.Entry<?, ?> entry = (Map.Entry<?, ?>) child;
-                if (!(entry.getKey() instanceof String)) {
-                    String keyType = entry.getKey() == null ? "null" : entry.getKey().getClass().getName();
-                    throw invalid("Document Map key has type " + keyType
-                            + "; expected a non-null java.lang.String.", operation);
-                }
-                value = entry.getValue();
+                value = entryValue((Map.Entry<?, ?>) child, operation);
             } else {
                 value = child;
             }
+        }
+    }
+
+    private static Object entryValue(Map.Entry<?, ?> entry, String operation) {
+        if (!(entry.getKey() instanceof String)) {
+            String keyType = entry.getKey() == null ? "null" : entry.getKey().getClass().getName();
+            throw invalid("Document Map key has type " + keyType
+                    + "; expected a non-null java.lang.String.", operation);
+        }
+        return entry.getValue();
+    }
+
+    private static void validateScalar(Object value, String operation) {
+        if (value instanceof Number number) {
+            Class<?> kind = number.getClass();
+            if (kind != Byte.class && kind != Short.class && kind != Integer.class
+                    && kind != Long.class && kind != Float.class && kind != Double.class
+                    && kind != BigInteger.class && kind != BigDecimal.class) {
+                throw invalid("Unsupported document number type " + kind.getName()
+                        + "; expected exactly " + NUMBER_TYPES + ".", operation);
+            }
+            if (number instanceof Float f && !Float.isFinite(f)
+                    || number instanceof Double d && !Double.isFinite(d)) {
+                throw invalid("Document number of type " + kind.getName() + " must be finite.", operation);
+            }
+        } else if (value != null && !(value instanceof String) && !(value instanceof Boolean)) {
+            throw invalid("Unsupported document value type " + value.getClass().getName()
+                    + "; expected Map, List, String, Boolean, null, or exactly " + NUMBER_TYPES + ".", operation);
         }
     }
 

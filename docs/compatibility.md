@@ -1,8 +1,11 @@
 # Portable API Surface
 
 The Multicloud DB SDK exposes common API entry points across Azure Cosmos DB,
-Amazon DynamoDB, and Google Cloud Spanner. The development Map API does not
-normalize every native payload shape or numeric representation; see
+Amazon DynamoDB, and Google Cloud Spanner.
+
+For point-write operations (`create`, `update`, and `upsert`), provide the data to store as a `Map<String, Object>`. The SDK refers to this data as a **document**. You can use a serializer such as Jackson to convert your application objects into this Map representation before passing them to the SDK.
+
+The SDK does not normalize every native payload shape or numeric representation; see
 [Payload and numeric limitations](#payload-and-numeric-limitations).
 Some providers offer additional
 capabilities (e.g., `CROSS_PARTITION_QUERY`, `ORDER_BY`, `LIKE`); use
@@ -99,11 +102,9 @@ The raw HTTP or gRPC status code is also available via `error.statusCode()`.
 | `CURSOR_EXPIRED` (change-feed) | HTTP 410 GONE (`reason="PROVIDER_TRIMMED"`)  | `TrimmedDataAccessException` (`reason="PROVIDER_TRIMMED"`), `ExpiredIteratorException` (`reason="ITERATOR_EXPIRED"`)  | `INVALID_ARGUMENT` / `OUT_OF_RANGE` / `NOT_FOUND` for partition outside retention (`reason="PROVIDER_TRIMMED"`)  |
 | `PROVIDER_ERROR`  | Other  | Other  | INTERNAL, Other  |
 
-Cosmos HTTP413 follows the non-retryable `PROVIDER_ERROR` default, while DynamoDB
-size-related `ValidationException` and Spanner `INVALID_ARGUMENT` use
-`INVALID_REQUEST`. Native status/cause are retained. The removed 399 KiB input
-gate is not replaced by a size check or WARN observer; error-category alignment
-and size observability remain separate work.
+Document size limits depend on the provider. The SDK does not check payload size before sending a write. If a write fails because the payload is too large, reduce the payload or split the data across multiple documents before retrying; retrying the same payload will not resolve the error.
+
+Do not rely on the error category alone to identify size failures. Cosmos DB reports HTTP 413 as `PROVIDER_ERROR`; DynamoDB and Spanner size failures may appear as `INVALID_REQUEST`. Check the native status and error details to identify the cause.
 
 > ¹ DynamoDB uses `ConditionalCheckFailedException` for both the 409 (duplicate-key on `create`) and 412
 > (precondition failure on conditional `update`/`upsert`) cases - both currently map to `CONFLICT`.
@@ -118,14 +119,29 @@ only the list and top-level row Maps as read-only containers. See
 [ownership](guide.md#input-and-result-ownership) and
 [field visibility](guide.md#system-property-stripping).
 
-`ChangeEvent.data() == null` means unavailable; a supplied empty Map is still a
-payload, not proof of a captured/full document image. Spanner capture mode
-affects availability, and nested marked JSON STRINGs are not recursively decoded
-in feed images. Metadata-driven INT64 conversion is deferred. DynamoDB retains
+`ChangeEvent.data()` returns null when no payload is available. If it returns an empty Map, the event contains no document fields; this does not necessarily mean the stored document was empty.
+Spanner capture mode affects availability.
+
+**Known SDK portability issue:** Spanner restores SDK-encoded nested Map/List
+fields on point reads and queries, but change-feed payloads currently expose
+those fields as Strings containing the internal `\u0001mcdb:json:` prefix and JSON.
+This is an SDK decoding bug, not an accepted provider limitation. The planned
+correction will consistently restore SDK-marked Map/List values while preserving
+literal user strings, including escaped marker-looking strings, and add
+point-read/query/feed parity regressions. It is not implemented yet.
+This concerns the values and types of included fields, not whether an image is
+available or complete. See [the known issue details](guide.md#known-spanner-nested-value-decoding-issue).
+
+Numeric values may be stored or returned differently across providers. Do not assume that a value will retain its original Java numeric type or precision. Verify round-trip behavior for the providers and operations your application uses.
+
+If exact numeric representation is required and database-side numeric operations are not needed, consider storing the value as a String and parsing it in your application. String storage changes sorting, filtering, and aggregation semantics.
+
+See [numeric guidance](guide.md#supported-values-and-numeric-precision) for representation choices and [provider mapping and serialization](guide.md#provider-mapping-and-serialization) for current provider-specific limitations.
+
+Spanner does not apply metadata-driven INT64 conversion. DynamoDB retains
 its exponent/overflow decoding limitations, and Spanner retains column-sensitive
-numeric/null mappings. See [numeric guidance](guide.md#supported-values-and-numeric-precision)
-and [Spanner stored-data compatibility](guide.md#spanner-json-unicode-compatibility).
-These retained gaps are not repaired or newly capability-gated by the Map migration.
+numeric/null mappings. See also
+[Spanner stored-data compatibility](guide.md#spanner-json-unicode-compatibility).
 
 ## Change-Feed History Retention
 

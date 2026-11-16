@@ -185,7 +185,7 @@ class CursorTokenCodecTest {
     }
 
     @Test
-    void readSideNumberAccessorFailuresAreSanitizedWithoutChangingNumericVocabulary() {
+    void readSideNumberSubclassesAreRejectedBeforeAccessorInvocation() {
         for (String field : List.of("v", "i", "r", "e")) {
             RuntimeException original = hostileFailure();
             var number = new java.math.BigDecimal("1") {
@@ -196,7 +196,12 @@ class CursorTokenCodecTest {
             };
             Map<String, Object> root = validGraph();
             root.put(field, number);
-            assertAccessFailure(root, original);
+            IllegalStateException failure = assertThrows(IllegalStateException.class,
+                    () -> ChangeFeedCursor.fromToken("e30", (s, t) -> root));
+            assertEquals("Application JSON deserialize failed: unsupported neutral value.",
+                    failure.getMessage());
+            assertNotSame(original, failure);
+            assertSanitized(failure);
         }
     }
 
