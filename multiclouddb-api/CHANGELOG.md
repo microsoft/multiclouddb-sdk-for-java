@@ -9,6 +9,13 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **Breaking:** Limit create/update/upsert document numbers to Integer/Long in
+  inclusive +/-9007199254740991 and finite Double that is zero or has inclusive
+  absolute magnitude [1E-130, 9007199254740991]. Reject other numeric classes and
+  out-of-range values before provider I/O with non-retryable `INVALID_REQUEST`,
+  including nested values. Negative zero is allowed without guaranteed sign
+  preservation. No implicit conversion is added. Query/read/feed/cursor policies
+  remain unchanged; readable documents can fail when written back.
 - **Breaking:** Narrow cursor deserializer callback numeric results to the exact
   Byte, Short, Integer, Long, Float, Double, BigInteger and BigDecimal classes.
   Previously accepted BigInteger/BigDecimal subclasses now fail with the existing

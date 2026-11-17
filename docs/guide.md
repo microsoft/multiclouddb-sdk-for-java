@@ -572,20 +572,40 @@ PlainCustomerMapping.Customer restored = mapping.fromMap(result.document());
 The document root must be a non-null Map; create, update and upsert reject a null
 root with `INVALID_REQUEST` before native I/O. Empty Maps and nested null values
 remain supported. Values allow non-null string-keyed Maps, ordered Lists, Strings, Booleans, null,
-and exactly Byte, Short, Integer, Long, Float, Double, BigInteger and BigDecimal.
-Float/Double must be finite. Cycles, arrays, sets, arbitrary POJOs, invalid keys
+and exactly **Integer, Long and Double** for numeric document inputs.
+Cycles, arrays, sets, arbitrary POJOs, invalid keys
 and other Number implementations fail with `INVALID_REQUEST` before native I/O.
 Shared acyclic subtrees are valid. Missing keys differ from present nulls; use
 `containsKey`. Equality follows JDK Map/List/Number semantics.
 
-**Conservative portability recommendation:** supply integers as `Integer` or
+**Enforced write numeric contract:** supply integers as `Integer` or
 `Long` within **-9,007,199,254,740,991 through +9,007,199,254,740,991, inclusive**.
-This lowest-common-denominator (LCD) recommendation uses the JSON/binary64
+`Double` must be finite and either zero or have an absolute value between
+**1E-130 and 9,007,199,254,740,991, inclusive**. Both `0.0` and `-0.0` are accepted;
+preservation of the zero sign is not guaranteed. The validator does not change
+the input value, round, truncate, stringify, or perform a second document traversal.
+These same rules apply to every numeric value in nested Maps and Lists.
+
+The integer lowest-common-denominator (LCD) bound uses the JSON/binary64
 interoperability interval in [RFC 8259 section 6](https://www.rfc-editor.org/rfc/rfc8259#section-6).
-It is not a new validation bound or a native storage cap; values outside it are
-not necessarily rejected or damaged. It does not guarantee lossless behavior
-for every accepted Number class or every read, query and change-feed path,
-nor restoration of the original Java subtype.
+The nonzero lower bound accounts for DynamoDB's minimum numeric magnitude.
+These are conservative SDK input bounds, not each service's maximum capacity.
+Violations fail before provider I/O with non-retryable `INVALID_REQUEST` and
+the write operation name, without including the numeric value in the error.
+
+**Breaking migration:** Byte, Short, Float, BigInteger, BigDecimal, custom Number
+implementations (including AtomicInteger/AtomicLong), and out-of-range Long/Double
+are not accepted as document write inputs. Configure application-owned mapping
+to produce supported values, or explicitly use String where numeric database
+operations are not needed. Do not blindly call `doubleValue()` on precise numbers:
+that may lose information before SDK validation. Float support requires a
+separate conversion contract and is not enabled by these bounds.
+
+The restrictions apply only to `create`, `update` and `upsert` document arguments.
+Query parameters/literals, reads, query results, change feeds and cursor callbacks
+do not receive this new write policy. Existing readable data can therefore fail
+when resubmitted as a write, even if only an unrelated field was edited.
+Original Java numeric subtypes and exact decimal precision/scale are not promised.
 
 For fractional values, magnitude is not decimal precision: even `0.1` is not
 exactly representable in binary floating point. **When exact large integers,
@@ -601,9 +621,9 @@ Provider schema and representation rules still apply; see
 Spanner change feeds currently expose SDK-encoded nested Map/List fields as
 marked JSON STRINGs rather than decoded containers. This is a
 [known SDK portability issue](#known-spanner-nested-value-decoding-issue),
-not an accepted provider limitation; the LCD recommendation does not fix it.
+not an accepted provider limitation; the LCD write policy does not fix it.
 The [write-depth contract and native size limits](#document-size-enforcement)
-also apply; the integer recommendation is not a new numeric validation bound.
+also apply; passing numeric validation does not establish native storage acceptance.
 
 For example, choose String before calling the SDK:
 
@@ -727,8 +747,8 @@ handled internally by its provider, not application callbacks.
 | Provider | Multicloud mapping | Encoding and limitations retained |
 |---|---|---|
 | Cosmos | Detached request Maps; `Map.class` point reads; root-only system-field filtering | Native Cosmos JSON/wire encoding, key/id/TTL overwrite and decimal normalization. Feed bodies do not use point-read filtering |
-| DynamoDB | Direct Map/List/scalar to AttributeValue and back | Native encoding; dotted N values read as Double, others as Integer then Long. Existing exponent/overflow limitations and unsupported native binary null fallback remain |
-| Spanner | Typed mutations/rows; nested Map/List values use marked JSON STRINGs; FIELD_DATA selects visible fields | Protobuf/gRPC and required persisted JSON. Integer/Long use INT64, Float/Double use FLOAT64; root Byte/Short/BigInteger/BigDecimal retain STRING fallback. Native BYTES rows retain Base64 text conversion |
+| DynamoDB | Direct Map/List/scalar to AttributeValue and back | Native encoding; decimal or exponent N values read as Double, plain integers as Integer then Long. Plain integer overflow still fails; arbitrary-precision fidelity is not added. Native NS retains List<Double>; unsupported native binary retains null fallback |
+| Spanner | Typed mutations/rows; nested Map/List values use marked JSON STRINGs; FIELD_DATA selects visible fields | Protobuf/gRPC and required persisted JSON. Accepted Integer/Long writes use INT64, Double uses FLOAT64. Previously written STRING numeric fallbacks remain Strings on read. Native BYTES rows retain Base64 text conversion |
 
 Spanner's JSON marker, FIELD_DATA and update transaction are existing storage
 contracts, not redundant serialization to remove. Change-feed images retain

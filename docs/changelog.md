@@ -21,6 +21,12 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- **Breaking numeric write contract:** create/update/upsert accept only
+  Integer/Long within inclusive +/-9007199254740991 and finite Double that is
+  zero or has inclusive absolute magnitude [1E-130, 9007199254740991], including
+  nested values. Other classes and out-of-range writes fail before provider I/O.
+  Query/read/feed/cursor rules are not narrowed. See
+  [numeric migration guidance](guide.md#supported-values-and-numeric-precision).
 - Cache completed container identities during common write/cursor validation.
   Write validation rechecks subtree height at each reuse depth; cycles and writes
   beyond the 32-level boundary remain rejected. This does not bound native serialization
@@ -164,6 +170,12 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ## multiclouddb-provider-dynamo
 
 ### [Unreleased]
+
+**Fixed:**
+
+- Decode native exponent-only `N` tokens as Double across point reads, query
+  routes and selected feed images, including nested containers. Plain integer
+  overflow and high-precision/number-set limitations remain.
 
 **Added:**
 

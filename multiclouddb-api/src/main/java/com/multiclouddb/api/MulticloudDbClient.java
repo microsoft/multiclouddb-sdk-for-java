@@ -27,11 +27,20 @@ import java.util.Map;
  * rejected with {@code INVALID_REQUEST} before native I/O; empty Maps and nested
  * nulls are valid. Applications map their objects explicitly.
  * <p>
- * Numeric input acceptance does not guarantee lossless storage or readback.
+ * Numeric document inputs must be exactly Integer, Long or Double. Integers
+ * must lie within [-9007199254740991, 9007199254740991], inclusive. Double must
+ * be finite and zero or have absolute value within [1E-130, 9007199254740991],
+ * inclusive. Negative zero is allowed without a sign-preservation guarantee.
+ * The same rules apply to nested values; violations fail with non-retryable
+ * {@code INVALID_REQUEST} before provider I/O without implicit conversion.
+ * These write rules do not restrict query inputs, reads, feeds or cursor callbacks.
+ * Existing readable documents may be rejected when written back.
+ * <p>
+ * Numeric input acceptance does not promise original Java subtypes or exact decimal scale.
  * Consider String representations when exact large integers or decimal precision
  * are required; this changes numeric sorting and aggregation semantics.
- * See the <a href="https://microsoft.github.io/multiclouddb-sdk-for-java/guide/#supported-values-and-numeric-precision">recommended
- * integer range, limitations and supported values</a> before selecting field representations.
+ * See the <a href="https://microsoft.github.io/multiclouddb-sdk-for-java/guide/#supported-values-and-numeric-precision">numeric
+ * bounds, migration guidance and supported values</a> before selecting field representations.
  * <p>
  * Callers must not mutate the input Map or its nested containers during the
  * entire synchronous call, including retries. The SDK does not mutate caller

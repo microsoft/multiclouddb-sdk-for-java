@@ -20,6 +20,74 @@ class DocumentValidationConformanceTest {
     private static final OperationOptions OPTIONS = OperationOptions.defaults();
 
     @Test
+    void numericPolicyIsIdenticalAcrossProvidersWritesAndNesting() throws Exception {
+        List<Number> allowed = List.of(Integer.MIN_VALUE, Integer.MAX_VALUE,
+                -9_007_199_254_740_991L, 9_007_199_254_740_991L,
+                0.1D, 0.0D, -0.0D, 1E-130, -1E-130, 9_007_199_254_740_991D);
+        List<Number> rejected = List.of((byte) 1, (short) 1, 0.1F,
+                java.math.BigInteger.ONE, java.math.BigDecimal.ONE,
+                new java.util.concurrent.atomic.AtomicInteger(1),
+                new java.util.concurrent.atomic.AtomicLong(1),
+                -9_007_199_254_740_992L, 9_007_199_254_740_992L,
+                Math.nextDown(1E-130), -Math.nextDown(1E-130),
+                Math.nextUp(9_007_199_254_740_991D), -Math.nextUp(9_007_199_254_740_991D),
+                Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY);
+        for (ProviderId provider : List.of(ProviderId.COSMOS, ProviderId.DYNAMO, ProviderId.SPANNER)) {
+            var boundary = mock(MulticloudDbProviderClient.class);
+            try (var client = new DefaultMulticloudDbClient(boundary,
+                    MulticloudDbClientConfig.builder().provider(provider).build())) {
+                for (String operation : List.of("create", "update", "upsert")) {
+                    for (boolean valid : List.of(true, false)) {
+                        for (Number number : valid ? allowed : rejected) {
+                            for (Object value : List.of(number, Map.of("n", number), List.of(number))) {
+                                Map<String, Object> input = Map.of("private-field", value);
+                                clearInvocations(boundary);
+                                if (valid) {
+                                    write(client, operation, input);
+                                    verifyWrite(boundary, operation, input);
+                                } else {
+                                    var failure = assertThrows(MulticloudDbException.class,
+                                            () -> write(client, operation, input));
+                                    assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, failure.error().category());
+                                    assertEquals(operation, failure.error().operation());
+                                    assertFalse(failure.error().retryable());
+                                    assertFalse(failure.getMessage().contains("private-field"));
+                                    verifyNoInteractions(boundary);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    void existingReadAndQueryValuesAreNotSubjectToWriteBounds() throws Exception {
+        for (ProviderId provider : List.of(ProviderId.COSMOS, ProviderId.DYNAMO, ProviderId.SPANNER)) {
+            var boundary = mock(MulticloudDbProviderClient.class);
+            try (var client = new DefaultMulticloudDbClient(boundary,
+                    MulticloudDbClientConfig.builder().provider(provider).build())) {
+                Map<String, Object> legacy = Map.of("n", 9_007_199_254_740_992L);
+                var result = new DocumentResult(legacy, null);
+                when(boundary.read(eq(ADDRESS), eq(KEY), any())).thenReturn(result);
+                assertEquals(legacy, client.read(ADDRESS, KEY).document());
+                var request = QueryRequest.builder().partitionKey(KEY.partitionKey())
+                        .expression("n = :n").parameters(Map.of(":n", java.math.BigDecimal.ONE)).build();
+                when(boundary.query(eq(ADDRESS), same(request), same(OPTIONS)))
+                        .thenReturn(new QueryPage(List.of(legacy), null));
+                assertEquals(List.of(legacy), client.query(ADDRESS, request, OPTIONS).items());
+                verify(boundary).query(eq(ADDRESS), same(request), same(OPTIONS));
+                clearInvocations(boundary);
+                var failure = assertThrows(MulticloudDbException.class,
+                        () -> client.upsert(ADDRESS, KEY, legacy, OPTIONS));
+                assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, failure.error().category());
+                verifyNoInteractions(boundary);
+            }
+        }
+    }
+
+    @Test
     void depthAndNativeSizeDelegationAreConsistentAcrossProvidersAndWrites() throws Exception {
         for (ProviderId provider : List.of(ProviderId.COSMOS, ProviderId.DYNAMO, ProviderId.SPANNER)) {
             var boundary = mock(MulticloudDbProviderClient.class);

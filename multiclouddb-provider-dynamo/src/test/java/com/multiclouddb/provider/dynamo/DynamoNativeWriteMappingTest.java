@@ -12,8 +12,6 @@ import software.amazon.awssdk.services.dynamodb.model.*;
 import software.amazon.awssdk.services.dynamodb.streams.DynamoDbStreamsClient;
 import software.amazon.awssdk.services.dynamodb.streams.DynamoDbStreamsClientBuilder;
 
-import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.time.Instant;
 import java.util.*;
 
@@ -30,11 +28,10 @@ class DynamoNativeWriteMappingTest {
             OperationOptions.defaults(), OperationOptions.builder().ttlSeconds(120).build());
 
     private static List<Map<String, Object>> fixtures() {
-        var numbers = List.<Number>of((byte) -2, (short) 3, 4, Long.MIN_VALUE, Long.MAX_VALUE,
-                0.1F, Float.MIN_VALUE, Float.MAX_VALUE, -0.0F, -0.0D, Double.MIN_VALUE, Double.MAX_VALUE,
-                new BigInteger("123456789012345678901234567890"),
-                new BigDecimal("1.00"), new BigDecimal("1E+10"),
-                new BigDecimal("0.000"), new BigDecimal("1E-1024"));
+        var numbers = List.<Number>of(Integer.MIN_VALUE, Integer.MAX_VALUE,
+                -9_007_199_254_740_991L, 9_007_199_254_740_991L,
+                0.1D, -0.0D, 0.0D, 1E-130, -1E-130,
+                9_007_199_254_740_991D, -9_007_199_254_740_991D);
         var fields = new LinkedHashMap<String, Object>();
         for (int i = 0; i < numbers.size(); i++) fields.put("n" + i, numbers.get(i));
         fields.put("strings", List.of("", "\"\\\b\f\n\r\t\u0001", "\u00e9\u4e2d",
@@ -97,6 +94,15 @@ class DynamoNativeWriteMappingTest {
                             verify(sdk).putItem(captor.capture());
                             verifyNoMoreInteractions(sdk);
                             PutItemRequest actual = captor.getValue();
+                            if (input.containsKey("n0")) {
+                                Map.of("n2", "-9007199254740991", "n3", "9007199254740991",
+                                        "n4", "0.1", "n5", "-0.0", "n7", "1.0E-130",
+                                        "n9", "9.007199254740991E15").forEach((field, token) -> {
+                                            assertEquals(token, actual.item().get(field).n());
+                                            assertEquals(token,
+                                                    actual.item().get("nested").l().get(0).m().get(field).n());
+                                        });
+                            }
                             if (input.containsKey("deep")) {
                                 assertEquals(input.get("deep"),
                                         DynamoItemMapper.attributeMapToMap(actual.item()).get("deep"));
