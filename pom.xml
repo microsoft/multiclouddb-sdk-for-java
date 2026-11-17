@@ -228,6 +228,135 @@
                     </executions>
                 </plugin>
                 <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>3.4.2</version>
+                </plugin>
+                <!-- Activated only by providers. Keep API/SPI and native JNI bridges shared. -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
+                    <version>3.6.1</version>
+                    <executions>
+                        <execution>
+                            <id>isolate-provider-runtime</id>
+                            <phase>package</phase>
+                            <goals><goal>shade</goal></goals>
+                            <configuration>
+                                <shadedArtifactAttached>false</shadedArtifactAttached>
+                                <minimizeJar>false</minimizeJar>
+                                <createDependencyReducedPom>true</createDependencyReducedPom>
+                                <promoteTransitiveDependencies>true</promoteTransitiveDependencies>
+                                <!-- Flatten runs first and sets originalModel. Replace its publication file. -->
+                                <dependencyReducedPomLocation>${project.basedir}/.flattened-pom.xml</dependencyReducedPomLocation>
+                                <useDependencyReducedPomInJar>true</useDependencyReducedPomInJar>
+                                <artifactSet>
+                                    <excludes>
+                                        <exclude>com.microsoft.multiclouddb:multiclouddb-api</exclude>
+                                        <exclude>org.slf4j:*</exclude>
+                                        <exclude>net.java.dev.jna:*</exclude>
+                                        <exclude>org.conscrypt:*</exclude>
+                                    </excludes>
+                                </artifactSet>
+                                <filters>
+                                    <filter>
+                                        <artifact>*:*</artifact>
+                                        <excludes>
+                                            <exclude>module-info.class</exclude>
+                                            <exclude>META-INF/versions/*/module-info.class</exclude>
+                                            <exclude>META-INF/*.SF</exclude>
+                                            <exclude>META-INF/*.DSA</exclude>
+                                            <exclude>META-INF/*.RSA</exclude>
+                                            <exclude>META-INF/INDEX.LIST</exclude>
+                                        </excludes>
+                                    </filter>
+                                </filters>
+                                <relocations>
+                                    <relocation>
+                                        <pattern>^META-INF/versions/([0-9]+)/(.*)</pattern>
+                                        <shadedPattern>META-INF/versions/$1/com/multiclouddb/shaded/${shading.provider}/$2</shadedPattern>
+                                        <rawString>true</rawString>
+                                    </relocation>
+                                    <relocation><pattern>com.azure</pattern><shadedPattern>${shading.prefix}.com.azure</shadedPattern></relocation>
+                                    <relocation><pattern>com.fasterxml</pattern><shadedPattern>${shading.prefix}.com.fasterxml</shadedPattern></relocation>
+                                    <relocation><pattern>com.microsoft.aad</pattern><shadedPattern>${shading.prefix}.com.microsoft.aad</shadedPattern></relocation>
+                                    <relocation><pattern>com.codahale</pattern><shadedPattern>${shading.prefix}.com.codahale</shadedPattern></relocation>
+                                    <relocation><pattern>com.google</pattern><shadedPattern>${shading.prefix}.com.google</shadedPattern></relocation>
+                                    <relocation><pattern>software.amazon</pattern><shadedPattern>${shading.prefix}.software.amazon</shadedPattern></relocation>
+                                    <relocation><pattern>io.netty</pattern><shadedPattern>${shading.prefix}.io.netty</shadedPattern></relocation>
+                                    <relocation><pattern>io.grpc</pattern><shadedPattern>${shading.prefix}.io.grpc</shadedPattern></relocation>
+                                    <relocation><pattern>io.micrometer</pattern><shadedPattern>${shading.prefix}.io.micrometer</shadedPattern></relocation>
+                                    <relocation><pattern>io.opencensus</pattern><shadedPattern>${shading.prefix}.io.opencensus</shadedPattern></relocation>
+                                    <relocation><pattern>io.opentelemetry</pattern><shadedPattern>${shading.prefix}.io.opentelemetry</shadedPattern></relocation>
+                                    <relocation><pattern>io.perfmark</pattern><shadedPattern>${shading.prefix}.io.perfmark</shadedPattern></relocation>
+                                    <relocation><pattern>reactor</pattern><shadedPattern>${shading.prefix}.reactor</shadedPattern></relocation>
+                                    <relocation><pattern>org.reactivestreams</pattern><shadedPattern>${shading.prefix}.org.reactivestreams</shadedPattern></relocation>
+                                    <relocation><pattern>org.apache</pattern><shadedPattern>${shading.prefix}.org.apache</shadedPattern></relocation>
+                                    <relocation><pattern>org.HdrHistogram</pattern><shadedPattern>${shading.prefix}.org.HdrHistogram</shadedPattern></relocation>
+                                    <relocation><pattern>org.LatencyUtils</pattern><shadedPattern>${shading.prefix}.org.LatencyUtils</shadedPattern></relocation>
+                                    <relocation><pattern>org.threeten</pattern><shadedPattern>${shading.prefix}.org.threeten</shadedPattern></relocation>
+                                    <relocation><pattern>org.checkerframework</pattern><shadedPattern>${shading.prefix}.org.checkerframework</shadedPattern></relocation>
+                                    <relocation><pattern>org.codehaus</pattern><shadedPattern>${shading.prefix}.org.codehaus</shadedPattern></relocation>
+                                    <relocation><pattern>javax.annotation</pattern><shadedPattern>${shading.prefix}.javax.annotation</shadedPattern></relocation>
+                                    <relocation><pattern>android.annotation</pattern><shadedPattern>${shading.prefix}.android.annotation</shadedPattern></relocation>
+                                    <relocation><pattern>mozilla</pattern><shadedPattern>${shading.prefix}.mozilla</shadedPattern></relocation>
+                                    <relocation>
+                                        <pattern>META-INF/native/lib</pattern>
+                                        <shadedPattern>META-INF/native/lib${shading.nativePrefix}_</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>META-INF/native/netty</pattern>
+                                        <shadedPattern>META-INF/native/${shading.nativePrefix}_netty</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>META-INF/native/io_grpc</pattern>
+                                        <shadedPattern>META-INF/native/${shading.nativePrefix}_io_grpc</shadedPattern>
+                                    </relocation>
+                                </relocations>
+                                <transformers>
+                                    <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                    <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                        <resource>META-INF/LICENSE</resource>
+                                    </transformer>
+                                    <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                        <resource>META-INF/LICENSE.txt</resource>
+                                    </transformer>
+                                    <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer"/>
+                                    <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                        <resource>META-INF/LICENSE.md</resource>
+                                    </transformer>
+                                    <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                        <resource>META-INF/NOTICE.md</resource>
+                                    </transformer>
+                                    <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                        <resource>META-INF/io.netty.versions.properties</resource>
+                                    </transformer>
+                                    <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                        <manifestEntries><Multi-Release>true</Multi-Release></manifestEntries>
+                                    </transformer>
+                                </transformers>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.moditect</groupId>
+                    <artifactId>moditect-maven-plugin</artifactId>
+                    <version>1.2.2.Final</version>
+                    <executions>
+                        <execution>
+                            <id>describe-isolated-provider</id>
+                            <phase>package</phase>
+                            <goals><goal>add-module-info</goal></goals>
+                            <configuration>
+                                <jvmVersion>base</jvmVersion>
+                                <overwriteExistingFiles>true</overwriteExistingFiles>
+                                <module><moduleInfoSource>${shading.moduleInfo}</moduleInfoSource></module>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>flatten-maven-plugin</artifactId>
                     <version>1.6.0</version>

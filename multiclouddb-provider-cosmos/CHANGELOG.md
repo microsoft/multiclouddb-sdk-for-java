@@ -9,13 +9,19 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Replace the default provider JAR with provider-local relocated Azure SDK,
+  Jackson, Reactor, Netty and other Java dependencies. Preserve the explicit JPMS
+  module name, services, multi-release classes and prefixed Netty native resources.
+  API/SLF4J and JNA/JNA-platform remain external; the latter are shared JNI
+  exceptions, not fully isolated dependencies. Native exception cause class
+  identities change. Storage and portable API semantics are unchanged.
+  See the [dependency boundary and migration guidance](../docs/guide.md).
 - Use detached Maps for Cosmos writes and point reads, and Object change-feed
   payloads with null meaning no available image; native Cosmos serialization remains.
   Preserve supplied empty AVAD bodies and envelope/metadata identity fallback,
   but do not expose the transport envelope as a missing image.
   The API no longer supplies/pins application Jackson, but the native Cosmos
-  SDK still depends on Jackson. The resolved version depends on each
-  application's dependency management; this change does not add shading.
+  SDK still depends on Jackson, now isolated by the separate packaging change above.
   Common write validation now rejects null document roots before native I/O.
   **Breaking result-type migration:** see the [migration guide](../docs/guide.md#migrating-from-beta2).
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))

@@ -709,11 +709,11 @@ For the Jackson examples in this guide, add an application dependency:
 
 Use the [source-installed module versions](getting-started.md#2-add-dependencies)
 for this development API; installing the reactor does not change a consumer's
-explicit release dependency. JSON library/version compatibility remains the
-application's responsibility, including mediation with native provider dependencies.
+explicit release dependency. Applications choose and maintain their own JSON
+libraries; provider-private JSON libraries no longer participate in that mediation.
 
-Spanner now declares its explicit internal Gson 2.15 dependency; this does not add a
-JSON-library requirement to the common API.
+Spanner uses internal, relocated Gson 2.15 for stored JSON, field metadata and
+change-stream parsing. This does not add a JSON-library requirement to the common API.
 
 Cursor persistence now takes explicit callbacks: `cursor.toToken(serialize)`
 and `ChangeFeedCursor.fromToken(token, deserialize)`. Existing v1 JSON tokens
@@ -743,12 +743,62 @@ without schema introspection; that can fail for a non-STRING column. Common
 support for null values does not remove this native schema limitation. Nested
 nulls inside marked JSON STRINGs follow the JSON representation instead.
 
-The API does not require a JSON library, but native provider SDKs may still depend
-on one. These dependencies are not isolated from your application's dependencies.
+The API does not require a JSON library. The default Cosmos, DynamoDB and Spanner
+provider JARs now embed their native SDKs and Java runtime dependencies under
+provider-specific `com.multiclouddb.shaded.{cosmos,dynamo,spanner}` namespaces.
+Cosmos Jackson and Spanner Gson are included in this isolation boundary.
+Artifact coordinates and the portable API are unchanged; there is no separate
+shaded classifier to select.
+
+API/SPI classes and SLF4J remain shared. **JNI exceptions:** Cosmos retains
+`net.java.dev.jna:jna` and `jna-platform`, and Spanner retains
+`org.conscrypt:conscrypt-openjdk-uber`, as normal external dependencies. Maven/Gradle
+resolves these automatically; they are not `provided` dependencies. Their native
+binaries use fixed Java names, so they are not relocated. Application version
+mediation still applies to these exceptions: this is not complete isolation of
+every native dependency. Netty/gRPC native resources are bundled with the matching
+relocated loader prefixes.
+
+Applications using a cloud SDK directly must declare that SDK themselves. Do not
+import the relocated implementation packages, pass native SDK objects across the
+portable API, or cast exception causes to application SDK exception classes.
+Native causes are retained for diagnosis, but their class identities/names change;
+use `MulticloudDbException` and its portable error category instead. Native SDK
+ServiceLoader extensions, agents and reflection-based integrations targeting the
+original namespaces do not automatically apply to the private copies.
+Native SDK logger categories are relocated too; apply existing level/filter
+policies to the corresponding `com.multiclouddb.shaded.<provider>` prefix.
+JAR sizes increase, and embedded dependency/security updates require a new provider
+release rather than an application dependency override.
+
+Storage formats, numeric conversion, Unicode handling and cursor callbacks are
+unchanged by packaging; the existing Spanner limitations below still apply.
+The Java 17 classpath and explicit JPMS module names remain supported.
+GraalVM native-image packaging and arbitrary native-SDK instrumentation are not
+covered by this isolation change.
 
 JPMS applications require
 `com.multiclouddb.api`; opening DTO packages to an application mapper is the
 application's responsibility.
+
+For contributors, `mvn install -Punit` retains the source-level/native-mocking
+test lane. Then run the existing conformance harness against installed artifacts,
+outside the reactor:
+
+```bash
+mvn -f multiclouddb-conformance/pom.xml clean verify -DpackagedArtifacts
+```
+
+This forks clean and competing-dependency consumers on both classpath and
+module-path, checking published POMs, class origins, services, MR-JAR selection,
+JSON codecs and native loading. White-box probes open selected packages **only
+in the test JVM**; provider modules do not export their private implementation.
+For local emulator conformance, add `-DpackagedEmulator -Pemulator-dynamo`
+(or `emulator-cosmos` / `emulator-spanner`) and the existing emulator connection
+properties. CI also consumes the deployed staging repository with a fresh Maven
+cache, so reactor classes or previously installed artifacts cannot conceal
+publication errors. These checks do not replace real-account authentication or
+validation on each supported OS/architecture.
 
 ##### Known Spanner nested-value decoding issue
 

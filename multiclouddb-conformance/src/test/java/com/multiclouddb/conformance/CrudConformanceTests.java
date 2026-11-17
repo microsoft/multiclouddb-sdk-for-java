@@ -61,7 +61,10 @@ public abstract class CrudConformanceTests {
 
     private MulticloudDbClient client;
 
-    @BeforeEach void setUp()   { client = createClient(); }
+    @BeforeEach void setUp() throws Exception {
+        if (Boolean.getBoolean("packagedArtifacts")) ConformanceHarness.assertPackagedProviders();
+        client = createClient();
+    }
     @AfterEach  void tearDown() throws Exception { if (client != null) client.close(); }
 
     // ── helpers ──────────────────────────────────────────────────────────────
