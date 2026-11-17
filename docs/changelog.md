@@ -41,8 +41,9 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   native SDK/service size enforcement; identical input may succeed on one provider
   and fail on another. Common create/update/upsert validation permits 32 nested
   Map/List levels below the root Map (depth zero), with neutral-type, key,
-  finite-number and cycle checks retained. Cosmos HTTP 413 retains the baseline
-  non-retryable `PROVIDER_ERROR` classification.
+  finite-number and cycle checks retained. This migration retained the baseline
+  non-retryable `PROVIDER_ERROR` classification for Cosmos HTTP 413; the follow-up
+  category change is recorded under the Cosmos provider below.
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 - **Breaking:** Replace Jackson payload types with Map/Object in point-read
   and change-feed results; applications own object mapping. Cursor persistence
@@ -107,6 +108,13 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- Cosmos HTTP 413 now maps to non-retryable `INVALID_REQUEST` instead of
+  `PROVIDER_ERROR` wherever it reaches the common Cosmos error mapper. Native
+  status, message, cause, provider/operation, provider details and existing
+  diagnostics are preserved. This follow-up to the Map migration changes
+  category-based application switches, metrics and custom retry policies;
+  `retryable` remains false. No payload-size check or other status mapping is
+  changed.
 - Use detached Maps for Cosmos writes and point reads, and Object change-feed
   payloads with null meaning no available image; native Cosmos serialization remains.
   Preserve supplied empty AVAD bodies and envelope/metadata identity fallback,

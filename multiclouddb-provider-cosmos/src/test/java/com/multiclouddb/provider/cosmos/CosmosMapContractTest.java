@@ -391,7 +391,7 @@ class CosmosMapContractTest {
             clearInvocations(container);
             var failure = assertThrows(MulticloudDbException.class,
                     () -> client.upsert(ADDRESS, KEY, Map.of("body", "x".repeat(409600))));
-            assertEquals(MulticloudDbErrorCategory.PROVIDER_ERROR, failure.error().category());
+            assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, failure.error().category());
             assertFalse(failure.error().retryable());
             assertEquals(413, failure.error().statusCode());
             assertEquals(nativeSizeFailure.getMessage(), failure.getMessage());
