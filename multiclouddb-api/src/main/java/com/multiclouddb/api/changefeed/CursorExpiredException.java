@@ -8,7 +8,7 @@ import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.MulticloudDbException;
 
 /**
- * Thrown by {@link com.multiclouddb.api.changefeed.ChangeFeedCursor#fromToken(String)}
+ * Thrown by {@link com.multiclouddb.api.changefeed.ChangeFeedCursor#fromToken(String, java.util.function.BiFunction)}
  * and {@link com.multiclouddb.api.MulticloudDbClient#readChanges(
  * com.multiclouddb.api.ResourceAddress, ChangeFeedCursor)} when a cursor cannot
  * be safely resumed.

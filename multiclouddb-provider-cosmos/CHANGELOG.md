@@ -9,6 +9,16 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Use detached Maps for Cosmos writes and point reads, and Object change-feed
+  payloads with null meaning no available image; native Cosmos serialization remains.
+  Preserve supplied empty AVAD bodies and envelope/metadata identity fallback,
+  but do not expose the transport envelope as a missing image.
+  The API no longer supplies/pins application Jackson, but the native Cosmos
+  SDK still depends on Jackson. The resolved version depends on each
+  application's dependency management; this change does not add shading.
+  Common write validation now rejects null document roots before native I/O.
+  **Breaking result-type migration:** see the [migration guide](../docs/guide.md#migrating-from-beta2).
+  ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 - Cosmos clients now always use Gateway mode with HTTP/2 enabled. Upgraded
   `azure-cosmos` from 4.78.0 to 4.82.0 so account-advertised Gateway V2
   endpoints and the SDK connectivity probe can select routing automatically.

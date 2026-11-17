@@ -51,13 +51,12 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- Publishable module versions (independent release cadence) -->
-        <multiclouddb-api.version>0.1.0-beta.2</multiclouddb-api.version>
-        <multiclouddb-provider-cosmos.version>0.1.0-beta.2</multiclouddb-provider-cosmos.version>
-        <multiclouddb-provider-dynamo.version>0.1.0-beta.2</multiclouddb-provider-dynamo.version>
-        <multiclouddb-provider-spanner.version>0.1.0-beta.1</multiclouddb-provider-spanner.version>
+        <multiclouddb-api.version>0.1.0-beta.2-SNAPSHOT</multiclouddb-api.version>
+        <multiclouddb-provider-cosmos.version>0.1.0-beta.2-SNAPSHOT</multiclouddb-provider-cosmos.version>
+        <multiclouddb-provider-dynamo.version>0.1.0-beta.2-SNAPSHOT</multiclouddb-provider-dynamo.version>
+        <multiclouddb-provider-spanner.version>0.1.0-beta.1-SNAPSHOT</multiclouddb-provider-spanner.version>
 
         <!-- Dependency versions -->
-        <jackson.version>2.22.3</jackson.version>
         <slf4j.version>2.0.12</slf4j.version>
         <azure-cosmos.version>4.82.0</azure-cosmos.version>
         <azure-core.version>1.59.0</azure-core.version>
@@ -99,13 +98,6 @@
                 <groupId>com.microsoft.multiclouddb</groupId>
                 <artifactId>multiclouddb-provider-spanner</artifactId>
                 <version>${multiclouddb-provider-spanner.version}</version>
-            </dependency>
-
-            <!-- Jackson -->
-            <dependency>
-                <groupId>com.fasterxml.jackson.core</groupId>
-                <artifactId>jackson-databind</artifactId>
-                <version>${jackson.version}</version>
             </dependency>
 
             <!-- Logging -->

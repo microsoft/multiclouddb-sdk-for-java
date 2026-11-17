@@ -7,9 +7,19 @@ import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.ReadContext;
 import com.google.cloud.spanner.ResultSet;
 import com.google.cloud.spanner.Statement;
+import com.google.cloud.spanner.Struct;
+import com.google.cloud.spanner.ResultSets;
+import com.google.cloud.spanner.Value;
+import com.google.cloud.Timestamp;
+import com.multiclouddb.api.OperationOptions;
+import com.multiclouddb.api.changefeed.ChangeEvent;
+import com.multiclouddb.api.changefeed.ChangeType;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.ResourceAddress;
 import com.multiclouddb.api.changefeed.ChangeFeedCursor;
+import com.multiclouddb.api.changefeed.internal.CursorAnchor;
+import com.multiclouddb.api.changefeed.internal.CursorToken;
+import com.multiclouddb.api.changefeed.internal.PartitionPosition;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -19,25 +29,304 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for {@link SpannerChangeFeedReader#listCursors(ResourceAddress)}.
- * <p>
- * The success path (row decoding) is exercised by the emulator-backed
- * {@code SpannerChangeFeedConformanceTest}; mocking the deeply-nested
- * change-stream row schema in a unit test would be more fragile than
- * informative. This unit test covers the most ambiguous timing branch —
- * placeholder minting on an empty TVF result — and asserts that the
- * {@code issuedAtEpochMillis} stamped on the placeholder reflects the
- * instant the result-set was observed exhausted, matching the invariant
- * established by the Cosmos and Dynamo readers.
+ * Native-result fixtures for selected change images, native JSON representations
+ * and cursor timing. These tests do not require a running Spanner service.
  */
 class SpannerChangeFeedReaderTest {
 
     private static final ResourceAddress ADDR = new ResourceAddress("test_db", "test_collection");
+
+    @Test
+    void finalEventsPreserveSelectedValuesNullEmptyAndFieldDataFiltering() {
+        String newer = "{\"partitionKey\":\"tenant\",\"sortKey\":\"record\","
+                + "\"nested\":[null,{\"n\":2}],\"stale\":true,\"data\":\"[\\\"nested\\\"]\"}";
+        String older = "{\"old\":true}";
+        ChangeEvent inserted = readValues("INSERT", newer, older);
+        assertEquals(ChangeType.CREATE, inserted.type());
+        assertEquals(Map.of("partitionKey", "tenant", "sortKey", "record",
+                "nested", java.util.Arrays.asList(null, Map.of("n", 2))), inserted.data());
+        assertFalse(((Map<?, ?>) inserted.data()).containsKey("data"));
+        assertFalse(((Map<?, ?>) inserted.data()).containsKey("stale"));
+        assertEquals(inserted.data(), readValues("UPDATE", newer, older).data());
+        ChangeEvent deleted = readValues("DELETE", newer, older);
+        assertEquals(ChangeType.DELETE, deleted.type());
+        assertEquals(Map.of("old", true), deleted.data());
+        assertNull(readValues("UPDATE", "null", null).data());
+        assertEquals(Map.of("bytes", "AQI="),
+                readValues("UPDATE", "{\"bytes\":\"AQI=\"}", null).data(),
+                "native change-stream JSON text is not inferred to be binary");
+        assertNull(readValues("UPDATE", null, null).data());
+        assertEquals(Map.of(), readValues("UPDATE", "{}", older).data());
+        assertEquals(Map.of("old", true), readValues("UPDATE", null, older).data());
+    }
+
+    @Test
+    void acceptsReleasedDepthBeyondRemovedModelLimit() {
+        for (int depth : List.of(256, 1000)) {
+            String json = "{\"nested\":" + "[".repeat(depth - 1) + "null" + "]".repeat(depth - 1) + "}";
+            ChangeEvent event = readValues("UPDATE", json, null);
+            assertNotNull(event.data());
+            Object value = org.junit.jupiter.api.Assertions.assertInstanceOf(Map.class, event.data()).get("nested");
+            for (int i = 1; i < depth; i++) {
+                value = org.junit.jupiter.api.Assertions.assertInstanceOf(List.class, value).get(0);
+            }
+            assertNull(value);
+        }
+        String rejected = "{\"nested\":" + "[".repeat(1000) + "null" + "]".repeat(1000) + "}";
+        assertEquals(Map.of("raw", rejected), readValues("UPDATE", rejected, null).data());
+        assertEquals(Map.of("raw", rejected),
+                readValues("UPDATE", rejected, null, List.of(column("v", "INT64"))).data());
+    }
+
+    @Test
+    void overLimitNumericFieldMetadataKeepsUnlistedFields() throws Exception {
+        String json = SpannerRowMapper.writeJson(Map.of("data", "[\"kept\"," + "1".repeat(1001) + "]",
+                "kept", "a", "unlisted", "b", "v", "2"));
+        for (String operation : List.of("INSERT", "UPDATE", "DELETE")) {
+            assertEquals(Map.of("kept", "a", "unlisted", "b", "v", "2"),
+                    readValues(operation, json, json).data());
+            assertEquals(Map.of("kept", "a", "unlisted", "b", "v", "2"),
+                    readValues(operation, json, json, List.of(column("v", "INT64"))).data());
+        }
+    }
+
+    @Test
+    void strictUnicodeRetainsImageMetadataAndEmbeddedMarkerPolicies() throws Exception {
+        String valid = "\uD55C\uAE00\uD83D\uDE00";
+        assertEquals(Map.of("s", valid), readValues("INSERT", "{\"s\":\"" + valid + "\"}", null).data());
+        assertEquals(Map.of("s", valid),
+                readValues("INSERT", "{\"s\":\"\\ud55c\\uae00\\ud83d\\ude00\"}", null).data());
+        for (String invalid : List.of("\ud800", "\udc00", "\\ud800", "\\udc00")) {
+            String json = "{\"s\":\"" + invalid + "\"}";
+            ChangeEvent event = readValues("UPDATE", json, null);
+            assertEquals(Map.of("raw", json), event.data());
+            assertNotNull(event.data());
+            assertEquals(Map.of("raw", json),
+                    readValues("UPDATE", json, null, List.of(column("v", "INT64"))).data());
+        }
+        for (String invalid : List.of("\\ud800", "\\udc00")) {
+            String metadataImage = SpannerRowMapper.writeJson(Map.of("data", "[\"" + invalid + "\"]", "s", 1, "extra", 2));
+            assertEquals(Map.of("s", 1, "extra", 2), readValues("UPDATE", metadataImage, null).data());
+        }
+        String marker = SpannerConstants.JSON_VALUE_MARKER + "{\"s\":\"\\ud800\"}";
+        assertEquals(Map.of("nested", marker),
+                readValues("UPDATE", SpannerRowMapper.writeJson(Map.of("nested", marker)), null).data(),
+                "change images do not recursively decode JSON marker strings");
+    }
+
+    @Test
+    void nativeNumericStringsRemainStringsInSelectedCreateUpdateAndDeleteImages() {
+        List<Struct> columns = List.of(column("v", "INT64"), column("text", "STRING"),
+                column("data", "STRING"), column("stale", "INT64"));
+        String newer = "{\"v\":\"1\",\"text\":\"1\",\"stale\":\"not-an-integer\","
+                + "\"data\":\"[\\\"v\\\",\\\"text\\\"]\"}";
+        String older = "{\"v\":\"-2\",\"text\":\"-2\",\"data\":\"[\\\"v\\\",\\\"text\\\"]\"}";
+        for (String operation : List.of("INSERT", "UPDATE", "DELETE")) {
+            ChangeEvent event = readValues(operation, newer, older, columns);
+            long expected = operation.equals("DELETE") ? -2 : 1;
+            assertEquals(Map.of("v", Long.toString(expected), "text", Long.toString(expected)), event.data());
+            assertEquals(operation.equals("INSERT") ? ChangeType.CREATE
+                    : operation.equals("DELETE") ? ChangeType.DELETE : ChangeType.UPDATE, event.type());
+            assertEquals(com.multiclouddb.api.MulticloudDbKey.of("tenant", "record"), event.key());
+            assertTrue(event.providerEventId().startsWith("txn:"));
+        }
+    }
+
+    @Test
+    void nativeJsonNumbersRetainParserTypesWithoutColumnCoercion() {
+        List<Struct> columns = List.of(column("integer", "INT64"), column("long", "INT64"),
+                column("min", "INT64"), column("max", "INT64"), column("big", "INT64"),
+                column("fraction", "INT64"), column("exponent", "INT64"), column("text", "INT64"));
+        String image = "{\"integer\":1,\"long\":9007199254740993,"
+                + "\"min\":-9223372036854775808,\"max\":9223372036854775807,"
+                + "\"big\":9223372036854775808,\"fraction\":1.5,\"exponent\":1e3,"
+                + "\"text\":\"9223372036854775808\"}";
+        Map<String, Object> expected = Map.of("integer", 1, "long", 9007199254740993L,
+                "min", Long.MIN_VALUE, "max", Long.MAX_VALUE,
+                "big", new java.math.BigInteger("9223372036854775808"),
+                "fraction", 1.5, "exponent", 1000.0, "text", "9223372036854775808");
+        for (String operation : List.of("INSERT", "UPDATE", "DELETE")) {
+            assertEquals(expected, readValues(operation, image, image, columns).data());
+        }
+    }
+
+    @Test
+    void columnMetadataDoesNotChangeNullMissingOrFilteredFields() {
+        List<Struct> columns = List.of(column("first", "INT64"), column("second", "INT64"),
+                column("data", "STRING"));
+        for (String operation : List.of("INSERT", "UPDATE", "DELETE")) {
+            for (String image : List.of("{\"second\":\"2\"}",
+                    "{\"first\":null,\"second\":\"2\"}",
+                    "{\"first\":\"not-an-integer\",\"second\":\"2\",\"data\":\"[\\\"second\\\"]\"}")) {
+                Map<String, Object> expected = new java.util.LinkedHashMap<>();
+                if (image.contains("\"first\":null")) {
+                    expected.put("first", null);
+                }
+                expected.put("second", "2");
+                assertEquals(expected, readValues(operation, image, image, columns).data());
+            }
+        }
+    }
+
+    @Test
+    void columnMetadataDoesNotChangeImageAvailabilityOrSelection() {
+        List<Struct> columns = List.of(column("v", "INT64"));
+        assertEquals(java.util.Collections.singletonMap("v", null),
+                readValues("INSERT", "{\"v\":null}", null, columns).data());
+        assertNull(readValues("UPDATE", "null", null, columns).data());
+        assertEquals(Map.of(), readValues("INSERT", "{}", "{\"v\":\"2\"}", columns).data());
+        assertNull(readValues("UPDATE", null, null, columns).data());
+        assertEquals(Map.of("v", "2"),
+                readValues("UPDATE", null, "{\"v\":\"2\"}", columns).data());
+        assertEquals(Map.of("v", "3"),
+                readValues("DELETE", "{\"v\":\"3\"}", null, columns).data());
+        assertEquals(Map.of(), readValues("DELETE", "{\"v\":\"3\"}", "{}", columns).data());
+        for (String operation : List.of("INSERT", "UPDATE", "DELETE")) {
+            assertEquals(Map.of("v", "1"),
+                    readValues(operation, operation.equals("DELETE") ? "not-json" : "{\"v\":\"1\"}",
+                            operation.equals("DELETE") ? "{\"v\":\"1\"}" : "not-json", columns).data(),
+                    "unselected images must not be decoded");
+        }
+    }
+
+    @Test
+    void columnMetadataDoesNotCoerceJsonValues() {
+        String json = "{\"v\":\"1\"}";
+        Map<String, Object> text = Map.of("v", "1");
+        assertEquals(text, readValues("INSERT", json, null).data());
+        assertEquals(text, readValues("INSERT", json, null, List.of()).data());
+        assertEquals(text, readValues("INSERT", json, null, List.of(column("other", "INT64"))).data());
+        for (String type : List.of("INT64", "STRING", "NUMERIC", "BYTES", "JSON")) {
+            assertEquals(text, readValues("INSERT", json, null, List.of(column("v", type))).data());
+        }
+        Struct arrayColumn = columnType("v", Value.json(
+                "{\"code\":\"ARRAY\",\"array_element_type\":{\"code\":\"INT64\"}}"));
+        assertEquals(Map.of("v", java.util.Arrays.asList("1", null)),
+                readValues("INSERT", "{\"v\":[\"1\",null]}", null, List.of(arrayColumn)).data());
+        assertEquals(Map.of("raw", "not-json"),
+                readValues("UPDATE", "not-json", null).data());
+    }
+
+    @Test
+    void malformedColumnMetadataDoesNotAffectPayload() {
+        Map<String, Object> expected = Map.of("v", "1");
+        assertEquals(expected,
+                readValues("INSERT", "{\"v\":\"1\"}", null,
+                        List.of(columnType("v", Value.string("{\"code\":\"INT64\"}")))).data());
+        for (String invalid : List.of("not-json", "null", "{}", "{\"code\":1}",
+                "{\"code\":\"\\ud800\"}", "{\"code\":\"\\udc00\"}")) {
+            assertEquals(expected, readValues("INSERT", "{\"v\":\"1\"}", null,
+                    List.of(columnType("v", Value.json(invalid)))).data());
+        }
+        assertEquals(expected, readValues("INSERT", "{\"v\":\"1\"}", null,
+                List.of(columnType("v", Value.json(null)))).data());
+        assertEquals(expected, readValues("INSERT", "{\"v\":\"1\"}", null,
+                List.of(column("v", "INT64"), column("v", "STRING"))).data());
+    }
+
+    private static Struct column(String name, String code) {
+        return columnType(name, Value.json("{\"code\":\"" + code + "\"}"));
+    }
+
+    private static Struct columnType(String name, Value type) {
+        return Struct.newBuilder().set("name").to(name).set("type").to(type)
+                .set("is_primary_key").to(false).set("ordinal_position").to(1L).build();
+    }
+
+    private static ChangeEvent readValues(String operation, String newer, String older) {
+        return readValues(operation, newer, older, null);
+    }
+
+    private static ChangeEvent readValues(String operation, String newer, String older, List<Struct> columns) {
+        return readValues(operation, newer, older, columns, null, false);
+    }
+
+    @Test
+    void captureModeSeparatesUncollectedImagesFromSuppliedEmptyPayloads() {
+        for (String mode : List.of("NEW_VALUES", "NEW_ROW", "OLD_AND_NEW_VALUES", "NEW_ROW_AND_OLD_VALUES")) {
+            boolean newOnly = mode.equals("NEW_VALUES") || mode.equals("NEW_ROW");
+            for (String operation : List.of("INSERT", "UPDATE", "DELETE")) {
+                for (String json : java.util.Arrays.asList(null, "null", "{}", "{\"nullable\":null}",
+                        "{\"v\":\"7\",\"data\":\"[\\\"v\\\"]\",\"stale\":true}", "{\"data\":\"[]\",\"stale\":true}",
+                        "[]", "\"scalar\"")) {
+                    boolean delete = operation.equals("DELETE");
+                    ChangeEvent event = readValues(operation, delete ? "{}" : json, delete ? json : "{}",
+                            List.of(column("v", "INT64")), mode, false);
+                    Object expected = json == null || json.equals("null") || delete && newOnly ? null
+                            : json.equals("{}") || json.startsWith("{\"data\":") ? Map.of()
+                            : json.equals("{\"nullable\":null}") ? java.util.Collections.singletonMap("nullable", null)
+                            : json.equals("[]") ? List.of()
+                            : json.equals("\"scalar\"") ? "scalar" : Map.of("v", "7");
+                    // For UPDATE, collected old values remain the existing fallback for a SQL-null new image.
+                    if (operation.equals("UPDATE") && !newOnly && json == null) expected = Map.of();
+                    assertEquals(expected, event.data(), mode + "/" + operation + "/" + json);
+                    assertEquals(delete ? ChangeType.DELETE
+                            : operation.equals("INSERT") ? ChangeType.CREATE : ChangeType.UPDATE, event.type());
+                    assertEquals(com.multiclouddb.api.MulticloudDbKey.of("tenant", "record"), event.key());
+                    assertNotNull(event.commitTimestamp());
+                    assertTrue(event.providerEventId().startsWith("txn:"));
+                    assertTrue(event.providerEventId().endsWith(":1:0"));
+                }
+                assertNull(readValues(operation, null, null, List.of(), mode, true).data(),
+                        "missing value fields do not synthesize an empty payload");
+            }
+        }
+        assertNull(readValues("INSERT", null, "{\"old\":1}", List.of(), "OLD_AND_NEW_VALUES", false).data(),
+                "INSERT has no collected before-image");
+        assertNull(readValues("DELETE", "{\"new\":1}", null, List.of(), "OLD_AND_NEW_VALUES", false).data(),
+                "DELETE has no collected after-image");
+        assertEquals(Map.of("old", 1),
+                readValues("UPDATE", null, "{\"old\":1}", List.of(), "FUTURE_MODE", false).data(),
+                "unknown capture metadata retains the legacy field-selection fallback");
+    }
+
+    private static ChangeEvent readValues(String operation, String newer, String older, List<Struct> columns,
+                                          String captureType, boolean omitValueFields) {
+        Timestamp now = Timestamp.now();
+        String keys = "{\"partitionKey\":\"tenant\",\"sortKey\":\"record\"}";
+        Struct.Builder modBuilder = Struct.newBuilder().set("keys")
+                .to(columns == null ? Value.string(keys) : Value.json(keys));
+        if (!omitValueFields) {
+            modBuilder.set("new_values").to(columns == null ? Value.string(newer) : Value.json(newer))
+                    .set("old_values").to(columns == null ? Value.string(older) : Value.json(older));
+        }
+        Struct mod = modBuilder.build();
+        Struct.Builder record = Struct.newBuilder().set("commit_timestamp").to(now)
+                .set("record_sequence").to("1").set("server_transaction_id").to("txn")
+                .set("mod_type").to(operation).set("mods").toStructArray(mod.getType(), List.of(mod));
+        if (captureType != null) record.set("value_capture_type").to(captureType);
+        if (columns != null) {
+            record.set("column_types").toStructArray(
+                    columns.isEmpty() ? column("v", "INT64").getType() : columns.get(0).getType(), columns);
+        }
+        Struct dataRecord = record.build();
+        Struct outer = Struct.newBuilder().set("data_change_record")
+                .toStructArray(dataRecord.getType(), List.of(dataRecord)).build();
+        Struct row = Struct.newBuilder().set("ChangeRecord")
+                .toStructArray(outer.getType(), List.of(outer)).build();
+        DatabaseClient db = mock(DatabaseClient.class);
+        ReadContext context = mock(ReadContext.class);
+        when(db.singleUse()).thenReturn(context);
+        when(context.executeQuery(any(Statement.class))).thenAnswer(
+                call -> ResultSets.forRows(row.getType(), List.of(row)));
+        ChangeFeedCursor cursor = new ChangeFeedCursor(new CursorToken(ProviderId.SPANNER, ADDR,
+                System.currentTimeMillis(), CursorAnchor.CONTINUING,
+                List.of(new PartitionPosition("partition", now + "|0|0"))));
+        var page = new SpannerChangeFeedReader(ProviderId.SPANNER, db, Map.of())
+                .readChanges(ADDR, cursor, OperationOptions.defaults());
+        assertEquals(1, page.events().size(), "lack of payload must not discard the event");
+        ChangeEvent event = page.events().get(0);
+        assertEquals(java.time.Instant.ofEpochSecond(now.getSeconds(), now.getNanos()), event.commitTimestamp());
+        assertEquals("txn:" + now + ":1:0", event.providerEventId());
+        return event;
+    }
 
     @Test
     @DisplayName("Empty result placeholder: one __bootstrap__ cursor with issuedAt within call window")

@@ -4,7 +4,6 @@
 package com.multiclouddb.conformance.us5;
 
 import com.multiclouddb.api.*;
-import com.fasterxml.jackson.databind.JsonNode;
 import java.util.Map;
 import org.junit.jupiter.api.*;
 
@@ -166,13 +165,13 @@ public abstract class ResultSetControlConformanceTest {
 
         // Seed documents have deterministic score values (10, 20, 30, 40, 50).
         // ASC should return the item with score=10 first; DESC should return score=50 first.
-        JsonNode ascFirst = (JsonNode) ascItems.get(0);
-        JsonNode descFirst = (JsonNode) descItems.get(0);
+        Map<?, ?> ascFirst = (Map<?, ?>) ascItems.get(0);
+        Map<?, ?> descFirst = (Map<?, ?>) descItems.get(0);
         assertNotNull(ascFirst, "ASC first item must not be null");
         assertNotNull(descFirst, "DESC first item must not be null");
-        assertEquals(10, ascFirst.get("score").asInt(),
+        assertEquals(10, ((Number) ascFirst.get("score")).intValue(),
                 "ASC ordering must return lowest score (10) first");
-        assertEquals(50, descFirst.get("score").asInt(),
+        assertEquals(50, ((Number) descFirst.get("score")).intValue(),
                 "DESC ordering must return highest score (50) first");
     }
 

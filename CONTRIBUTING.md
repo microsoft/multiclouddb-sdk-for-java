@@ -170,15 +170,12 @@ mvn test -pl multiclouddb-conformance -Dtest=SpannerConformanceTest
 
 - **Java 17** language level across all modules.
 - Follow standard Java naming conventions.
-- Prefer immutable value types: use `Map.copyOf()` / `List.copyOf()` for
-  public API return values; document mutability clearly in Javadoc.
+- Follow the [document ownership contracts](docs/contributing.md):
+  writes do not mutate or retain caller containers, point-read/feed results are
+  detached and mutable, and QueryPage protects only its outer containers.
 - Avoid Jackson or provider-specific types on the public API surface
   (`com.multiclouddb.api.*`). Documents are `Map<String, Object>`.
-  > **Note:** The current API uses `JsonNode` (Jackson). Migration to
-  > `Map<String, Object>` is tracked in
-  > [issue #9](https://github.com/microsoft/multiclouddb-sdk-for-java/issues/9).
-  > Until that migration is complete, new code may use `JsonNode` on the
-  > public surface while following this guideline in spirit.
+  Change-feed payloads use neutral Map/List/scalar values, not JSON-library trees.
 - Keep the public API surface minimal. Only expose what has a demonstrated
   use case.
 - Provider adapters must not bleed provider-specific details into the

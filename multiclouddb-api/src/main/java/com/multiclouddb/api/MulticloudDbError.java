@@ -9,7 +9,7 @@ import java.util.Map;
 /**
  * Immutable, provider-neutral structured error carrying error category,
  * human-readable message, retryability hint, raw HTTP/gRPC status code,
- * and sanitized provider-specific details.
+ * and provider-specific diagnostic details.
  * <p>
  * All map accessors return <em>unmodifiable</em> views — any attempt to mutate
  * them will throw {@link UnsupportedOperationException}.
@@ -84,8 +84,10 @@ public final class MulticloudDbError {
     }
 
     /**
-     * Sanitized provider-specific details (provider error codes, request IDs,
-     * request charge, etc.) suitable for logging and diagnostics.
+     * Provider-specific details (provider error codes, request IDs, request
+     * charge and, for some providers, native error text).
+     * Native diagnostic text can contain sensitive data; apply application
+     * redaction and access policies before logging it.
      * <p>
      * Keys vary by provider — use {@link #category()} and {@link #statusCode()}
      * for portable error handling; treat this map as opaque diagnostic data.

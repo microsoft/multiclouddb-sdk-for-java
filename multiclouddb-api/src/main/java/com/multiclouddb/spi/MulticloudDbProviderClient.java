@@ -33,6 +33,9 @@ import java.util.concurrent.TimeUnit;
 /**
  * SPI contract for a provider client that implements CRUD + query operations.
  * Provider adapters create instances of this interface.
+ * Write inputs follow {@link com.multiclouddb.api.MulticloudDbClient}'s neutral
+ * value contract. Implementations must not mutate or retain caller input after
+ * return, and must detach returned data from retained native response state.
  */
 public interface MulticloudDbProviderClient extends AutoCloseable {
 

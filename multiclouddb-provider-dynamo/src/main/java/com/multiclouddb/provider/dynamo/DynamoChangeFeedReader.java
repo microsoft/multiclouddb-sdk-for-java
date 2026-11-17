@@ -3,7 +3,6 @@
 
 package com.multiclouddb.provider.dynamo;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.multiclouddb.api.MulticloudDbClientConfig;
 import com.multiclouddb.api.MulticloudDbError;
 import com.multiclouddb.api.MulticloudDbErrorCategory;
@@ -592,12 +591,14 @@ final class DynamoChangeFeedReader {
                 ? MulticloudDbKey.of(pk, sk)
                 : MulticloudDbKey.of(pk);
 
-        Map<String, AttributeValue> imageAttrs = rec.dynamodb() != null
+        boolean imagePresent = rec.dynamodb() != null && (type == ChangeType.DELETE
+                ? rec.dynamodb().hasOldImage() : rec.dynamodb().hasNewImage());
+        Map<String, AttributeValue> imageAttrs = imagePresent
                 ? (type == ChangeType.DELETE
                         ? rec.dynamodb().oldImage()
                         : rec.dynamodb().newImage())
                 : null;
-        JsonNode data = imageAttrs != null ? DynamoItemMapper.attributeMapToJsonNode(imageAttrs) : null;
+        Map<String, Object> data = imageAttrs != null ? DynamoItemMapper.attributeMapToMap(imageAttrs) : null;
 
         return new ChangeEvent(key, type, commitTs, data, eventId);
     }

@@ -4,6 +4,31 @@
 **Created**: 2026-01-23  
 **Status**: Draft  
 
+## Current document contract
+
+Writes and point-read payloads use `Map<String, Object>`; change-feed data uses
+Object: null means no available payload, while a non-null empty Map is a payload
+with no included fields. Applications check `data() != null`; top-level explicit
+null is not a separate state. Null-valued Map fields and event metadata remain
+preserved. No separate presence accessor, field or constructor argument is used.
+QueryPage retains Map rows.
+Applications own Java object mapping; no SDK mapper interface or serializer
+module is introduced. Supported values, presence and synchronous ownership
+follow [the data model](data-model.md#document), with migration and native
+conversion limitations in the [guide](../../docs/guide.md#application-owned-mapping).
+Preserve numeric conversion and storage formats. Remove the existing 399 KiB
+logical input estimate; native SDKs/services decide size acceptance. Exact write
+validation uses an LCD of 32 nested Map/List levels below the root Map (depth zero),
+without changing cursor or read/query/feed parser limits. No binary support or
+offload is implemented.
+The proposed large-object/chunking sections below are not shipped behavior or
+authority to expand this increment's size contract. Historical research/tasks
+record earlier milestones; current payload contracts are defined here.
+All future bulk/offload/chunking requirements below that assume a uniform
+400 KB threshold (including FR-073, FR-082, FR-088, FR-092 and their acceptance
+criteria) have a superseded size premise and require separate design before
+implementation. They do not reinstate a byte limit or authorize offload/chunking.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Write Once, Run Anywhere CRUD + Query (Priority: P1)
@@ -169,20 +194,20 @@ As an application developer, I can set a time-to-live (TTL) on individual docume
 
 ---
 
-### User Story 7 - Uniform Document Size and Quota Limits (Priority: P2)
+### User Story 7 - Exact Write Validation and Native Size Limits (Priority: P2)
 
-As an application developer, I experience consistent document size limits and quota constraints across all providers, so that my application behaves predictably regardless of which provider is selected.
+As an application developer, I receive consistent validation of measurable input properties and documented native size/quota limitations, without a misleading common byte estimate.
 
-**Why this priority**: Providers impose different native limits for document size, partition size, and other quotas (e.g., DynamoDB's 400 KB item size vs. Cosmos DB's 2 MB default, or varying logical partition size caps). Without uniform enforcement, applications may work on one provider but fail unexpectedly on another, undermining portability.
+**Why this priority**: Native representations and partial-update state prevent a common input byte count from predicting storage success. Identical data can succeed on one provider and fail on another; this limitation must be explicit. Exact neutral-value and nesting checks still fail consistently before native I/O.
 
-**Independent Test**: A document exceeding 400 KB is rejected with a clear error on every provider, and a document within 400 KB is accepted on every provider.
+**Independent Test**: Explicit provider mocks accept delegation of valid large inputs and depth 31/32; depth 33 fails before delegation for all three write operations. Root Map is depth zero. No live service is required for these checks.
 
 **Acceptance Scenarios**:
 
-1. **Given** a document within the SDK's uniform size limit, **When** it is stored on any provider, **Then** it is persisted successfully.
-2. **Given** a document exceeding the SDK's uniform size limit, **When** the application attempts to store it on any provider, **Then** the SDK raises a clear, consistent error indicating the limit before sending the request to the provider.
-3. **Given** a provider with a native size limit larger than the SDK's uniform limit, **When** a document exceeding the SDK limit is submitted, **Then** the SDK still rejects it to maintain cross-provider consistency.
-4. **Given** quota limits defined by the SDK (e.g., maximum partition size), **When** those limits are approached or exceeded, **Then** the SDK surfaces clear, provider-neutral errors or warnings.
+1. **Given** supported input at or above the former size boundary, **When** it is written, **Then** the common validator does not measure/reject it by bytes; native size constraints still apply.
+2. **Given** 33 nested Map/List levels below the root, **When** create/update/upsert is called, **Then** non-retryable `INVALID_REQUEST` occurs before provider delegation.
+3. **Given** at most 32 nested levels, **When** other input checks pass, **Then** the request reaches the provider; empty containers count, scalars do not, and native success is not guaranteed.
+4. **Given** a native size/quota failure, **Then** existing provider-neutral normalization applies, potentially after network I/O/cost; unchanged oversized inputs must not be blindly retried.
 
 ---
 
@@ -561,7 +586,7 @@ As an application developer, I can perform portable secondary lookups and, separ
 - What happens when the query expression is empty or null? The SDK must return all items (no filter), equivalent to a full scan.
 - What happens when a field name in the expression is a reserved word in the target provider (e.g., `status` in DynamoDB)? The SDK must handle escaping/quoting automatically.
 - What happens when the expression references a field that does not exist on some documents? Items where the field is absent should not match equality/comparison conditions.
-- What happens when a document exceeds the SDK's uniform size limit? The SDK must reject it with a clear error before sending the request to the provider.
+- What happens when a document exceeds a native size limit? The native SDK/service decides acceptance, and the SDK normalizes its error. There is no common input-byte cap; the same document can succeed on one provider and fail on another, potentially after I/O.
 - What happens when TTL is set on a provider that does not support row-level TTL? The SDK must fail fast with a clear error.
 - What happens when a provider's native quota (e.g., partition size) is exceeded? The SDK must surface the provider error in a provider-neutral format so applications can handle it uniformly.
 - What happens when a query with a result limit spans multiple pages? The limit applies to the total result count, not per-page.
@@ -628,7 +653,7 @@ The SDK enforces a strict no-code-escape-hatch policy to preserve portability:
 - **FR-011**: The SDK MUST expose retry behavior controls and MUST default to retrying only operations that are safe to retry.
 - **FR-012**: The SDK MUST expose diagnostic metadata for each operation (at minimum: provider identifier, operation name, duration, and a correlation/request identifier when available).
 - **FR-013**: The SDK MUST provide a standardized, provider-neutral error model that categorizes failures and includes a “retryable” signal.
-- **FR-014**: Errors MUST preserve relevant provider details (e.g., provider error codes and request identifiers) in a sanitized form suitable for logging and troubleshooting.
+- **FR-014**: Errors MUST preserve available provider details (e.g., provider error codes and request identifiers), native messages and original causes for troubleshooting. Native text can contain sensitive data; applications MUST apply their own logging/redaction policy. SDK document-validation diagnostics and cursor JSON callback/result-access failures use separate sanitized diagnostics without input values or original callback exceptions.
 - **FR-015**: The SDK MUST NOT expose the underlying native provider client via its public API. All provider-specific behaviors are accessed through explicit capability-gated SDK features or SDK configuration. Code-level access to provider internals is not supported in v1.
 - **FR-016**: Each provider integration MUST be implemented as a provider adapter that conforms to the same contract and can be validated via the shared conformance tests.
 - **FR-017**: The SDK MUST provide a conformance test suite that can be executed against each supported provider to verify portability of the minimum contract.
@@ -711,19 +736,19 @@ The SDK enforces a strict no-code-escape-hatch policy to preserve portability:
 - **FR-058**: When reading a document, the SDK MUST return available document metadata — including approximate remaining TTL (when set) and last write timestamp — in a portable metadata envelope alongside the document payload.
 - **FR-059**: Document metadata retrieval MUST be optional and opt-in. Applications that do not request metadata MUST NOT incur additional overhead or behavioral changes.
 
-#### Uniform Document Size and Quota Limit Requirements
+#### Exact Write Validation and Native Size/Quota Requirements
 
-- **FR-060**: The SDK MUST define a uniform maximum document size that is enforced consistently across all providers. The lowest common denominator is currently DynamoDB's 400 KB item size limit, so the SDK's uniform limit MUST be 400 KB, ensuring documents accepted by the SDK are storable on every provider.
-- **FR-061**: The SDK MUST validate document size against the uniform limit before sending the request to the provider and MUST reject oversized documents with a clear, actionable error.
-- **FR-062**: The SDK MUST define and document uniform quota limits for provider resources (e.g., maximum logical partition size) so that applications can anticipate constraints regardless of the selected provider.
+- **FR-060**: The SDK MUST NOT impose a common estimated byte limit. Native SDKs/services decide size acceptance; metadata, keys/TTL, encoding and existing partial-update state can make identical input succeed on one provider and fail on another.
+- **FR-061**: After the closed-client check, create/update/upsert MUST validate null roots, exact supported types, string Map keys, finite floating values, cycles and depth before provider delegation. Root Map depth is zero; each nested Map/List (including empty containers) adds one, scalars add none, and the maximum path is 32. Violations produce non-retryable `INVALID_REQUEST`. Validation is iterative, permits shared acyclic subtrees and does not modify, copy, serialize or size-count input. Cursor/read parser limits remain unchanged.
+- **FR-062**: The SDK MUST document provider-specific resource quotas (e.g., maximum logical partition size), rather than promise uniform storage capacity across different native representations.
 - **FR-063**: When a provider-specific quota limit is reached (e.g., partition size exceeded, throughput exhausted), the SDK MUST surface the failure through the standard provider-neutral error model with clear categorization and actionable guidance.
-- **FR-064**: The SDK MUST expose the configured uniform document size limit and documented quota limits programmatically so applications can perform pre-validation or display limits to end users.
+- **FR-064**: The SDK MUST document exact input validation and provider-specific size/quota limitations, without exposing a fictitious common byte allowance or promising native success. Native failures may incur network I/O/cost; no new size category, bypass, automatic chunking or offload is added.
 
 #### Change Data Capture / Change Feed Requirements
 
 - **FR-065**: The SDK MUST provide a portable change feed abstraction that enables applications to consume a chronologically ordered stream of item-level changes (creates, updates, and optionally deletes) from a collection.
 - **FR-066**: Change feed consumption MUST support starting from: (a) the beginning of available changes, (b) a specific point in time, or (c) a previously stored checkpoint/continuation token. For option (b), the "specific point in time" MUST be represented on the SDK API surface as a UTC instant encoded as an RFC 3339 / ISO 8601 timestamp with a `Z` suffix (for example, `2026-01-23T12:34:56.789Z`). The SDK MUST interpret this value against the provider's native change-record timestamp used to order and resume the provider's change feed; it MUST NOT use client-local time or an unspecified local timezone.
-  - *Implementation status (2026-06):* v1 ships only the live-tip start (`ChangeFeedCursor.now()`) and the continuation-token resume (`ChangeFeedCursor.fromToken(String)`). FR-066(a) "beginning of available changes" and FR-066(b) "specific point in time" are deferred — the cursor model and codec are forward-compatible (a `FROM_BEGINNING` and `AT_TIMESTAMP` anchor can be added without a codec version bump), and the corresponding sub-capabilities (`CHANGE_FEED_FROM_BEGINNING`, `CHANGE_FEED_FROM_TIMESTAMP`) are scheduled with FR-068's deferral block.
+  - *Implementation status (2026-06):* v1 ships only the live-tip start (`ChangeFeedCursor.now()`) and the continuation-token resume (`ChangeFeedCursor.fromToken(token, deserialize)`). FR-066(a) "beginning of available changes" and FR-066(b) "specific point in time" are deferred — the cursor model and codec are forward-compatible (a `FROM_BEGINNING` and `AT_TIMESTAMP` anchor can be added without a codec version bump), and the corresponding sub-capabilities (`CHANGE_FEED_FROM_BEGINNING`, `CHANGE_FEED_FROM_TIMESTAMP`) are scheduled with FR-068's deferral block.
 - **FR-067**: Each change event MUST include at minimum the item's key, the change type (create, update, or delete), and an explicit event timestamp corresponding to the provider's native change-record commit/ingest time used for ordering and resume. The event timestamp MUST be surfaced by the SDK as a UTC instant encoded as an RFC 3339 / ISO 8601 timestamp with a `Z` suffix. For create and update events, the SDK MUST include the new item state when the selected provider and its provisioned change feed/stream configuration expose the full post-change item image. This full-image configuration is a required provisioning prerequisite for providers that do not emit the new item state by default. Delete events include the key and event timestamp but may not include the deleted item's prior state, depending on provider capabilities.
 - **FR-068**: Change feed MUST be a capability-gated feature. Support for including the new item state in create/update change events MUST be a separately gated capability from basic change feed support, because some providers or provider configurations do not expose the full post-change item image. If an application requests change events that include new item state and the provider capability is unavailable or the provider-side feed is not configured to emit full item images, the SDK MUST fail with a clear, actionable error describing the required provider configuration. Time-based start support defined in FR-066(b) MUST also be a separately gated capability, as not all providers support arbitrary timestamp-based starts. If a provider cannot start from an arbitrary UTC instant, the SDK MUST fail that request with a clear provider-neutral capability error and MUST NOT silently substitute an approximate start position. Delete detection within the change feed MUST also be a separately gated capability, as not all providers or provider modes surface delete events.
   - *Implementation status (2026-06):* v1 ships a single coarse-grained `Capability.CHANGE_FEED` declared by every provider that can return any change-feed page. CREATE / UPDATE / DELETE distinction (FR-067) and delete detection (FR-068) are universally supported in v1 — the three provider configurations the SDK ships against (Cosmos AVAD, Dynamo `NEW_AND_OLD_IMAGES`, Spanner `value_capture_type='NEW_ROW'`) all surface the full event-type distinction, and each provider is responsible for refusing to serve a change-feed call when its required configuration is absent (Cosmos surfaces a normalised 400 BadRequest from a non-AVAD container; Dynamo throws `UNSUPPORTED_CAPABILITY(reason=stream_not_enabled)`; Spanner throws the same when the change stream is unprovisioned). The deferred sub-capabilities are: `CHANGE_FEED_FROM_BEGINNING`, `CHANGE_FEED_FROM_TIMESTAMP` (paired with FR-066's deferral), and `CHANGE_FEED_NEW_IMAGE` (full post-change item image — a hard subset of v1 since every shipped configuration already emits new images, but kept on the deferred register so a future provider that lacks it can declare so explicitly).
@@ -1068,7 +1093,7 @@ The following operators and functions form the portable query subset, available 
 - **SC-020**: A query specifying ORDER BY with a descending sort direction returns items in reverse order on all providers that support ORDER BY. Providers that do not support ORDER BY produce a clear, actionable error.
 - **SC-021**: A document created with a TTL of T seconds is automatically removed after approximately T seconds on all providers that support row-level TTL.
 - **SC-022**: Reading a document returns write timestamp metadata on all providers that support it, enabling applications to determine data freshness within 1 second of accuracy.
-- **SC-023**: A document within the SDK's uniform size limit can be stored and retrieved identically on all supported providers. A document exceeding the uniform limit is rejected with a clear, consistent error on every provider, regardless of individual provider native limits.
+- **SC-023**: Offline mock tests prove common rejection at nested depth 33, acceptance through 32 and delegation above the former 399 KiB boundary across all providers/write operations, without claiming native storage success. Native mapping fixtures preserve the same 32 semantic levels.
 - **SC-024**: When a provider-specific quota limit is reached (e.g., partition size exceeded), the SDK surfaces a provider-neutral error with clear categorization and actionable guidance, consistent across all providers.
 - **SC-025**: Every Java source file (main and test) across all modules carries the standard Microsoft copyright header (`// Copyright (c) Microsoft Corporation. All rights reserved.` / `// Licensed under the MIT License.`) as its first two lines. A `LICENSE` file exists at the repository root with the full MIT license text. Both are verifiable by inspection of any file in the repository.
 - **SC-026**: A change feed consumer can receive a chronologically ordered stream of create and update events from a collection on all providers that support change feed, by changing configuration only.
@@ -1119,7 +1144,7 @@ The following operators and functions form the portable query subset, available 
 - `ensureDatabase`, `ensureContainer`, and `provisionSchema` are convenience methods for development and startup scenarios. They create resources with the SDK's standard schema defaults using the provider's data-plane SDK, and are subject to the caller's runtime permissions (e.g., RBAC role assignments). They are not intended for advanced provisioning (e.g., custom throughput, indexing policies, ARM-based control-plane operations). For production provisioning with fine-grained control, developers should use provider SDKs or infrastructure-as-code tools directly. Advanced provisioning support is a future consideration outside v1 scope.
 - The SDK does not introduce a dependency on management or ARM SDKs (e.g., `azure-resourcemanager-cosmos`). Provisioning operations (`ensureDatabase`, `ensureContainer`) use the provider's standard data-plane SDK and succeed only when the caller holds sufficient runtime permissions. When operating in RBAC/`DefaultAzureCredential` mode, `ensureDatabase` requires the caller to hold an appropriate control-plane role (e.g., Cosmos DB Operator). If the required role is not assigned, the SDK returns a clear authorization failure. Advanced provisioning requiring ARM access is a future consideration outside v1 scope.
 - **SDK versions (current)**: Azure Cosmos DB SDK 4.82.0, AWS SDK v2 2.34.0, Azure Identity 1.18.2. Minimum Java version is 17. These versions represent the latest stable releases validated against this SDK; newer versions may be adopted as long as the portable contract is preserved. Management and ARM SDK dependencies (e.g., `azure-resourcemanager-cosmos`, `azure-core-management`) are not part of the SDK's required dependency set.
-- **Dependency security**: Transitive dependency versions are managed in the root `pom.xml` `dependencyManagement` section and explicit overrides in child poms to resolve known CVEs: `jackson-core` ≥ 2.18.6 (GHSA-72hv-8253-57qq), `logback-classic`/`logback-core` ≥ 1.5.25 (CVE-2024-12798, CVE-2024-12801, CVE-2025-11226, CVE-2026-1225), `netty-codec-http` ≥ 4.2.8.Final (CVE-2025-67735). IDE CVE scanner (Mend.io) warnings that persist after overrides are documented as false positives in `.mend/mend.yml`; the actual resolved versions are confirmed safe via `mvn dependency:tree`.
+- **Dependency security**: Verify actual resolved native SDK dependencies and applicable security advisories with `mvn dependency:tree`; use supported native SDK/BOM versions rather than reintroducing direct production Jackson declarations. Scanner suppressions do not establish that a resolved dependency is safe.
 - **Test infrastructure**: Mockito's Byte Buddy instrumentation engine does not officially support Java versions beyond 22. Provider test modules that mock SDK exception classes (e.g., `CosmosException`, `DynamoDbException`) MUST configure `maven-surefire-plugin` with `-Dnet.bytebuddy.experimental=true` in `argLine` to enable mocking on Java 23+. This is set in the `multiclouddb-provider-cosmos` and `multiclouddb-provider-dynamo` poms.
 - **Operation name constants**: The `OperationNames` class in `multiclouddb-api` is the canonical source for all shared operation name strings. It is on the classpath of every provider via the `providers → multiclouddb-api` dependency chain. IDE "unused field" warnings on constants classes are suppressed via `@SuppressWarnings("unused")` because single-file IDE analysis cannot see cross-file usages.
 - **Diagnostics log format**: Success-path diagnostic log lines use the prefix `cosmos.diagnostics` or `dynamo.diagnostics` followed by key=value pairs: `op`, `db`, `col`, and provider-specific fields (`activityId`/`requestId`, `requestCharge`/`capacityUnits`, `statusCode`/`itemCount`/`hasMore`). Log lines are emitted at `DEBUG` level only and contain no secrets or document contents.
@@ -1129,7 +1154,7 @@ The following operators and functions form the portable query subset, available 
 - **Row-level TTL scope**: The SDK supports row-level (document-level) TTL only. Cell-level TTL (per-field expiration) as found in Cassandra is not supported because the native TTL engines in Cosmos DB and DynamoDB operate at the row/item level. Applications migrating from Cassandra cell-level TTL should evaluate whether row-level TTL is sufficient for their use case.
 - **TTL precision**: TTL expiration is approximate. Providers may enforce TTL with varying granularity (e.g., Cosmos DB checks TTL in the background periodically, DynamoDB typically deletes within 48 hours of expiration). The SDK does not guarantee exact-second expiration precision.
 - **Write timestamp source**: Write timestamps are sourced from the provider's system metadata (e.g., Cosmos DB `_ts`, DynamoDB stream record timestamps). The SDK does not maintain its own write timestamps. Precision and availability may vary by provider.
-- **Uniform document size limit**: The SDK enforces a single maximum document size of 400 KB across all providers, driven by DynamoDB's 400 KB item size limit as the lowest common denominator. Cosmos DB natively supports up to 2 MB (or 10 MB for eligible accounts) and Spanner supports up to 10 MB, but the SDK enforces the 400 KB ceiling to guarantee cross-provider portability. Applications needing to store larger documents should use provider-specific escape hatches or external storage patterns.
+- **Native size enforcement**: The former 399 KiB logical JSON estimate is removed. Native SDK/service constraints govern size, including final state after Spanner partial updates. Exact input depth is limited to 32 nested Map/List levels below the root; no native-fit guarantee, numeric-range enforcement, bypass or automatic offload is added.
 - **Uniform quota limits**: The SDK documents and surfaces provider quota constraints (e.g., logical partition size limits, throughput caps) in a uniform way. While exact quota values may differ by provider, the SDK ensures that quota-related failures are reported through the standard error model with consistent categorization.
 - **Multi-tenancy patterns**: The SDK does not enforce tenant isolation. Multi-tenant applications can use partition key schemes to scope data by tenant (e.g., including an organization code in the partition key value) and use the existing `partitionKey` query scope (FR-039) to restrict queries to a single tenant's data. For stronger isolation (per-tenant encryption, noisy-neighbor protection), applications should use collection-per-tenant or account-per-tenant patterns with provider fleet management features. This is a deployment architecture decision, not an SDK-level concern.
 - Every Java source file in all modules (main and test) carries the standard Microsoft MIT copyright header as its first two lines. This applies to all 117 Java files across `multiclouddb-api`, `multiclouddb-conformance`, `multiclouddb-provider-cosmos`, `multiclouddb-provider-dynamo`, `multiclouddb-provider-spanner`, and `multiclouddb-samples`. A `LICENSE` file at the repository root contains the full MIT license text. The per-file header is:
@@ -1200,8 +1225,8 @@ This checklist is used to accept the feature as “done” at the spec level.
 ### Errors & Diagnostics (P3)
 
 - [ ] Failures are categorized in a provider-neutral way and indicate whether they are retryable.
-- [ ] Errors include provider and operation context and preserve provider identifiers/codes in sanitized form.
-- [ ] Diagnostics are available for each operation (provider id, operation name, duration, correlation/request id when available) and do not leak secrets.
+- [ ] Errors include provider and operation context and preserve available native identifiers/codes, messages and original causes; applications redact sensitive native text before logging.
+- [ ] Diagnostics are available for each operation (provider id, operation name, duration, correlation/request id when available). Native diagnostics are not guaranteed safe to log; SDK document-validation and cursor callback/result-access failures do not expose input values or original callback exceptions.
 
 ### Conformance & Confidence
 
@@ -1240,11 +1265,11 @@ This checklist is used to accept the feature as “done” at the spec level.
 - [ ] Documents without TTL set do not expire and return absent/no-expiration TTL metadata.
 - [ ] Document metadata retrieval is opt-in and does not affect applications that do not request it.
 
-### Uniform Document Size and Quota Limits
+### Exact Write Validation and Native Size/Quota Limits
 
-- [ ] A document within the SDK's uniform size limit is accepted and persisted on every supported provider.
-- [ ] A document exceeding the SDK's uniform size limit is rejected with a clear, consistent error on every provider, even if the provider's native limit is larger.
-- [ ] The SDK's uniform document size limit and quota limits are exposed programmatically for application pre-validation.
+- [ ] Supported large inputs pass common validation without byte measurement; depth 31/32 delegates and depth 33 fails before native I/O for all providers/write operations. Native schema/item limits remain applicable, without a native-fit or identical-persistence guarantee.
+- [ ] Common write validation enforces the neutral input contract and root-zero nesting limit of 32, not a byte estimate. Native size rejection is normalized, but acceptance can differ across providers and passing input validation does not guarantee native fit.
+- [ ] The guide documents exact input validation, native size/quota constraints, partial-update limitations and the possibility of provider-dependent success/failure.
 - [ ] When a provider-specific quota limit is reached, the SDK surfaces a provider-neutral error with clear categorization and actionable guidance.
 - [ ] Quota-related errors are consistent in format across all providers.
 
@@ -1305,7 +1330,7 @@ This checklist is used to accept the feature as “done” at the spec level.
 - [ ] `DynamoErrorMappingTest` uses `OperationNames.*` constants for all operation name assertions, covering error code mappings, status code fallbacks, retryability, provider details, and cause preservation.
 - [ ] `DiagnosticsConformanceTest` uses `OperationNames.*` for operation name assertions in all three providers' test subclasses.
 - [ ] Provider poms configure `maven-surefire-plugin` with `-Dnet.bytebuddy.experimental=true` to enable Mockito mocking of SDK exception classes on Java 23+.
-- [ ] Transitive CVE dependencies (`jackson-core`, `logback-core`, `netty-codec-http`) are pinned to patched versions in both `<dependencies>` and `<dependencyManagement>` of each provider pom. Confirmed safe via `mvn dependency:tree`.
+- [ ] Resolved native dependencies are checked against applicable security advisories; dependency trees do not introduce direct production Jackson declarations into Multicloud-owned modules.
 - [ ] A `.mend/mend.yml` suppression config documents false-positive CVE findings from the IDE Mend.io scanner, with justification for each suppression.
 - [ ] Properties template files (`*.properties.template`) are provided for each sample scenario, enabling users to copy and fill in credentials locally. Actual properties files containing credentials are gitignored and never committed.
 - [ ] Cleanup scripts (`cleanup-cosmos.sh`, `cleanup-cosmos.ps1`, `cleanup-dynamo.sh`, `cleanup-dynamo.ps1`) exist under `multiclouddb-samples/scripts/` and successfully remove all provider resources created by sample runs.

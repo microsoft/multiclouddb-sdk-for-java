@@ -3,9 +3,6 @@
 
 package com.multiclouddb.provider.spanner;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.cloud.Timestamp;
 import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.ErrorCode;
@@ -95,7 +92,6 @@ import java.util.Map;
 final class SpannerChangeFeedReader {
 
     private static final Logger LOG = LoggerFactory.getLogger(SpannerChangeFeedReader.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /** Default time window per readChanges call (5 seconds). */
     private static final long WINDOW_MS = 5_000L;
@@ -561,6 +557,7 @@ final class SpannerChangeFeedReader {
         String modTypeRaw = getStringOrNull(rec, "mod_type");
         String modType = modTypeRaw != null ? modTypeRaw : "UPDATE";
         ChangeType type = mapModType(modType);
+        String captureType = getStringOrNull(rec, "value_capture_type");
 
         List<Struct> mods = getStructListOrEmpty(rec, "mods");
         List<ChangeEvent> out = new ArrayList<>(mods.size());
@@ -569,7 +566,7 @@ final class SpannerChangeFeedReader {
             String eventId = txnId + ":" + (commitTs != null ? commitTs.toString() : "") + ":"
                     + recordSeq + ":" + idx;
             MulticloudDbKey key = extractKey(mod);
-            JsonNode data = extractValues(mod, type);
+            Object data = extractValues(mod, type, captureType);
             Instant eventInstant = commitTs != null
                     ? Instant.ofEpochSecond(commitTs.getSeconds(), commitTs.getNanos())
                     : Instant.EPOCH;
@@ -606,51 +603,63 @@ final class SpannerChangeFeedReader {
                     providerId, OperationNames.READ_CHANGES, false,
                     Map.of("reason", "missing_partition_key")));
         }
-        JsonNode node;
+        Object parsedKeys;
         try {
-            node = MAPPER.readTree(keysJson);
-        } catch (Exception e) {
+            parsedKeys = SpannerRowMapper.readJson(keysJson);
+        } catch (java.io.IOException | IllegalArgumentException e) {
             throw new MulticloudDbException(new MulticloudDbError(
                     MulticloudDbErrorCategory.PROVIDER_ERROR,
                     "Spanner change-stream record's 'keys' field is not valid JSON: " + keysJson,
                     providerId, OperationNames.READ_CHANGES, false,
                     Map.of("reason", "malformed_envelope")), e);
         }
-        if (!node.has("partitionKey") || node.get("partitionKey").isNull()) {
+        if (!(parsedKeys instanceof Map<?, ?> keys) || keys.get("partitionKey") == null) {
             throw new MulticloudDbException(new MulticloudDbError(
                     MulticloudDbErrorCategory.PROVIDER_ERROR,
                     "Spanner change-stream record's 'keys' JSON has no 'partitionKey' field: " + keysJson,
                     providerId, OperationNames.READ_CHANGES, false,
                     Map.of("reason", "missing_partition_key")));
         }
-        String pk = node.get("partitionKey").asText();
-        JsonNode skNode = node.get("sortKey");
-        if (skNode != null && !skNode.isNull()) return MulticloudDbKey.of(pk, skNode.asText());
+        String pk = SpannerRowMapper.text(keys.get("partitionKey"));
+        Object sortKeyValue = keys.get("sortKey");
+        if (sortKeyValue != null) return MulticloudDbKey.of(pk, SpannerRowMapper.text(sortKeyValue));
         return MulticloudDbKey.of(pk);
     }
 
-    private JsonNode extractValues(Struct mod, ChangeType type) {
-        // For CREATE/UPDATE prefer new_values; for DELETE fall back to old_values.
+    private Object extractValues(Struct mod, ChangeType type, String captureType) {
+        boolean newOnly = "NEW_VALUES".equals(captureType) || "NEW_ROW".equals(captureType);
+        boolean oldAndNew = "OLD_AND_NEW_VALUES".equals(captureType)
+                || "NEW_ROW_AND_OLD_VALUES".equals(captureType);
         String field;
-        if (type == ChangeType.DELETE && hasNonNullField(mod, "old_values")) {
+        if (newOnly || oldAndNew) {
+            // Uncollected images can be encoded as {}, so emptiness alone is not presence.
+            if (type == ChangeType.DELETE && newOnly) return null;
+            field = type == ChangeType.DELETE ? "old_values" : "new_values";
+            if (type == ChangeType.UPDATE && oldAndNew && !hasNonNullField(mod, field)) {
+                field = "old_values";
+            }
+        } else if (type == ChangeType.DELETE && hasNonNullField(mod, "old_values")) {
+            // Retain legacy image selection when capture metadata is unavailable or unknown.
             field = "old_values";
         } else if (hasNonNullField(mod, "new_values")) {
             field = "new_values";
         } else if (hasNonNullField(mod, "old_values")) {
             field = "old_values";
         } else {
-            return MAPPER.createObjectNode();
+            return null;
         }
+        if (!hasNonNullField(mod, field)) return null;
         String json = getStringOrNull(mod, field);
-        if (json == null) return MAPPER.createObjectNode();
+        if (json == null) return null;
+        Object raw;
         try {
-            JsonNode raw = MAPPER.readTree(json);
-            return filterByFieldData(raw);
-        } catch (Exception e) {
-            ObjectNode wrap = MAPPER.createObjectNode();
+            raw = SpannerRowMapper.readJson(json);
+        } catch (java.io.IOException | IllegalArgumentException e) {
+            Map<String, Object> wrap = new java.util.LinkedHashMap<>();
             wrap.put("raw", json);
             return wrap;
         }
+        return filterByFieldData(raw);
     }
 
     /**
@@ -679,35 +688,32 @@ final class SpannerChangeFeedReader {
      * project every column" fallback — a legacy row that pre-dates the
      * {@code FIELD_DATA} regime continues to surface every column.
      */
-    private static JsonNode filterByFieldData(JsonNode raw) {
-        if (!(raw instanceof ObjectNode obj)) return raw;
-        JsonNode fdNode = obj.get(SpannerConstants.FIELD_DATA);
-        if (fdNode == null) return obj;
+    private static Object filterByFieldData(Object raw) {
+        if (!(raw instanceof Map<?, ?> obj)) return raw;
+        Object fieldMetadataValue = obj.get(SpannerConstants.FIELD_DATA);
+        if (!obj.containsKey(SpannerConstants.FIELD_DATA)) return obj;
         // Always strip FIELD_DATA itself — it is an SDK-internal metadata column
         // and must never surface in ChangeEvent.data().
         obj.remove(SpannerConstants.FIELD_DATA);
-        if (!fdNode.isTextual()) return obj;
-        String fdValue = fdNode.asText();
-        if (fdValue == null || !fdValue.startsWith("[")) return obj;
+        if (!(fieldMetadataValue instanceof String fdValue) || !fdValue.startsWith("[")) return obj;
         java.util.Set<String> allowed;
         try {
-            allowed = new java.util.HashSet<>(MAPPER.readValue(fdValue,
-                    new com.fasterxml.jackson.core.type.TypeReference<java.util.List<String>>() {}));
-        } catch (Exception e) {
+            allowed = new java.util.HashSet<>(SpannerRowMapper.fieldNames(fdValue));
+        } catch (java.io.IOException | IllegalArgumentException e) {
             // Malformed metadata — match SpannerRowMapper's "treat as legacy row".
             return obj;
         }
-        java.util.Iterator<String> it = obj.fieldNames();
+        java.util.Iterator<?> it = obj.keySet().iterator();
         java.util.List<String> drop = new java.util.ArrayList<>();
         while (it.hasNext()) {
-            String name = it.next();
+            String name = (String) it.next();
             // Always whitelist the primary-key columns: SpannerRowMapper does the
             // same on the read path (SpannerRowMapper.java:90-96), and the
             // portable contract on ChangeEvent.data() is that the post-image
             // includes the document's PK/SK fields — matching Cosmos AVAD
             // (which carries id+partitionKey) and Dynamo NEW_AND_OLD_IMAGES
             // (which carries pk+sk attrs). Without this whitelist, a portable
-            // consumer reading event.data().get("partitionKey") would see the
+            // consumer reading "partitionKey" from a Map-valued event.data() would see the
             // value on Cosmos/Dynamo but null on Spanner.
             if (allowed.contains(name)
                     || SpannerConstants.FIELD_PARTITION_KEY.equals(name)

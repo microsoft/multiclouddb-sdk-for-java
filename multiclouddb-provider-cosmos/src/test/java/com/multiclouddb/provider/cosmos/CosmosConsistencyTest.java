@@ -22,7 +22,6 @@ import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.ResourceAddress;
 import com.multiclouddb.api.MulticloudDbKey;
 import com.multiclouddb.api.QueryRequest;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -316,11 +315,11 @@ class CosmosConsistencyTest {
         when(mockClient.getDatabase(anyString())).thenReturn(mockDatabase);
         when(mockDatabase.getContainer(anyString())).thenReturn(mockContainer);
 
-        CosmosItemResponse<ObjectNode> mockResponse = mock(CosmosItemResponse.class);
+        CosmosItemResponse<Map> mockResponse = mock(CosmosItemResponse.class);
         when(mockResponse.getItem()).thenReturn(null);
         when(mockResponse.getStatusCode()).thenReturn(200);
         when(mockContainer.readItem(anyString(), any(PartitionKey.class),
-                any(CosmosItemRequestOptions.class), eq(ObjectNode.class)))
+                any(CosmosItemRequestOptions.class), eq(Map.class)))
                 .thenReturn(mockResponse);
 
         try (MockedConstruction<CosmosClientBuilder> ignored =
@@ -334,7 +333,7 @@ class CosmosConsistencyTest {
             ArgumentCaptor<CosmosItemRequestOptions> captor =
                     ArgumentCaptor.forClass(CosmosItemRequestOptions.class);
             verify(mockContainer).readItem(anyString(), any(PartitionKey.class),
-                    captor.capture(), eq(ObjectNode.class));
+                    captor.capture(), eq(Map.class));
             assertNull(captor.getValue().getConsistencyLevel(),
                     "read() must not set per-request consistency — the client-level override handles it");
         }
@@ -356,11 +355,11 @@ class CosmosConsistencyTest {
         when(mockClient.getDatabase(anyString())).thenReturn(mockDatabase);
         when(mockDatabase.getContainer(anyString())).thenReturn(mockContainer);
 
-        CosmosItemResponse<ObjectNode> mockResponse = mock(CosmosItemResponse.class);
+        CosmosItemResponse<Map> mockResponse = mock(CosmosItemResponse.class);
         when(mockResponse.getItem()).thenReturn(null);
         when(mockResponse.getStatusCode()).thenReturn(200);
         when(mockContainer.readItem(anyString(), any(PartitionKey.class),
-                any(CosmosItemRequestOptions.class), eq(ObjectNode.class)))
+                any(CosmosItemRequestOptions.class), eq(Map.class)))
                 .thenReturn(mockResponse);
 
         try (MockedConstruction<CosmosClientBuilder> ignored =
@@ -375,7 +374,7 @@ class CosmosConsistencyTest {
             ArgumentCaptor<CosmosItemRequestOptions> captor =
                     ArgumentCaptor.forClass(CosmosItemRequestOptions.class);
             verify(mockContainer).readItem(anyString(), any(PartitionKey.class),
-                    captor.capture(), eq(ObjectNode.class));
+                    captor.capture(), eq(Map.class));
             assertNull(captor.getValue().getConsistencyLevel(),
                     "read() must not set a consistency level when no override is configured");
         }
@@ -398,13 +397,13 @@ class CosmosConsistencyTest {
         when(mockClient.getDatabase(anyString())).thenReturn(mockDatabase);
         when(mockDatabase.getContainer(anyString())).thenReturn(mockContainer);
 
-        CosmosPagedIterable<com.fasterxml.jackson.databind.JsonNode> mockPagedIterable =
+        CosmosPagedIterable<Object> mockPagedIterable =
                 mock(CosmosPagedIterable.class);
         when(mockPagedIterable.iterableByPage(anyInt())).thenReturn(Collections.emptyList());
         when(mockPagedIterable.iterableByPage(anyString(), anyInt())).thenReturn(Collections.emptyList());
         when(mockContainer.queryItems(any(SqlQuerySpec.class),
                 any(CosmosQueryRequestOptions.class),
-                eq(com.fasterxml.jackson.databind.JsonNode.class)))
+                eq(Object.class)))
                 .thenReturn(mockPagedIterable);
 
         try (MockedConstruction<CosmosClientBuilder> ignored =
@@ -418,7 +417,7 @@ class CosmosConsistencyTest {
             ArgumentCaptor<CosmosQueryRequestOptions> captor =
                     ArgumentCaptor.forClass(CosmosQueryRequestOptions.class);
             verify(mockContainer).queryItems(any(SqlQuerySpec.class),
-                    captor.capture(), eq(com.fasterxml.jackson.databind.JsonNode.class));
+                    captor.capture(), eq(Object.class));
             assertNull(captor.getValue().getConsistencyLevel(),
                     "query() must not set per-request consistency — the client-level override handles it");
         }
@@ -441,13 +440,13 @@ class CosmosConsistencyTest {
         when(mockClient.getDatabase(anyString())).thenReturn(mockDatabase);
         when(mockDatabase.getContainer(anyString())).thenReturn(mockContainer);
 
-        CosmosPagedIterable<com.fasterxml.jackson.databind.JsonNode> mockPagedIterable =
+        CosmosPagedIterable<Object> mockPagedIterable =
                 mock(CosmosPagedIterable.class);
         when(mockPagedIterable.iterableByPage(anyInt())).thenReturn(Collections.emptyList());
         when(mockPagedIterable.iterableByPage(anyString(), anyInt())).thenReturn(Collections.emptyList());
         when(mockContainer.queryItems(any(SqlQuerySpec.class),
                 any(CosmosQueryRequestOptions.class),
-                eq(com.fasterxml.jackson.databind.JsonNode.class)))
+                eq(Object.class)))
                 .thenReturn(mockPagedIterable);
 
         try (MockedConstruction<CosmosClientBuilder> ignored =
@@ -467,7 +466,7 @@ class CosmosConsistencyTest {
             ArgumentCaptor<CosmosQueryRequestOptions> captor =
                     ArgumentCaptor.forClass(CosmosQueryRequestOptions.class);
             verify(mockContainer).queryItems(any(SqlQuerySpec.class),
-                    captor.capture(), eq(com.fasterxml.jackson.databind.JsonNode.class));
+                    captor.capture(), eq(Object.class));
             assertNull(captor.getValue().getConsistencyLevel(),
                     "queryWithTranslation() must not set per-request consistency — the client-level override handles it");
         }
@@ -489,13 +488,13 @@ class CosmosConsistencyTest {
         when(mockClient.getDatabase(anyString())).thenReturn(mockDatabase);
         when(mockDatabase.getContainer(anyString())).thenReturn(mockContainer);
 
-        CosmosPagedIterable<com.fasterxml.jackson.databind.JsonNode> mockPagedIterable =
+        CosmosPagedIterable<Object> mockPagedIterable =
                 mock(CosmosPagedIterable.class);
         when(mockPagedIterable.iterableByPage(anyInt())).thenReturn(Collections.emptyList());
         when(mockPagedIterable.iterableByPage(anyString(), anyInt())).thenReturn(Collections.emptyList());
         when(mockContainer.queryItems(any(SqlQuerySpec.class),
                 any(CosmosQueryRequestOptions.class),
-                eq(com.fasterxml.jackson.databind.JsonNode.class)))
+                eq(Object.class)))
                 .thenReturn(mockPagedIterable);
 
         try (MockedConstruction<CosmosClientBuilder> ignored =
@@ -509,7 +508,7 @@ class CosmosConsistencyTest {
             ArgumentCaptor<CosmosQueryRequestOptions> captor =
                     ArgumentCaptor.forClass(CosmosQueryRequestOptions.class);
             verify(mockContainer).queryItems(any(SqlQuerySpec.class),
-                    captor.capture(), eq(com.fasterxml.jackson.databind.JsonNode.class));
+                    captor.capture(), eq(Object.class));
             assertNull(captor.getValue().getConsistencyLevel(),
                     "query() must not set a consistency level when no override is configured");
         }
@@ -531,13 +530,13 @@ class CosmosConsistencyTest {
         when(mockClient.getDatabase(anyString())).thenReturn(mockDatabase);
         when(mockDatabase.getContainer(anyString())).thenReturn(mockContainer);
 
-        CosmosPagedIterable<com.fasterxml.jackson.databind.JsonNode> mockPagedIterable =
+        CosmosPagedIterable<Object> mockPagedIterable =
                 mock(CosmosPagedIterable.class);
         when(mockPagedIterable.iterableByPage(anyInt())).thenReturn(Collections.emptyList());
         when(mockPagedIterable.iterableByPage(anyString(), anyInt())).thenReturn(Collections.emptyList());
         when(mockContainer.queryItems(any(SqlQuerySpec.class),
                 any(CosmosQueryRequestOptions.class),
-                eq(com.fasterxml.jackson.databind.JsonNode.class)))
+                eq(Object.class)))
                 .thenReturn(mockPagedIterable);
 
         try (MockedConstruction<CosmosClientBuilder> ignored =
@@ -557,7 +556,7 @@ class CosmosConsistencyTest {
             ArgumentCaptor<CosmosQueryRequestOptions> captor =
                     ArgumentCaptor.forClass(CosmosQueryRequestOptions.class);
             verify(mockContainer).queryItems(any(SqlQuerySpec.class),
-                    captor.capture(), eq(com.fasterxml.jackson.databind.JsonNode.class));
+                    captor.capture(), eq(Object.class));
             assertNull(captor.getValue().getConsistencyLevel(),
                     "queryWithTranslation() must not set a consistency level when no override is configured");
         }
@@ -589,9 +588,9 @@ class CosmosConsistencyTest {
         when(mockClient.getDatabase(anyString())).thenReturn(mockDatabase);
         when(mockDatabase.getContainer(anyString())).thenReturn(mockContainer);
 
-        CosmosItemResponse<ObjectNode> mockResponse = mock(CosmosItemResponse.class);
+        CosmosItemResponse<Map> mockResponse = mock(CosmosItemResponse.class);
         when(mockResponse.getStatusCode()).thenReturn(201);
-        when(mockContainer.createItem(any(ObjectNode.class), any(PartitionKey.class),
+        when(mockContainer.createItem(any(Map.class), any(PartitionKey.class),
                 any(CosmosItemRequestOptions.class)))
                 .thenReturn(mockResponse);
 
@@ -605,7 +604,7 @@ class CosmosConsistencyTest {
 
             ArgumentCaptor<CosmosItemRequestOptions> captor =
                     ArgumentCaptor.forClass(CosmosItemRequestOptions.class);
-            verify(mockContainer).createItem(any(ObjectNode.class), any(PartitionKey.class),
+            verify(mockContainer).createItem(any(Map.class), any(PartitionKey.class),
                     captor.capture());
             assertNull(captor.getValue().getConsistencyLevel(),
                     "create() must not carry a per-request consistency level when a client-level override is configured");
@@ -629,9 +628,9 @@ class CosmosConsistencyTest {
         when(mockClient.getDatabase(anyString())).thenReturn(mockDatabase);
         when(mockDatabase.getContainer(anyString())).thenReturn(mockContainer);
 
-        CosmosItemResponse<ObjectNode> mockResponse = mock(CosmosItemResponse.class);
+        CosmosItemResponse<Map> mockResponse = mock(CosmosItemResponse.class);
         when(mockResponse.getStatusCode()).thenReturn(200);
-        when(mockContainer.replaceItem(any(ObjectNode.class), anyString(), any(PartitionKey.class),
+        when(mockContainer.replaceItem(any(Map.class), anyString(), any(PartitionKey.class),
                 any(CosmosItemRequestOptions.class)))
                 .thenReturn(mockResponse);
 
@@ -645,7 +644,7 @@ class CosmosConsistencyTest {
 
             ArgumentCaptor<CosmosItemRequestOptions> captor =
                     ArgumentCaptor.forClass(CosmosItemRequestOptions.class);
-            verify(mockContainer).replaceItem(any(ObjectNode.class), anyString(), any(PartitionKey.class),
+            verify(mockContainer).replaceItem(any(Map.class), anyString(), any(PartitionKey.class),
                     captor.capture());
             assertNull(captor.getValue().getConsistencyLevel(),
                     "update() must not carry a per-request consistency level when a client-level override is configured");
@@ -669,9 +668,9 @@ class CosmosConsistencyTest {
         when(mockClient.getDatabase(anyString())).thenReturn(mockDatabase);
         when(mockDatabase.getContainer(anyString())).thenReturn(mockContainer);
 
-        CosmosItemResponse<ObjectNode> mockResponse = mock(CosmosItemResponse.class);
+        CosmosItemResponse<Map> mockResponse = mock(CosmosItemResponse.class);
         when(mockResponse.getStatusCode()).thenReturn(200);
-        when(mockContainer.upsertItem(any(ObjectNode.class), any(PartitionKey.class),
+        when(mockContainer.upsertItem(any(Map.class), any(PartitionKey.class),
                 any(CosmosItemRequestOptions.class)))
                 .thenReturn(mockResponse);
 
@@ -685,7 +684,7 @@ class CosmosConsistencyTest {
 
             ArgumentCaptor<CosmosItemRequestOptions> captor =
                     ArgumentCaptor.forClass(CosmosItemRequestOptions.class);
-            verify(mockContainer).upsertItem(any(ObjectNode.class), any(PartitionKey.class),
+            verify(mockContainer).upsertItem(any(Map.class), any(PartitionKey.class),
                     captor.capture());
             assertNull(captor.getValue().getConsistencyLevel(),
                     "upsert() must not carry a per-request consistency level when a client-level override is configured");

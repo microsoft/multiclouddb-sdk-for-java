@@ -3,6 +3,7 @@
 
 package com.multiclouddb.provider.dynamo;
 
+
 import com.multiclouddb.api.CapabilitySet;
 import com.multiclouddb.api.DocumentMetadata;
 import com.multiclouddb.api.DocumentResult;
@@ -21,8 +22,6 @@ import com.multiclouddb.api.ResourceAddress;
 import com.multiclouddb.spi.SdkUserAgent;
 import com.multiclouddb.api.query.TranslatedQuery;
 import com.multiclouddb.spi.MulticloudDbProviderClient;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -273,22 +272,15 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
             if (!response.hasItem() || response.item().isEmpty()) {
                 return null;
             }
-            JsonNode rawDoc = DynamoItemMapper.attributeMapToJsonNode(response.item());
-            if (!(rawDoc instanceof ObjectNode doc)) {
-                throw new MulticloudDbException(new MulticloudDbError(
-                        MulticloudDbErrorCategory.PROVIDER_ERROR,
-                        "DynamoItemMapper.attributeMapToJsonNode returned a non-ObjectNode: "
-                                + rawDoc.getClass().getSimpleName(),
-                        ProviderId.DYNAMO, OperationNames.READ, false, null));
-            }
+            Map<String, Object> doc = DynamoItemMapper.attributeMapToMap(response.item());
 
             DocumentMetadata metadata = null;
             if (options != null && options.includeMetadata()) {
                 DocumentMetadata.Builder metaBuilder = DocumentMetadata.builder();
                 // Extract TTL expiry if the attribute is present on the item.
-                JsonNode ttlNode = doc.get(DynamoConstants.ATTR_TTL_EXPIRY);
-                if (ttlNode != null && ttlNode.isNumber()) {
-                    metaBuilder.ttlExpiry(Instant.ofEpochSecond(ttlNode.longValue()));
+                Object ttl = doc.get(DynamoConstants.ATTR_TTL_EXPIRY);
+                if (ttl instanceof Number number) {
+                    metaBuilder.ttlExpiry(Instant.ofEpochSecond(number.longValue()));
                 }
                 metadata = metaBuilder.build();
             }
@@ -523,7 +515,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      * Executes a pre-translated portable query using DynamoDB PartiQL and returns a
      * single page of results.
      * <p>
-     * Called by {@link com.multiclouddb.api.internal.DefaultMulticloudDbClient} after
+     * Called by the internal {@code DefaultMulticloudDbClient} after
      * the portable expression has been parsed, validated, and translated into a PartiQL
      * statement by {@link DynamoExpressionTranslator}.
      * <p>

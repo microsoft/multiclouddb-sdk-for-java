@@ -128,4 +128,17 @@ class SpannerChangeFeedReaderExtractKeyTest {
         assertEquals("malformed_envelope", me.error().providerDetails().get("reason"),
                 "distinct reason from missing_partition_key so callers can differentiate the two failure modes");
     }
+
+    @Test
+    void malformedUnicodeKeysUseEnvelopeErrorWhileValidEmojiSurvives() {
+        for (String invalid : java.util.List.of("\ud800", "\udc00", "\\ud800", "\\udc00")) {
+            Struct mod = Struct.newBuilder().set("keys").to("{\"partitionKey\":\"" + invalid + "\"}").build();
+            MulticloudDbException failure = invokeExpectThrow(mod);
+            assertEquals(MulticloudDbErrorCategory.PROVIDER_ERROR, failure.error().category());
+            assertEquals("malformed_envelope", failure.error().providerDetails().get("reason"));
+            assertEquals(OperationNames.READ_CHANGES, failure.error().operation());
+        }
+        Struct mod = Struct.newBuilder().set("keys").to("{\"partitionKey\":\"\\ud83d\\ude00\"}").build();
+        assertEquals("\uD83D\uDE00", invokeExpectKey(mod).partitionKey());
+    }
 }

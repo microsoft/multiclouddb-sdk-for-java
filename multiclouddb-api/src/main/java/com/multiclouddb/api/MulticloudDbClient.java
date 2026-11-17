@@ -20,6 +20,27 @@ import java.util.Map;
  * <p>
  * There are no code-level escape hatches. Diagnostics and provider-specific
  * opt-ins are controlled via {@link MulticloudDbClientConfig} only.
+ *
+ * <h2>Document values and ownership</h2>
+ * The document Map passed to create, update, or upsert may contain supported
+ * neutral Maps, Lists and scalar values. A null root or unsupported value is
+ * rejected with {@code INVALID_REQUEST} before native I/O; empty Maps and nested
+ * nulls are valid. Applications map their objects explicitly.
+ * <p>
+ * Numeric input acceptance does not guarantee lossless storage or readback.
+ * Consider String representations when exact large integers or decimal precision
+ * are required; this changes numeric sorting and aggregation semantics.
+ * See the <a href="https://microsoft.github.io/multiclouddb-sdk-for-java/guide/#supported-values-and-numeric-precision">recommended
+ * integer range, limitations and supported values</a> before selecting field representations.
+ * <p>
+ * Callers must not mutate the input Map or its nested containers during the
+ * entire synchronous call, including retries. The SDK does not mutate caller
+ * data or retain it after the call returns. Write validation permits at most
+ * 32 nested Map/List levels below the root Map (depth zero), including empty
+ * containers. Native SDKs/services enforce size limits; passing input validation
+ * does not guarantee storage success.
+ * Returned point-read and feed data is detached and mutable; queries retain
+ * the ownership contract of {@link QueryPage}.
  */
 public interface MulticloudDbClient extends AutoCloseable {
 
@@ -62,6 +83,8 @@ public interface MulticloudDbClient extends AutoCloseable {
     /**
      * Update an existing document. Fails if a document with the given key does not
      * exist.
+     * Cosmos and DynamoDB replace the document body; Spanner retains its existing
+     * partial-update behavior for the supplied fields.
      *
      * @param address  target database + collection
      * @param key      document key

@@ -338,6 +338,15 @@ This appendix is **non-normative**. It records Java SDK behaviors that impact th
 
 ## Decision 23: Uniform document size enforcement (400 KB)
 
+**Superseded for the current pre-release contract:** remove the existing 399 KiB
+logical-JSON estimate because it cannot predict native size. Native SDKs/services
+decide acceptance, including metadata/encoding and partial-update effects.
+Retain exact input validation, with 32 nested Map/List levels below the root
+(depth zero), based on DynamoDB's document limit; Cosmos allows 128 embedded
+levels and Spanner stores nested values as marked STRINGs. Cursor/read parser
+limits are unchanged. The original decision below is historical, not the current
+implementation contract; see FR-060/061 and the guide.
+
 - **Decision**: Add a `DocumentSizeValidator` utility in `multiclouddb-api/internal` that serializes `JsonNode` to UTF-8 bytes via `ObjectMapper.writeValueAsBytes()` and checks against `MAX_BYTES = 400 * 1024`. Validation occurs in `DefaultMulticloudDbClient` before delegating to the provider adapter — once, provider-agnostically.
 - **Rationale**: DynamoDB's 400 KB limit is the lowest common denominator. Enforcing at the `DefaultMulticloudDbClient` layer means no provider adapter needs to duplicate the check. Serializing to check size is deterministic and requires no provider I/O.
 - **Alternatives considered**:

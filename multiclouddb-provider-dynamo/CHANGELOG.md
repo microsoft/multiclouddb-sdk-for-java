@@ -7,6 +7,22 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- Make `DynamoItemMapper` and its conversion methods package-private provider
+  implementation details. Applications should use the portable client API rather
+  than calling the native mapper directly.
+- Map supported values directly to/from DynamoDB AttributeValue without Jackson
+  trees, preserving existing numeric conversions and selected change-feed images.
+  Use native image-presence flags: absent images become null, supplied empty
+  images remain empty Maps, and native NULL attributes remain null-valued fields.
+  Common write validation now rejects null document roots before native I/O.
+  This is not support for the full native type system: binary values are outside
+  the portable vocabulary, and existing exponent/integer-overflow decoding
+  limitations remain. See the [numeric guidance](../docs/guide.md#supported-values-and-numeric-precision).
+  **Breaking result-type migration:** see the [migration guide](../docs/guide.md#migrating-from-beta2).
+  ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
+
 ## [0.1.0-beta.2] — 2026-06-22
 
 > **Requires `multiclouddb-api` 0.1.0-beta.2 or later** — this release consumes API surface (change-feed cursors, `CLIENT_CLOSED` envelope, `ChangeFeedConfig.extendedRetention(...)` opt-in gating) introduced in API beta.2. The dependency is pinned in the published POM.

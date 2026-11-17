@@ -12,7 +12,7 @@ import java.util.Objects;
 
 /**
  * Decoded form of the opaque token carried by
- * {@link com.multiclouddb.api.changefeed.ChangeFeedCursor#toToken()}.
+ * {@link com.multiclouddb.api.changefeed.ChangeFeedCursor#toToken(java.util.function.Function)}.
  * <p>
  * The token's wire format is Base64URL-encoded JSON; see {@link CursorTokenCodec}
  * for the canonical encoding. This class is the in-memory representation that
@@ -120,7 +120,7 @@ public final class CursorToken {
     }
 
     /**
-     * Client-side age cap applied by {@link CursorTokenCodec#decode(String)}.
+     * Client-side age cap applied by {@link CursorTokenCodec#decode(String, java.util.function.BiFunction)}.
      * Always {@code >=} {@link CursorTokenCodec#MAX_TOKEN_AGE_MILLIS}; equals
      * the baseline unless this token was minted against a client that opted
      * in to {@code ChangeFeedConfig.extendedRetention(...)}.

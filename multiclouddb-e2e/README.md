@@ -8,6 +8,13 @@ switching a single properties file — no code changes required.
 
 ## Prerequisites
 
+This in-repository application uses the development Map API (`Main` creates Maps
+and reads `DocumentResult.document()`); it does not need application Jackson or
+cursor JSON callbacks for its CRUD/query flow. Its POM inherits the coordinated
+module versions from the root POM. Build this same revision before running it;
+see [development dependencies and migration](../docs/getting-started.md).
+Running `exec:java` contacts the configured provider and is not a unit/snippet check.
+
 1. **Java 17+** and **Maven 3.8+** installed.
 2. **Build the SDK** from the repo root (populates your local `~/.m2`):
    ```bash

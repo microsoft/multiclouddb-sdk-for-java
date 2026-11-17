@@ -11,7 +11,7 @@ import java.util.Optional;
  * Immutable opt-in configuration for the portable change-feed read path.
  * <p>
  * v1 ships a 24-hour portable retention baseline that every provider honours
- * out of the box: a token returned by {@link ChangeFeedCursor#toToken()} can
+ * out of the box: a token returned by {@link ChangeFeedCursor#toToken(java.util.function.Function)} can
  * be replayed for 24 hours regardless of which provider minted it. This class
  * carries the <em>opt-in</em> request to retain history beyond that baseline.
  *

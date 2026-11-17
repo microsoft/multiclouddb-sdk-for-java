@@ -172,6 +172,10 @@ Sample applications are maintained in a separate repository:
 
 ## Quick Example
 
+Use the source-installed [development dependencies](getting-started.md#2-add-dependencies).
+This fragment is method-body code; it does not configure JSON callbacks or a
+POJO mapper on the client.
+
 ```java
 // Configure - provider selected entirely by config
 Properties props = new Properties();
