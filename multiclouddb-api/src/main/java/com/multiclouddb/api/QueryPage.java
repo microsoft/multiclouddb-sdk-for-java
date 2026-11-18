@@ -9,7 +9,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * A single page of query results with optional diagnostics metadata.
+ * A single page of query results. Public client results include common
+ * diagnostics; manually constructed legacy pages may omit them.
  */
 public final class QueryPage {
 

@@ -9,6 +9,12 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **Breaking point SPI return migration:** Return portable point carriers and
+  retain response/exception HTTP status, Activity ID, RU presence, ETag and
+  session token. Preserve read/delete 404 semantics while retaining diagnostics.
+  Consumption coverage is unknown across hidden requests; no extra read or
+  verbose capture is introduced.
+
 - Use detached Maps for Cosmos writes and point reads, and Object change-feed
   payloads with null meaning no available image; native Cosmos serialization remains.
   Preserve supplied empty AVAD bodies and envelope/metadata identity fallback,

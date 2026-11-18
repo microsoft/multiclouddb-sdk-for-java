@@ -110,7 +110,8 @@ public final class ChangeFeedPage {
 
     /**
      * Per-page diagnostics (duration, item count, provider request id, etc.),
-     * or {@code null} if diagnostics are not available.
+     * or {@code null} on manually constructed legacy pages. Public client
+     * results include finalized common diagnostics.
      */
     public OperationDiagnostics diagnostics() {
         return diagnostics;

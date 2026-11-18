@@ -29,6 +29,60 @@ class DynamoNativeWriteMappingTest {
     private static final List<OperationOptions> OPTIONS = List.of(
             OperationOptions.defaults(), OperationOptions.builder().ttlSeconds(120).build());
 
+    @Test
+    void pointResponsesDistinguishMissingCapacityFromObservedZero() throws Exception {
+        var sdk = mock(DynamoDbClient.class);
+        var streams = mock(DynamoDbStreamsClient.class);
+        var builder = mock(DynamoDbClientBuilder.class, RETURNS_SELF);
+        var streamBuilder = mock(DynamoDbStreamsClientBuilder.class, RETURNS_SELF);
+        when(builder.build()).thenReturn(sdk);
+        when(streamBuilder.build()).thenReturn(streams);
+        var capacity = ConsumedCapacity.builder().capacityUnits(0d).build();
+        var metadata = software.amazon.awssdk.awscore.DefaultAwsResponseMetadata.create(Map.of("AWS_REQUEST_ID", "request"));
+        var http = software.amazon.awssdk.http.SdkHttpResponse.builder().statusCode(200).build();
+        var put = PutItemResponse.builder().consumedCapacity(capacity);
+        put.responseMetadata(metadata);
+        put.sdkHttpResponse(http);
+        var get = GetItemResponse.builder().consumedCapacity(capacity);
+        get.responseMetadata(metadata);
+        get.sdkHttpResponse(http);
+        var delete = DeleteItemResponse.builder();
+        delete.sdkHttpResponse(http);
+        when(sdk.putItem(any(PutItemRequest.class))).thenReturn(put.build());
+        when(sdk.getItem(any(GetItemRequest.class))).thenReturn(get.build());
+        when(sdk.deleteItem(any(DeleteItemRequest.class))).thenReturn(delete.build());
+        try (MockedStatic<DynamoDbClient> clients = mockStatic(DynamoDbClient.class);
+             MockedStatic<DynamoDbStreamsClient> streamClients = mockStatic(DynamoDbStreamsClient.class)) {
+            clients.when(DynamoDbClient::builder).thenReturn(builder);
+            streamClients.when(DynamoDbStreamsClient::builder).thenReturn(streamBuilder);
+            try (MulticloudDbClient client = MulticloudDbClientFactory.create(MulticloudDbClientConfig.builder()
+                    .provider(ProviderId.DYNAMO).connection(Map.of("region", "us-east-1")).build())) {
+                for (var result : List.of(client.create(ADDRESS, KEYS.get(0), Map.of()),
+                        client.update(ADDRESS, KEYS.get(0), Map.of()), client.upsert(ADDRESS, KEYS.get(0), Map.of()))) {
+                    var diag = result.diagnostics();
+                    assertEquals(200, diag.statusCode());
+                    assertEquals(StatusCodeDomain.HTTP, diag.statusCodeDomain());
+                    assertEquals("request", diag.requestId());
+                    assertEquals(0, diag.consumption().amount());
+                    assertEquals(ResourceConsumption.Unit.DYNAMODB_CAPACITY_UNIT, diag.consumption().unit());
+                    assertEquals(ResourceConsumption.Coverage.UNKNOWN, diag.consumption().coverage());
+                }
+                var missing = client.read(ADDRESS, KEYS.get(0));
+                assertNull(missing.result());
+                assertEquals(OperationOutcome.NOT_FOUND, missing.diagnostics().outcome());
+                assertNotNull(missing.diagnostics().consumption());
+                var deleted = client.delete(ADDRESS, KEYS.get(0));
+                assertEquals(OperationOutcome.SUCCESS, deleted.diagnostics().outcome());
+                assertNull(deleted.diagnostics().consumption());
+                assertNull(deleted.diagnostics().requestId());
+                verify(sdk, times(3)).putItem(any(PutItemRequest.class));
+                verify(sdk).getItem(any(GetItemRequest.class));
+                verify(sdk).deleteItem(any(DeleteItemRequest.class));
+                verifyNoMoreInteractions(sdk);
+            }
+        }
+    }
+
     private static List<Map<String, Object>> fixtures() {
         var numbers = List.<Number>of((byte) -2, (short) 3, 4, Long.MIN_VALUE, Long.MAX_VALUE,
                 0.1F, Float.MIN_VALUE, Float.MAX_VALUE, -0.0F, -0.0D, Double.MIN_VALUE, Double.MAX_VALUE,

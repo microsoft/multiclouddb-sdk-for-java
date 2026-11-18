@@ -156,7 +156,7 @@ class NativeWriteMappingTest {
                 when(sdk.singleUse()).thenReturn(read);
                 when(read.executeQuery(any(Statement.class)))
                         .thenAnswer(call -> ResultSets.forRows(row.getType(), List.of(row)));
-                Map<String, Object> restored = client.read(ADDRESS, KEYS.get(0)).document();
+                Map<String, Object> restored = client.read(ADDRESS, KEYS.get(0)).result().document();
                 assertEquals("preserved", restored.get("oldField"));
                 assertEquals("new", restored.get("newField"));
                 assertTrue(restored.containsKey("oldNull"));

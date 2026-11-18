@@ -9,6 +9,11 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **Breaking point SPI return migration:** Return portable point carriers with
+  available HTTP status/request ID and typed consumed capacity. Distinguish
+  absent capacity from observed zero; missing/UNKNOWN request IDs stay absent.
+  Existing TOTAL requests remain unchanged; no extra request or cost aggregation.
+
 - Make `DynamoItemMapper` and its conversion methods package-private provider
   implementation details. Applications should use the portable client API rather
   than calling the native mapper directly.

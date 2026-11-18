@@ -165,7 +165,7 @@ ResourceAddress todos = new ResourceAddress("mydb", "todos");
 MulticloudDbKey key = MulticloudDbKey.of("todo-1", "todo-1");
 
 client.upsert(todos, key, doc);                  // Create or replace (upsert)
-DocumentResult result = client.read(todos, key); // Point read → returns DocumentResult
+DocumentResult result = client.read(todos, key).result(); // null result on a read miss
 Map<String, Object> document = result == null ? null : result.document(); // Null if missing
 client.delete(todos, key);                       // Delete
 
@@ -312,14 +312,15 @@ All application code depends on `multiclouddb-api`. The core types are:
 | `QueryPage` | Result page: items + optional continuation token + optional `OperationDiagnostics` |
 | `SortOrder` | `(field, direction)` sort specification for `orderBy` — validates field names against injection |
 | `SortDirection` | `ASC` or `DESC` |
-| `DocumentResult` | Result of `read()`: document payload + optional `DocumentMetadata` |
+| `OperationResponse<T>` | Non-page result plus portable diagnostics; read result is null on absence |
+| `DocumentResult` | Point-read payload inside the response: document + optional `DocumentMetadata` |
 | `DocumentMetadata` | Write-metadata on demand: `lastModified`, `ttlExpiry`, `version` |
 | `CapabilitySet` | Runtime introspection of provider capabilities |
 | `Capability` | Named capability with `supported` flag and notes |
 | `MulticloudDbException` | Structured error with `MulticloudDbError` (category, provider, native code) |
 | `PortabilityWarning` | Signals when an operation uses non-portable behavior |
 | `OperationOptions` | Timeout, TTL (`ttlSeconds`), metadata flag (`includeMetadata`) |
-| `OperationDiagnostics` | Latency, request units/charge, request ID, ETag, item count |
+| `OperationDiagnostics` | Wrapper timing/outcome, native status/domain, resource consumption and available provider metadata |
 | `Expression` | AST node interface for parsed query expressions |
 | `ExpressionParser` | Parses portable expression strings into an AST |
 | `ExpressionValidator` | Validates parameter bindings and function usage |
@@ -558,7 +559,7 @@ OperationOptions opts = OperationOptions.builder()
         .includeMetadata(true)
         .build();
 
-DocumentResult result = client.read(address, key, opts);
+DocumentResult result = client.read(address, key, opts).result();
 DocumentMetadata meta = result.metadata();   // null if provider doesn't support it
 
 if (meta != null) {
@@ -594,18 +595,20 @@ partial-update limitations and the depth contract.
 
 ## Provider Diagnostics
 
-`QueryPage` carries `OperationDiagnostics` with latency, request charge, and
-provider correlation IDs:
+Point responses and query/feed pages carry the same `OperationDiagnostics`:
+wrapper timing/outcome and available provider metadata. Point consumption has
+units and coverage; Spanner consumption is unavailable, not zero or a bill.
 
 ```java
 QueryPage page = client.query(address, q);
 OperationDiagnostics diag = page.diagnostics();
-if (diag != null) {
-    System.out.printf("%s %s latency=%dms ruCharge=%.2f%n",
-        diag.provider().id(), diag.operation(),
-        diag.duration().toMillis(), diag.requestCharge());
-}
+System.out.printf("%s %s latency=%dms%n",
+    diag.provider().id(), diag.operation(), diag.duration().toMillis());
 ```
+
+See [diagnostics and response migration](docs/guide.md#provider-diagnostics)
+for the intentional return-type break, missing-read handling, legacy charge
+sentinels and [Spanner billing](docs/guide.md#checking-spanner-billing).
 
 ---
 

@@ -321,6 +321,12 @@ This appendix is **non-normative**. It records Java SDK behaviors that impact th
 
 ## Decision 22: DocumentMetadata and DocumentResult return type
 
+**Historical decision:** the current contract uses
+`OperationResponse<DocumentResult>` with common diagnostics; `result()` is null
+on a read miss. The document is now a neutral Map, not ObjectNode. See the
+[response migration](../../docs/guide.md#response-migration); the return-type
+change requires recompilation and is not binary-compatible.
+
 - **Decision**: Add `DocumentMetadata` class to `multiclouddb-api` with fields:
   - `Instant lastModified` (null if unavailable)
   - `Instant ttlExpiry` (null if no TTL or provider doesn't expose it)

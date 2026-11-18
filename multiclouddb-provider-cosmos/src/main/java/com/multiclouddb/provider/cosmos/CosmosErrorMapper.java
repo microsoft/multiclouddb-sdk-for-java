@@ -41,7 +41,8 @@ public final class CosmosErrorMapper {
                 retryable,
                 httpStatus,
                 details);
-        return new MulticloudDbException(error, e);
+        return new MulticloudDbException(error, e)
+                .withDiagnostics(CosmosDiagnosticsMapper.from(e, operation));
     }
 
     private static MulticloudDbErrorCategory mapCategory(int statusCode, int subStatusCode) {

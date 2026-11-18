@@ -26,12 +26,14 @@ only when your own mapping or cursor JSON callbacks use them.
 | `MulticloudDbKey` | A `(partitionKey, sortKey)` identity for every document |
 | `QueryRequest` | Query input with expression, parameters, pagination, and partition scoping |
 | `QueryPage` | Query result: items, continuation token, and diagnostics |
-| `DocumentResult` | Point-read result: mutable detached `Map<String, Object>` and optional metadata; `read()` itself returns null if the item is missing |
+| `OperationResponse<T>` | Non-page result plus common diagnostics; read absence has null result and `NOT_FOUND` outcome |
+| `DocumentResult` | Point-read payload inside the response: mutable detached `Map<String, Object>` and optional metadata |
 | `DocumentMetadata` | Write timestamps, TTL expiry, and version/ETag |
 | `CapabilitySet` | Runtime introspection of supported provider capabilities |
 | `MulticloudDbException` | Structured error with portable error category |
 | `OperationOptions` | Per-operation timeout, TTL, and metadata controls |
-| `OperationDiagnostics` | Latency, request charge, request ID, and item count |
+| `OperationDiagnostics` | Wrapper start/end, monotonic duration, outcome, native status/domain and available resource consumption |
+| `ResourceConsumption` | Observed amount with resource unit and coverage; absent is distinct from measured zero |
 
 ### Query Expression Types
 

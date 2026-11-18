@@ -34,11 +34,11 @@ class ProvisionSchemaTest {
             ThrowingRunnable onEnsureContainer) {
 
         return new MulticloudDbProviderClient() {
-            @Override public void create(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) {}
-            @Override public DocumentResult read(ResourceAddress a, MulticloudDbKey k, OperationOptions o) { return null; }
-            @Override public void update(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) {}
-            @Override public void upsert(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) {}
-            @Override public void delete(ResourceAddress a, MulticloudDbKey k, OperationOptions o) {}
+            @Override public OperationResponse<Void> create(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) { throw new UnsupportedOperationException(); }
+            @Override public OperationResponse<DocumentResult> read(ResourceAddress a, MulticloudDbKey k, OperationOptions o) { return null; }
+            @Override public OperationResponse<Void> update(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) { throw new UnsupportedOperationException(); }
+            @Override public OperationResponse<Void> upsert(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) { throw new UnsupportedOperationException(); }
+            @Override public OperationResponse<Void> delete(ResourceAddress a, MulticloudDbKey k, OperationOptions o) { throw new UnsupportedOperationException(); }
             @Override public QueryPage query(ResourceAddress a, QueryRequest q, OperationOptions o) { return null; }
             @Override public CapabilitySet capabilities() { return null; }
             @Override public ProviderId providerId() { return null; }
@@ -193,11 +193,11 @@ class ProvisionSchemaTest {
         //
         // For this test, verify that a two-level chain thrown directly retains category.
         MulticloudDbProviderClient client = new MulticloudDbProviderClient() {
-            @Override public void create(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) {}
-            @Override public DocumentResult read(ResourceAddress a, MulticloudDbKey k, OperationOptions o) { return null; }
-            @Override public void update(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) {}
-            @Override public void upsert(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) {}
-            @Override public void delete(ResourceAddress a, MulticloudDbKey k, OperationOptions o) {}
+            @Override public OperationResponse<Void> create(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) { throw new UnsupportedOperationException(); }
+            @Override public OperationResponse<DocumentResult> read(ResourceAddress a, MulticloudDbKey k, OperationOptions o) { return null; }
+            @Override public OperationResponse<Void> update(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) { throw new UnsupportedOperationException(); }
+            @Override public OperationResponse<Void> upsert(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) { throw new UnsupportedOperationException(); }
+            @Override public OperationResponse<Void> delete(ResourceAddress a, MulticloudDbKey k, OperationOptions o) { throw new UnsupportedOperationException(); }
             @Override public QueryPage query(ResourceAddress a, QueryRequest q, OperationOptions o) { return null; }
             @Override public CapabilitySet capabilities() { return null; }
             @Override public ProviderId providerId() { return null; }

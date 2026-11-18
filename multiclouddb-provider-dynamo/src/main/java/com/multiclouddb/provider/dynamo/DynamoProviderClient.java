@@ -15,6 +15,9 @@ import com.multiclouddb.api.MulticloudDbKey;
 import com.multiclouddb.api.OperationDiagnostics;
 import com.multiclouddb.api.OperationNames;
 import com.multiclouddb.api.OperationOptions;
+import com.multiclouddb.api.OperationResponse;
+import com.multiclouddb.api.ResourceConsumption;
+import com.multiclouddb.api.StatusCodeDomain;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
@@ -210,7 +213,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      *         item already exists, or any other mapped DynamoDB error
      */
     @Override
-    public void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public OperationResponse<Void> create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
         checkOpen(OperationNames.CREATE);
         try {
             Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
@@ -230,8 +233,9 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                     .build();
 
             PutItemResponse response = dynamoClient.putItem(request);
-            logItemDiagnostics(OperationNames.CREATE, address, response.responseMetadata().requestId(),
+            logItemDiagnostics(OperationNames.CREATE, address, pointRequestId(response),
                     response.consumedCapacity());
+            return new OperationResponse<>(null, pointDiagnostics(OperationNames.CREATE, response, response.consumedCapacity()));
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.CREATE);
         }
@@ -248,11 +252,11 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      * @param address the logical database + collection
      * @param key     the document key
      * @param options operation options (currently unused by this provider)
-     * @return the item as a {@code Map<String, Object>}, or {@code null} if not found
+     * @return a response with document result, or null result when absent
      * @throws com.multiclouddb.api.MulticloudDbException on any DynamoDB error
      */
     @Override
-    public DocumentResult read(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
+    public OperationResponse<DocumentResult> read(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
         checkOpen(OperationNames.READ);
         try {
             Map<String, AttributeValue> keyMap = new LinkedHashMap<>();
@@ -267,10 +271,10 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                     .build();
 
             GetItemResponse response = dynamoClient.getItem(request);
-            logItemDiagnostics(OperationNames.READ, address, response.responseMetadata().requestId(),
+            logItemDiagnostics(OperationNames.READ, address, pointRequestId(response),
                     response.consumedCapacity());
             if (!response.hasItem() || response.item().isEmpty()) {
-                return null;
+                return new OperationResponse<>(null, pointDiagnostics(OperationNames.READ, response, response.consumedCapacity()));
             }
             Map<String, Object> doc = DynamoItemMapper.attributeMapToMap(response.item());
 
@@ -284,7 +288,8 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                 }
                 metadata = metaBuilder.build();
             }
-            return new DocumentResult(doc, metadata);
+            return new OperationResponse<>(new DocumentResult(doc, metadata),
+                    pointDiagnostics(OperationNames.READ, response, response.consumedCapacity()));
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.READ);
         }
@@ -306,7 +311,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      *         item does not exist
      */
     @Override
-    public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public OperationResponse<Void> update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
         checkOpen(OperationNames.UPDATE);
         try {
             Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
@@ -326,14 +331,18 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                     .build();
 
             PutItemResponse response = dynamoClient.putItem(request);
-            logItemDiagnostics(OperationNames.UPDATE, address, response.responseMetadata().requestId(),
+            logItemDiagnostics(OperationNames.UPDATE, address, pointRequestId(response),
                     response.consumedCapacity());
+            return new OperationResponse<>(null, pointDiagnostics(OperationNames.UPDATE, response, response.consumedCapacity()));
         } catch (ConditionalCheckFailedException e) {
             // attribute_exists() guard failed — item does not exist; map to NOT_FOUND
             // to match the contract and the behaviour of Cosmos (HTTP 404) and Spanner (NOT_FOUND).
             Map<String, String> details = new java.util.LinkedHashMap<>();
             if (e.awsErrorDetails() != null) {
                 details.put("errorCode", e.awsErrorDetails().errorCode());
+            }
+            if (e.requestId() != null && !"UNKNOWN".equals(e.requestId())) {
+                details.put("requestId", e.requestId());
             }
             throw new MulticloudDbException(new MulticloudDbError(
                     MulticloudDbErrorCategory.NOT_FOUND,
@@ -362,7 +371,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      * @throws com.multiclouddb.api.MulticloudDbException on any DynamoDB error
      */
     @Override
-    public void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
+    public OperationResponse<Void> upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options) {
         checkOpen(OperationNames.UPSERT);
         try {
             Map<String, AttributeValue> item = DynamoItemMapper.mapToAttributeMap(document);
@@ -381,8 +390,9 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                     .build();
 
             PutItemResponse response = dynamoClient.putItem(request);
-            logItemDiagnostics(OperationNames.UPSERT, address, response.responseMetadata().requestId(),
+            logItemDiagnostics(OperationNames.UPSERT, address, pointRequestId(response),
                     response.consumedCapacity());
+            return new OperationResponse<>(null, pointDiagnostics(OperationNames.UPSERT, response, response.consumedCapacity()));
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.UPSERT);
         }
@@ -403,7 +413,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      * @throws com.multiclouddb.api.MulticloudDbException on any DynamoDB error
      */
     @Override
-    public void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
+    public OperationResponse<Void> delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
         checkOpen(OperationNames.DELETE);
         try {
             Map<String, AttributeValue> keyMap = new LinkedHashMap<>();
@@ -418,11 +428,31 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                     .build();
 
             DeleteItemResponse response = dynamoClient.deleteItem(request);
-            logItemDiagnostics(OperationNames.DELETE, address, response.responseMetadata().requestId(),
+            logItemDiagnostics(OperationNames.DELETE, address, pointRequestId(response),
                     response.consumedCapacity());
+            return new OperationResponse<>(null, pointDiagnostics(OperationNames.DELETE, response, response.consumedCapacity()));
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.DELETE);
         }
+    }
+
+    private OperationDiagnostics pointDiagnostics(String operation,
+            software.amazon.awssdk.services.dynamodb.model.DynamoDbResponse response, ConsumedCapacity capacity) {
+        var builder = OperationDiagnostics.builder(ProviderId.DYNAMO, operation)
+                .requestId(pointRequestId(response));
+        if (response.sdkHttpResponse() != null && response.sdkHttpResponse().statusCode() > 0) {
+            builder.statusCode(response.sdkHttpResponse().statusCode()).statusCodeDomain(StatusCodeDomain.HTTP);
+        }
+        if (capacity != null && capacity.capacityUnits() != null) {
+            builder.consumption(new ResourceConsumption(capacity.capacityUnits(),
+                    ResourceConsumption.Unit.DYNAMODB_CAPACITY_UNIT, ResourceConsumption.Coverage.UNKNOWN));
+        }
+        return builder.build();
+    }
+
+    private static String pointRequestId(software.amazon.awssdk.services.dynamodb.model.DynamoDbResponse response) {
+        String id = response.responseMetadata() == null ? null : response.responseMetadata().requestId();
+        return id == null || id.isBlank() || "UNKNOWN".equals(id) ? null : id;
     }
 
     /**

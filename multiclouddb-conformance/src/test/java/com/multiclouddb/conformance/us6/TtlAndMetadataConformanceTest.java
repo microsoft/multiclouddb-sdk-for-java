@@ -111,7 +111,7 @@ public abstract class TtlAndMetadataConformanceTest {
         client.upsert(getAddress(), key, doc, OperationOptions.defaults());
 
         OperationOptions readOpts = OperationOptions.builder().includeMetadata(true).build();
-        DocumentResult result = client.read(getAddress(), key, readOpts);
+        DocumentResult result = client.read(getAddress(), key, readOpts).result();
 
         assertNotNull(result, "read() must return a result");
         assertNotNull(result.metadata(),
@@ -129,7 +129,7 @@ public abstract class TtlAndMetadataConformanceTest {
         client.upsert(getAddress(), key, doc, OperationOptions.defaults());
 
         OperationOptions readOpts = OperationOptions.builder().includeMetadata(true).build();
-        DocumentResult result = client.read(getAddress(), key, readOpts);
+        DocumentResult result = client.read(getAddress(), key, readOpts).result();
 
         assertNotNull(result, "read() must return a result");
         assertNotNull(result.metadata(), "metadata() must be non-null");
@@ -151,7 +151,7 @@ public abstract class TtlAndMetadataConformanceTest {
         client.upsert(getAddress(), key, doc, OperationOptions.defaults());
 
         OperationOptions readOpts = OperationOptions.builder().includeMetadata(true).build();
-        DocumentResult result = client.read(getAddress(), key, readOpts);
+        DocumentResult result = client.read(getAddress(), key, readOpts).result();
 
         assertNotNull(result, "read() must return a result");
         assertNotNull(result.metadata(), "metadata() must be non-null");
@@ -170,7 +170,7 @@ public abstract class TtlAndMetadataConformanceTest {
         client.upsert(getAddress(), key, doc, OperationOptions.defaults());
 
         // Default options — includeMetadata is false
-        DocumentResult result = client.read(getAddress(), key, OperationOptions.defaults());
+        DocumentResult result = client.read(getAddress(), key, OperationOptions.defaults()).result();
 
         assertNotNull(result, "read() must return a result");
         assertNull(result.metadata(),

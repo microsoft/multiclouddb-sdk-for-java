@@ -12,6 +12,7 @@ import com.multiclouddb.api.MulticloudDbException;
 import com.multiclouddb.api.MulticloudDbKey;
 import com.multiclouddb.api.OperationNames;
 import com.multiclouddb.api.OperationOptions;
+import com.multiclouddb.api.OperationResponse;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
@@ -44,31 +45,31 @@ public interface MulticloudDbProviderClient extends AutoCloseable {
      *
      * @throws MulticloudDbException with category CONFLICT if the key already exists
      */
-    void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
+    OperationResponse<Void> create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Read a document by key.
      *
-     * @return the document result (document + optional metadata), or {@code null} if not found
+     * @return a non-null response with null result on a read miss; the public wrapper finalizes timing
      */
-    DocumentResult read(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
+    OperationResponse<DocumentResult> read(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
 
     /**
      * Update an existing document. Fails if the key does not exist.
      *
      * @throws MulticloudDbException with category NOT_FOUND if the key does not exist
      */
-    void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
+    OperationResponse<Void> update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Upsert (create or replace) a document.
      */
-    void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
+    OperationResponse<Void> upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Delete a document by key.
      */
-    void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
+    OperationResponse<Void> delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
 
     /**
      * Execute a query and return a single page of results.

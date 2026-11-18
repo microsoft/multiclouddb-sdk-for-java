@@ -192,7 +192,7 @@ public class Main {
         MulticloudDbKey key = MulticloudDbKey.of(id, id);
 
         System.out.printf("  client.read(address, key(%s))%n", id);
-        DocumentResult result = client.read(address, key);
+        DocumentResult result = client.read(address, key).result();
         if (result != null) {
             Map<String, Object> document = result.document();
             System.out.printf("    → name=%s, price=%s%n",

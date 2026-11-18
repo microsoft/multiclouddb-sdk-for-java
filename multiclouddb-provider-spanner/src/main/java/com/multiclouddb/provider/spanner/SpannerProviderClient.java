@@ -15,6 +15,7 @@ import com.multiclouddb.api.MulticloudDbKey;
 import com.multiclouddb.api.OperationDiagnostics;
 import com.multiclouddb.api.OperationNames;
 import com.multiclouddb.api.OperationOptions;
+import com.multiclouddb.api.OperationResponse;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
@@ -235,7 +236,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      * @throws com.multiclouddb.api.MulticloudDbException on any Spanner error
      */
     @Override
-    public void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> payload, OperationOptions options) {
+    public OperationResponse<Void> create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> payload, OperationOptions options) {
         checkOpen(OperationNames.CREATE);
         Map<String, Object> document = Objects.requireNonNull(payload, "document");
         validateNoReservedFields(document, OperationNames.CREATE);
@@ -248,6 +249,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
             writeFullDocument(mutation, document, OperationNames.CREATE);
             databaseClient.write(List.of(mutation.build()));
             logItemDiagnostics(OperationNames.CREATE, address);
+            return new OperationResponse<>(null, OperationDiagnostics.builder(ProviderId.SPANNER, OperationNames.CREATE).build());
         } catch (SpannerException e) {
             throw SpannerErrorMapper.map(e, OperationNames.CREATE);
         }
@@ -293,7 +295,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      *         the row does not exist, or any other Spanner error
      */
     @Override
-    public void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> payload, OperationOptions options) {
+    public OperationResponse<Void> update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> payload, OperationOptions options) {
         checkOpen(OperationNames.UPDATE);
         Map<String, Object> document = Objects.requireNonNull(payload, "document");
         validateNoReservedFields(document, OperationNames.UPDATE);
@@ -373,6 +375,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
             });
 
             logItemDiagnostics(OperationNames.UPDATE, address);
+            return new OperationResponse<>(null, OperationDiagnostics.builder(ProviderId.SPANNER, OperationNames.UPDATE).build());
         } catch (SpannerException e) {
             throw SpannerErrorMapper.map(e, OperationNames.UPDATE);
         }
@@ -408,7 +411,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      * @throws com.multiclouddb.api.MulticloudDbException on any Spanner error
      */
     @Override
-    public void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> payload, OperationOptions options) {
+    public OperationResponse<Void> upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> payload, OperationOptions options) {
         checkOpen(OperationNames.UPSERT);
         Map<String, Object> document = Objects.requireNonNull(payload, "document");
         validateNoReservedFields(document, OperationNames.UPSERT);
@@ -421,6 +424,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
             writeFullDocument(mutation, document, OperationNames.UPSERT);
             databaseClient.write(List.of(mutation.build()));
             logItemDiagnostics(OperationNames.UPSERT, address);
+            return new OperationResponse<>(null, OperationDiagnostics.builder(ProviderId.SPANNER, OperationNames.UPSERT).build());
         } catch (SpannerException e) {
             throw SpannerErrorMapper.map(e, OperationNames.UPSERT);
         }
@@ -565,11 +569,11 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      * @param address the logical database + collection
      * @param key     the document key
      * @param options operation options (currently unused by this provider)
-     * @return the row as a {@code Map<String, Object>}, or {@code null} if not found
+     * @return a response with document result, or null result when absent
      * @throws com.multiclouddb.api.MulticloudDbException on any Spanner error
      */
     @Override
-    public DocumentResult read(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
+    public OperationResponse<DocumentResult> read(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
         checkOpen(OperationNames.READ);
         try {
             String table = address.collection();
@@ -592,9 +596,10 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
                         // the table has allow_commit_timestamp=true. Return empty shell.
                         metadata = DocumentMetadata.builder().build();
                     }
-                    return new DocumentResult(item, metadata);
+                    return new OperationResponse<>(new DocumentResult(item, metadata),
+                            OperationDiagnostics.builder(ProviderId.SPANNER, OperationNames.READ).build());
                 }
-                return null;
+                return new OperationResponse<>(null, OperationDiagnostics.builder(ProviderId.SPANNER, OperationNames.READ).build());
             }
         } catch (SpannerException e) {
             throw SpannerErrorMapper.map(e, OperationNames.READ);
@@ -615,7 +620,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
      * @throws com.multiclouddb.api.MulticloudDbException on any Spanner error
      */
     @Override
-    public void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
+    public OperationResponse<Void> delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options) {
         checkOpen(OperationNames.DELETE);
         try {
             String table = address.collection();
@@ -625,6 +630,7 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
             databaseClient.write(List.of(
                     Mutation.delete(table, Key.of(partitionKeyVal, sortKeyVal))));
             logItemDiagnostics(OperationNames.DELETE, address);
+            return new OperationResponse<>(null, OperationDiagnostics.builder(ProviderId.SPANNER, OperationNames.DELETE).build());
         } catch (SpannerException e) {
             throw SpannerErrorMapper.map(e, OperationNames.DELETE);
         }

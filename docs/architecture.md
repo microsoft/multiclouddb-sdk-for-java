@@ -60,13 +60,14 @@ All application code depends on `multiclouddb-api`. The core types are:
 | `QueryRequest` | Portable expression, native expression, parameters, page size, continuation token, partition key scoping, `limit`, `orderBy` |
 | `QueryPage` | Result page: items + optional continuation token + optional diagnostics |
 | `SortOrder` / `SortDirection` | Sort specification for `orderBy` - validates field names against injection |
-| `DocumentResult` | Result of `read()`: document payload + optional `DocumentMetadata` |
+| `OperationResponse<T>` | Portable non-page response with a result and `OperationDiagnostics` |
+| `DocumentResult` | Payload inside the read response: document + optional `DocumentMetadata` |
 | `DocumentMetadata` | Write-metadata: `lastModified`, `ttlExpiry`, `version` |
 | `CapabilitySet` / `Capability` | Runtime introspection of provider capabilities |
 | `MulticloudDbException` | Structured error with category, provider, and native code |
 | `PortabilityWarning` | Signals non-portable behavior |
 | `OperationOptions` | Per-call timeout, TTL, metadata flag |
-| `OperationDiagnostics` | Latency, request units/charge, request ID, ETag, item count |
+| `OperationDiagnostics` | Wrapper timing/outcome, native status/domain, resource consumption and available provider metadata |
 
 ### Expression Types
 

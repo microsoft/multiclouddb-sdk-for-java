@@ -108,10 +108,10 @@ class CustomerObjectMappingTest {
                 AttributeValue nested = AttributeValue.builder().s("private-value").build();
                 for (int i = 0; i < 128; i++) nested = AttributeValue.builder().l(nested).build();
                 readFixture.set(Map.of("deep", nested));
-                assertNotNull(client.read(ADDRESS, KEY).document().get("deep"));
+                assertNotNull(client.read(ADDRESS, KEY).result().document().get("deep"));
                 readFixture.set(Map.of("legacyBinary", AttributeValue.builder()
                         .b(software.amazon.awssdk.core.SdkBytes.fromByteArray(new byte[]{1, 2})).build()));
-                assertNull(client.read(ADDRESS, KEY).document().get("legacyBinary"),
+                assertNull(client.read(ADDRESS, KEY).result().document().get("legacyBinary"),
                         "existing native B fallback happens before neutral conversion and is unchanged");
                 assertValidationBeforeNativeOperation(client, nativeClient);
                 var nativeSizeFailure = DynamoDbException.builder().statusCode(400)
@@ -188,10 +188,10 @@ class CustomerObjectMappingTest {
                         "retain Float-to-FLOAT64 mapping, not decimal-to-STRING mapping");
                 readFixture.set(Mutation.newInsertBuilder(ADDRESS.collection()).set("private-field")
                         .to(Value.json("[".repeat(128) + "null" + "]".repeat(128))).build());
-                assertNotNull(client.read(ADDRESS, KEY).document().get("private-field"));
+                assertNotNull(client.read(ADDRESS, KEY).result().document().get("private-field"));
                 readFixture.set(Mutation.newInsertBuilder(ADDRESS.collection()).set("legacyBinary")
                         .to(com.google.cloud.ByteArray.copyFrom(new byte[]{1, 2})).build());
-                assertEquals("AQI=", client.read(ADDRESS, KEY).document().get("legacyBinary"),
+                assertEquals("AQI=", client.read(ADDRESS, KEY).result().document().get("legacyBinary"),
                         "existing native BYTES-to-base64 mapping is not new Map<String, Object> binary support");
                 assertValidationBeforeNativeOperation(client, nativeClient);
                 Map<String, Object> reserved = Map.of("Data", 1);
@@ -243,7 +243,7 @@ class CustomerObjectMappingTest {
         client.create(ADDRESS, KEY, encoded);
         R create = captured.get();
         readFixture.accept(create);
-        Map<String, Object> createRead = client.read(ADDRESS, KEY).document();
+        Map<String, Object> createRead = client.read(ADDRESS, KEY).result().document();
         assertEquals(source, mapper.convertValue(createRead, BATCH));
         client.create(ADDRESS, KEY, baseline);
         assertEquals(comparable.apply(create), comparable.apply(captured.get()));
@@ -251,7 +251,7 @@ class CustomerObjectMappingTest {
         client.upsert(ADDRESS, KEY, encoded);
         R upsert = captured.get();
         readFixture.accept(upsert);
-        Map<String, Object> upsertRead = client.read(ADDRESS, KEY).document();
+        Map<String, Object> upsertRead = client.read(ADDRESS, KEY).result().document();
         JsonNode before = mapper.valueToTree(upsertRead);
         assertEquals(source, mapper.convertValue(upsertRead, BATCH));
         assertEquals(before, mapper.valueToTree(upsertRead));
@@ -268,10 +268,10 @@ class CustomerObjectMappingTest {
         Map<String, Object> independent = plainCodec.toMap(plain);
         client.create(ADDRESS, KEY, independent);
         readFixture.accept(captured.get());
-        assertEquals(plain, plainCodec.fromMap(client.read(ADDRESS, KEY).document()));
+        assertEquals(plain, plainCodec.fromMap(client.read(ADDRESS, KEY).result().document()));
         client.upsert(ADDRESS, KEY, independent);
         readFixture.accept(captured.get());
-        assertEquals(plain, plainCodec.fromMap(client.read(ADDRESS, KEY).document()));
+        assertEquals(plain, plainCodec.fromMap(client.read(ADDRESS, KEY).result().document()));
 
         Map<String, Object> sixKinds = new LinkedHashMap<>();
         sixKinds.put("nothing", null);
@@ -282,11 +282,11 @@ class CustomerObjectMappingTest {
         sixKinds.put("array", Arrays.asList(null, true, "text", 2, Map.of()));
         client.create(ADDRESS, KEY, sixKinds);
         readFixture.accept(captured.get());
-        Map<String, Object> readSixKinds = client.read(ADDRESS, KEY).document();
+        Map<String, Object> readSixKinds = client.read(ADDRESS, KEY).result().document();
         assertNeutralFields(sixKinds, readSixKinds);
         client.upsert(ADDRESS, KEY, sixKinds);
         readFixture.accept(captured.get());
-        Map<String, Object> upsertSixKinds = client.read(ADDRESS, KEY).document();
+        Map<String, Object> upsertSixKinds = client.read(ADDRESS, KEY).result().document();
         assertNeutralFields(sixKinds, upsertSixKinds);
 
         List<Object> callerList = new ArrayList<>(List.of("original"));
@@ -295,16 +295,16 @@ class CustomerObjectMappingTest {
         readFixture.accept(captured.get());
         callerList.clear();
         callerInput.clear();
-        Map<String, Object> detached = client.read(ADDRESS, KEY).document();
+        Map<String, Object> detached = client.read(ADDRESS, KEY).result().document();
         assertEquals(List.of("original"), detached.get("nested"), "write must not retain caller containers");
         assertInstanceOf(List.class, detached.get("nested")).clear();
         detached.clear();
-        assertEquals(List.of("original"), client.read(ADDRESS, KEY).document().get("nested"),
+        assertEquals(List.of("original"), client.read(ADDRESS, KEY).result().document().get("nested"),
                 "returned containers must be mutable and detached from the native response");
         R beforeNull = captured.get();
         assertThrows(MulticloudDbException.class, () -> client.upsert(ADDRESS, KEY, null));
         assertSame(beforeNull, captured.get(), "null upsert must not issue a replacement write");
-        assertEquals(List.of("original"), client.read(ADDRESS, KEY).document().get("nested"));
+        assertEquals(List.of("original"), client.read(ADDRESS, KEY).result().document().get("nested"));
     }
 
     private static void assertNeutralFields(Map<String, Object> expected, Map<String, Object> actual) {

@@ -7,12 +7,12 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * The result of a {@link MulticloudDbClient#read} operation, combining the
+ * The payload inside a {@link MulticloudDbClient#read} response, combining the
  * document payload with optional provider write-metadata.
  * <p>
  * Usage:
  * <pre>{@code
- * DocumentResult result = client.read(address, key);
+ * DocumentResult result = client.read(address, key).result();
  * if (result != null) {
  *     Map<String, Object> doc = result.document();
  *     DocumentMetadata meta = result.metadata(); // may be null if includeMetadata=false

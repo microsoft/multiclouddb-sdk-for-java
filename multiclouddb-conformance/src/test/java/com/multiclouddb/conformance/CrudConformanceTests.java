@@ -126,10 +126,10 @@ public abstract class CrudConformanceTests {
         MulticloudDbKey key = MulticloudDbKey.of("conf-neutral-ownership", UUID.randomUUID().toString());
         try {
             client.create(getAddress(), key, Map.of());
-            assertNotNull(client.read(getAddress(), key));
+            assertNotNull(client.read(getAddress(), key).result());
             client.update(getAddress(), key, Map.of());
             client.upsert(getAddress(), key, Map.of());
-            assertNotNull(client.read(getAddress(), key));
+            assertNotNull(client.read(getAddress(), key).result());
             for (String operation : List.of("create", "update", "upsert")) {
                 if (operation.equals("create")) safeDelete(key);
                 Map<String, Object> inner = new LinkedHashMap<>();
@@ -143,7 +143,7 @@ public abstract class CrudConformanceTests {
                 inner.clear();
                 nested.clear();
                 input.clear();
-                Map<String, Object> first = client.read(getAddress(), key).document();
+                Map<String, Object> first = client.read(getAddress(), key).result().document();
                 List<?> returned = org.junit.jupiter.api.Assertions.assertInstanceOf(List.class, first.get("arrayField"));
                 Map<?, ?> returnedInner = org.junit.jupiter.api.Assertions.assertInstanceOf(Map.class, returned.get(0));
                 assertEquals("original", returnedInner.get("text"));
@@ -152,7 +152,7 @@ public abstract class CrudConformanceTests {
                 returnedInner.clear();
                 returned.clear();
                 first.clear();
-                Map<String, Object> second = client.read(getAddress(), key).document();
+                Map<String, Object> second = client.read(getAddress(), key).result().document();
                 List<?> again = org.junit.jupiter.api.Assertions.assertInstanceOf(List.class, second.get("arrayField"));
                 Map<?, ?> againInner = org.junit.jupiter.api.Assertions.assertInstanceOf(Map.class, again.get(0));
                 assertTrue(againInner.containsKey("nullable"));
@@ -160,7 +160,7 @@ public abstract class CrudConformanceTests {
                 assertEquals("original", againInner.get("text"));
                 assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, assertThrows(MulticloudDbException.class,
                         () -> client.upsert(getAddress(), key, null)).error().category());
-                assertEquals(second, client.read(getAddress(), key).document(),
+                assertEquals(second, client.read(getAddress(), key).result().document(),
                         "rejected null upsert must leave the stored document unchanged");
             }
         } finally {
@@ -183,7 +183,7 @@ public abstract class CrudConformanceTests {
         MulticloudDbKey key = MulticloudDbKey.of("conf-test-1", "conf-test-1");
         client.upsert(getAddress(), key, Map.of("title", "Conformance Test Item", "value", 42, "active", true));
 
-        DocumentResult result = client.read(getAddress(), key);
+        DocumentResult result = client.read(getAddress(), key).result();
         assertNotNull(result, "Document should be returned after upsert");
         assertEquals("Conformance Test Item", result.document().get("title"));
         assertEquals(42, ((Number) result.document().get("value")).intValue());
@@ -197,7 +197,7 @@ public abstract class CrudConformanceTests {
         client.upsert(getAddress(), key, Map.of("version", 1, "originalOnly", "should-disappear", "shared", "v1"));
         client.upsert(getAddress(), key, Map.of("version", 2, "extra", "field", "shared", "v2"));
 
-        DocumentResult result = client.read(getAddress(), key);
+        DocumentResult result = client.read(getAddress(), key).result();
         assertNotNull(result);
         Map<String, Object> doc = result.document();
         assertEquals(2, ((Number) doc.get("version")).intValue(), "version should be replaced");
@@ -213,7 +213,7 @@ public abstract class CrudConformanceTests {
     @Test @Order(3)
     @DisplayName("read returns null for nonexistent key")
     void readNonExistent() {
-        assertNull(client.read(getAddress(), MulticloudDbKey.of("does-not-exist-xyz", "does-not-exist-xyz")),
+        assertNull(client.read(getAddress(), MulticloudDbKey.of("does-not-exist-xyz", "does-not-exist-xyz")).result(),
                 "Should return null for nonexistent document");
     }
 
@@ -222,9 +222,9 @@ public abstract class CrudConformanceTests {
     void deleteDocument() {
         MulticloudDbKey key = MulticloudDbKey.of("conf-test-delete", "conf-test-delete");
         client.upsert(getAddress(), key, Map.of("title", "To be deleted"));
-        assertNotNull(client.read(getAddress(), key));
+        assertNotNull(client.read(getAddress(), key).result());
         client.delete(getAddress(), key);
-        assertNull(client.read(getAddress(), key));
+        assertNull(client.read(getAddress(), key).result());
     }
 
     @Test @Order(5)
@@ -388,7 +388,7 @@ public abstract class CrudConformanceTests {
 
         try {
             client.upsert(getAddress(), key, doc);
-            DocumentResult r = client.read(getAddress(), key);
+            DocumentResult r = client.read(getAddress(), key).result();
             assertNotNull(r, "Document should be readable after upsert");
             Map<String, Object> d = r.document();
 

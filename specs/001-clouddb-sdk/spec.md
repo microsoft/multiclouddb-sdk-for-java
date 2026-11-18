@@ -374,18 +374,25 @@ As an application developer, I can declare which providers my application target
 
 ### User Story 17 - Request Cost Metrics on Responses (Priority: P1)
 
-As an application developer, I can access the provider-native request cost (e.g., RU charge, consumed capacity units) on every SDK response so that I can implement cost attribution, budget alerting, and query optimization in my observability pipeline.
+As an application developer, I can inspect common operation diagnostics and
+available provider-reported resource consumption, with units and coverage,
+without importing native SDK types. These measurements are not monetary bills.
 
-**Why this priority**: Enterprise platform teams require cost visibility per operation for chargeback to internal teams and for identifying expensive queries. All three providers expose request cost natively (Cosmos DB Request Units, DynamoDB consumed read/write capacity units, Spanner operation cost metadata), but the current SDK does not surface these on response objects.
+**Why this priority**: Cosmos exposes RU and DynamoDB can return consumed
+capacity. Spanner does not expose an equivalent per-request charge; users
+consult Cloud Billing. ResultSetStats and commit mutation counts are not fees.
 
-**Independent Test**: A sample application performs a write and a query, then reads the cost metric from each response. The metric is a positive numeric value on all providers. The same code works across providers by configuration only.
+**Independent Test**: The same consumer reads point-response timing/outcome and
+optional consumption across providers. A measured zero is distinguishable from
+unavailable; unavailable Spanner consumption is not a failure.
 
 **Acceptance Scenarios**:
 
-1. **Given** a successful write operation on any provider, **When** the response is returned, **Then** the response includes a numeric cost metric reflecting the provider's native request charge.
-2. **Given** a successful query operation on any provider, **When** the response is returned, **Then** the response includes the cumulative cost metric for the query execution.
+1. **Given** a successful point operation, **When** its response is returned, **Then** common start/end, monotonic duration and outcome are present, with native consumption only when actually returned.
+2. **Given** a query/feed page, **When** it is returned, **Then** it keeps its existing carrier and paging behavior and receives a common outer summary. Existing native metadata is retained without claiming complete cumulative cost.
 3. **Given** a provider that does not expose cost metrics for a specific operation type, **When** the response is returned, **Then** the cost metric field is empty/null (not an error) and the capability is documented as unavailable.
-4. **Given** cost metrics enabled, **When** bulk operations complete, **Then** cost metrics are available as an aggregate total and (where provider supports) per-item breakdown.
+4. **Given** a read miss, **When** the call completes, **Then** a non-null response contains null result, NOT_FOUND outcome and diagnostics. Ordinary Java validation exception types remain unchanged; typed SDK errors carry diagnostics.
+5. **Given** management/provisioning calls, **When** they complete, **Then** their response includes basic outer diagnostics only. Child/request aggregation, verbose details and exporters are separately approved follow-ups.
 
 ---
 
@@ -873,14 +880,14 @@ The SDK enforces a strict no-code-escape-hatch policy to preserve portability:
 
 #### Request Cost Metrics Requirements
 
-- **FR-126**: Every SDK response object MUST include an optional numeric field representing the provider-native request cost for that operation (e.g., Cosmos DB Request Units, DynamoDB consumed read/write capacity units, Spanner operation cost).
+- **FR-126**: SDK-completed response/page objects MUST include common diagnostics. Point consumption, when available, MUST include a non-negative finite amount, a provider resource unit and coverage of the whole call (COMPLETE, PARTIAL or UNKNOWN), not a currency value.
 - **FR-127**: Each provider adapter MUST extract and populate the cost metric from the provider's native response metadata:
-  - **Cosmos DB**: `requestCharge` from `CosmosDiagnostics`.
+  - **Cosmos DB**: RU from already-returned point response/exception metadata when present.
   - **DynamoDB**: `consumedCapacity` from response (requires `ReturnConsumedCapacity` on request).
-  - **Spanner**: Operation statistics from `ResultSetStats` where available.
-- **FR-128**: When a provider does not expose cost metrics for a specific operation type, the cost field MUST be null/empty (not an error) and the limitation MUST be documented.
-- **FR-129**: For bulk operations, cost metrics MUST be available as an aggregate total. Where the provider supports per-item cost breakdown, per-item costs MUST also be accessible.
-- **FR-130**: Request cost metrics MUST be surfaced in diagnostic log lines (alongside existing operation diagnostics) when diagnostics logging is enabled.
+  - **Spanner**: Consumption unavailable. Do not enable PROFILE/commit statistics or query Billing to manufacture a value.
+- **FR-128**: Unavailable consumption MUST be null, distinct from observed zero. Preserve/document legacy requestCharge's zero sentinel; do not infer availability from it. Existing query legacy fields can remain without a new typed consumption value in the point-first migration.
+- **FR-129**: Complete request/child/bulk consumption aggregation is deferred. Do not claim a complete total from one observed response, sum overlapping durations, or invent missing values. Initial point coverage is UNKNOWN unless native completeness is proven.
+- **FR-130**: Preserve existing provider logging configuration and behavior. Response diagnostics do not imply automatic logging, file output, native-detail access or a MultiCloud OTel implementation.
 
 #### Local Quorum Consistency Requirements
 
@@ -1118,7 +1125,7 @@ The following operators and functions form the portable query subset, available 
 - **SC-045**: A change feed consumer can read events from 48 hours ago on Cosmos DB and Spanner when extended history is enabled. On DynamoDB with a configured external event store, the same 48-hour historical read works seamlessly.
 - **SC-046**: A change feed consumer with default configuration (no extended history) that requests changes older than 24 hours receives a clear, structured error indicating that extended history must be enabled.
 - **SC-047**: The CI portability gate rejects a release when any portable feature lacks conformance test coverage for at least 2 providers, clearly identifying the offending feature and missing provider.
-- **SC-048**: After any successful data-plane operation, the application can read the request cost metric from the response object. The value is a positive number reflecting the provider's native charge (RU, capacity units, etc.).
+- **SC-048**: SDK-completed calls provide common timing/outcome diagnostics. Point consumers can distinguish unavailable consumption from measured zero and interpret units/coverage portably. No test requires positive Spanner cost or profiling.
 - **SC-049**: A `LOCAL_QUORUM` read returns every write committed in the serving region before the read began. Each advertised provider/operation combination passes this visibility test; unsupported combinations fail before execution.
 - **SC-050**: A collection with a NUMERIC sort key correctly orders range query results by numeric value (e.g., 2, 10, 100 — not "10", "100", "2") on all supported providers.
 - **SC-051**: When consistency downgrade retry is enabled and a STRONG read fails transiently, the SDK automatically retries at EVENTUAL and the response includes a diagnostic flag noting the downgrade.
