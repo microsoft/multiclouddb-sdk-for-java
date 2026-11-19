@@ -41,9 +41,8 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   native SDK/service size enforcement; identical input may succeed on one provider
   and fail on another. Common create/update/upsert validation permits 32 nested
   Map/List levels below the root Map (depth zero), with neutral-type, key,
-  finite-number and cycle checks retained. This migration retained the baseline
-  non-retryable `PROVIDER_ERROR` classification for Cosmos HTTP 413; the follow-up
-  category change is recorded under the Cosmos provider below.
+  finite-number and cycle checks retained. Cosmos HTTP 413 retains the baseline
+  non-retryable `PROVIDER_ERROR` classification.
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 - **Breaking:** Replace Jackson payload types with Map/Object in point-read
   and change-feed results; applications own object mapping. Cursor persistence
