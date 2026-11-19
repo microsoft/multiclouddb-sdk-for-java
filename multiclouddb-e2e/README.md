@@ -117,6 +117,11 @@ Each run exercises the full CRUD surface on a `products` collection:
 | 9 | Confirm deletion | `client.query(...)` |
 | 10 | Cleanup all items | `client.delete(...)` |
 
+This product example uses ordinary price values; it does not verify numeric
+boundaries. The shared [CRUD conformance tests](../multiclouddb-conformance/src/test/java/com/multiclouddb/conformance/CrudConformanceTests.java)
+cover numeric limits, nested values, and read/query/rewrite behavior across
+providers using schema-compatible fixtures.
+
 ---
 
 ## Switching providers

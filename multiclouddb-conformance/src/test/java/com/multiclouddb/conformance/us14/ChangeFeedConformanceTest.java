@@ -17,6 +17,8 @@ import com.multiclouddb.api.changefeed.internal.CursorTokenCodec;
 import com.multiclouddb.api.changefeed.internal.PartitionPosition;
 import com.multiclouddb.conformance.ConformanceHarness;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -163,6 +165,28 @@ public abstract class ChangeFeedConformanceTest {
         BigDecimal actual = assertDoesNotThrow(() -> new BigDecimal(value.toString()),
                 "the selected payload must contain a valid decimal number");
         assertEquals(0, expected.compareTo(actual), "payload must preserve the exact written numeric value");
+    }
+
+    @ParameterizedTest
+    @ValueSource(doubles = {0.0, -0.0, 0.1, 1E-130, -1E-130,
+            9_007_199_254_740_991D, -9_007_199_254_740_991D})
+    @Order(3)
+    @DisplayName("Scalar Double boundaries survive the native change-feed path")
+    void scalarDoubleValuesSurviveChangeFeed(double value) throws Exception {
+        ChangeFeedCursor[] cursors = client.listCursors(getAddress()).toArray(new ChangeFeedCursor[0]);
+        MulticloudDbKey key = ConformanceHarness.uniqueKey("cf-double");
+        try {
+            client.upsert(getAddress(), key, Map.of("doubleValue", value));
+            ChangeEvent event = waitForEventByKey(cursors, key, propagationTimeout());
+            assertNotNull(event, "expected the numeric event for key " + key);
+            Map<?, ?> data = assertInstanceOf(Map.class, event.data());
+            Number actual = assertInstanceOf(Number.class, data.get("doubleValue"),
+                    "a scalar Double must remain numeric in the selected feed image");
+            assertTrue(value == actual.doubleValue(),
+                    "preserve the input Double value; either zero sign is allowed");
+        } finally {
+            ConformanceHarness.safeDelete(client, getAddress(), key);
+        }
     }
 
     @Test

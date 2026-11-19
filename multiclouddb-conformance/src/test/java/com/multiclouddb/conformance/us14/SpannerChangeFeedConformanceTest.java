@@ -67,6 +67,7 @@ class SpannerChangeFeedConformanceTest extends ChangeFeedConformanceTest {
                                 + "  partitionKey STRING(MAX) NOT NULL,"
                                 + "  sortKey STRING(MAX) NOT NULL,"
                                 + "  v INT64,"
+                                + "  doubleValue FLOAT64,"
                                 + "  data STRING(MAX)"
                                 + ") PRIMARY KEY (partitionKey, sortKey)",
                         "CREATE CHANGE STREAM " + CHANGE_STREAM
@@ -78,6 +79,19 @@ class SpannerChangeFeedConformanceTest extends ChangeFeedConformanceTest {
                         && se.getErrorCode() == ErrorCode.ALREADY_EXISTS)) {
                     throw e;
                 }
+            }
+            DatabaseClient database = spanner.getDatabaseClient(
+                    DatabaseId.of(PROJECT_ID, INSTANCE_ID, DATABASE_ID));
+            boolean hasDoubleColumn;
+            try (ResultSet columns = database.singleUse().executeQuery(
+                    Statement.newBuilder("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                            + "WHERE TABLE_NAME = @table AND COLUMN_NAME = 'doubleValue'")
+                            .bind("table").to(TABLE).build())) {
+                hasDoubleColumn = columns.next();
+            }
+            if (!hasDoubleColumn) {
+                dbAdmin.updateDatabaseDdl(INSTANCE_ID, DATABASE_ID,
+                        List.of("ALTER TABLE " + TABLE + " ADD COLUMN doubleValue FLOAT64"), null).get();
             }
         } finally {
             spanner.close();

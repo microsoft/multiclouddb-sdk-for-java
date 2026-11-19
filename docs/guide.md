@@ -706,6 +706,10 @@ implementations) and non-finite floating-point values are now rejected with
 `INVALID_REQUEST`. Explicitly map them to the supported Map/List/scalar vocabulary
 in the application; there is no implicit `toString()` fallback. A null document
 root is also invalid for create/update/upsert; empty Maps and nested nulls remain valid.
+Numeric writes now accept only Integer, Long and Double within the
+[supported numeric bounds](#supported-values-and-numeric-precision), including
+nested values. Previously accepted numeric types or out-of-range values must be
+explicitly mapped by the application before writing.
 
 Write nesting is now limited to **32 Map/List levels below the root Map**, rather
 than the previous 1000-container traversal limit that included the root. The
