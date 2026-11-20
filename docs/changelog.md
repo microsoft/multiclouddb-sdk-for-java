@@ -107,6 +107,13 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- The default provider JAR now embeds and relocates Azure SDK, Jackson, Reactor,
+  Netty and their Java dependencies under `com.multiclouddb.shaded.cosmos`.
+  API/SPI and SLF4J remain shared; JNA/JNA-platform remain normal external JNI
+  dependencies subject to application version mediation. Coordinates and the
+  explicit JPMS module name are unchanged. Updating embedded Jackson requires a
+  provider release, not an application dependency override. Native cause/helper
+  types and SDK extensions may require migration; see the [guide](guide.md).
 - Cosmos HTTP 413 now maps to non-retryable `INVALID_REQUEST` instead of
   `PROVIDER_ERROR` wherever it reaches the common Cosmos error mapper. Native
   status, message, cause, provider/operation, provider details and existing
@@ -119,8 +126,9 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   Preserve supplied empty AVAD bodies and envelope/metadata identity fallback,
   but do not expose the transport envelope as a missing image.
   The API no longer supplies/pins application Jackson, but the native Cosmos
-  SDK still depends on Jackson. The resolved version depends on each
-  application's dependency management; this change does not add shading.
+  SDK still depends on Jackson. PR #122 itself did not add shading; the separate
+  provider-isolation change above now embeds a private Jackson copy whose version
+  is fixed by the provider build, not the application's dependency management.
   Common write validation now rejects null document roots before native I/O.
   **Breaking result-type migration:** see the [migration guide](guide.md#migrating-from-beta2).
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
@@ -181,6 +189,13 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- The default provider JAR now embeds and relocates AWS SDK, its JSON/HTTP stack,
+  and required Java dependencies under `com.multiclouddb.shaded.dynamo`, including
+  matched-version STS, SSO and SSOOIDC modules used by default credential discovery.
+  API/SPI and SLF4J remain shared. Coordinates and the explicit JPMS module name
+  are unchanged. Applications using AWS SDK types must declare their own SDK;
+  embedded security/version updates require a provider release. Native cause/helper
+  types and SDK extensions may require migration; see the [guide](guide.md).
 - Map supported values directly to/from DynamoDB AttributeValue without Jackson
   trees, preserving existing numeric conversions and selected change-feed images.
   Use native image-presence flags: absent images become null, supplied empty
@@ -224,6 +239,14 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- The default provider JAR now embeds and relocates Google Cloud SDK, Gson,
+  gRPC/protobuf, Guava and other Java dependencies under
+  `com.multiclouddb.shaded.spanner`. API/SPI and SLF4J remain shared; Conscrypt
+  remains a normal external JNI dependency subject to application mediation.
+  Coordinates and the explicit JPMS module name are unchanged. Embedded library
+  updates require a provider release; native cause/helper types and SDK extensions
+  may require migration. Stored JSON/metadata/change-stream semantics are unchanged.
+  See the [guide](guide.md).
 - Map values to Spanner typed mutations and detached row Maps, preserving
   existing storage formats and numeric conversions. Keep JSON processing
   internal to the provider and correct numeric lexical-length accounting.
@@ -231,7 +254,9 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   NEW_VALUES/NEW_ROW deletes have no payload; collected empty images and
   null-valued fields remain preserved.
   Payload availability does not guarantee a complete captured document image.
-  Add direct `com.google.code.gson:gson:2.15.0` and JPMS `requires com.google.gson`.
+  PR #122 added direct `com.google.code.gson:gson:2.15.0` and source-level JPMS
+  `requires com.google.gson`. The separate isolation change above embeds relocated
+  Gson; the published POM and final module descriptor no longer require external Gson.
   Common write validation now rejects null document roots before native I/O.
   **Breaking result-type migration:** see the [migration guide](guide.md#migrating-from-beta2).
   **Compatibility:** strict JSON parsing rejects unpaired UTF-16 surrogates;

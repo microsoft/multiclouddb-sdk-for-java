@@ -14,6 +14,11 @@
     <name>Multicloud DB Conformance Tests</name>
     <description>Shared conformance test suite for Multicloud DB provider adapters</description>
 
+    <properties>
+        <application.jackson.version>2.18.6</application.jackson.version>
+        <application.gson.version>2.15.0</application.gson.version>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>com.microsoft.multiclouddb</groupId>
@@ -42,7 +47,7 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>2.18.6</version>
+            <version>${application.jackson.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -65,6 +70,33 @@
             <artifactId>jcl-over-slf4j</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Test fixtures use native SDKs directly; these are no longer provider transitives. -->
+        <dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-cosmos</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.google.cloud</groupId>
+            <artifactId>google-cloud-spanner</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-identity</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>${application.gson.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -83,4 +115,165 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>source-provider-tests</id>
+            <activation><property><name>!packagedArtifacts</name></property></activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <!-- Native-SDK mocks must intercept the untransformed provider classes. -->
+                            <classpathDependencyExcludes>
+                                <classpathDependencyExclude>com.microsoft.multiclouddb:multiclouddb-provider-cosmos</classpathDependencyExclude>
+                                <classpathDependencyExclude>com.microsoft.multiclouddb:multiclouddb-provider-dynamo</classpathDependencyExclude>
+                                <classpathDependencyExclude>com.microsoft.multiclouddb:multiclouddb-provider-spanner</classpathDependencyExclude>
+                            </classpathDependencyExcludes>
+                            <additionalClasspathElements>
+                                <additionalClasspathElement>${project.basedir}/../multiclouddb-provider-cosmos/target/classes</additionalClasspathElement>
+                                <additionalClasspathElement>${project.basedir}/../multiclouddb-provider-dynamo/target/classes</additionalClasspathElement>
+                                <additionalClasspathElement>${project.basedir}/../multiclouddb-provider-spanner/target/classes</additionalClasspathElement>
+                            </additionalClasspathElements>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>packaged-provider-tests</id>
+            <activation><property><name>packagedArtifacts</name></property></activation>
+            <properties>
+                <application.jackson.version>2.13.5</application.jackson.version>
+                <application.gson.version>2.10.1</application.gson.version>
+                <packaged.repository>file://${project.basedir}/../staging</packaged.repository>
+                <packaged.skipProbe>false</packaged.skipProbe>
+            </properties>
+            <repositories>
+                <repository>
+                    <id>packaged-staging</id>
+                    <url>${packaged.repository}</url>
+                </repository>
+            </repositories>
+            <build>
+                <directory>${project.basedir}/target/packaged-validation</directory>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <testIncludes>
+                                <testInclude>**/ConformanceHarness.java</testInclude>
+                                <testInclude>**/ConformanceConfig.java</testInclude>
+                            </testIncludes>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <skipTests>true</skipTests>
+                            <systemPropertyVariables><packagedArtifacts>true</packagedArtifacts></systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <version>3.7.1</version>
+                        <executions>
+                            <execution>
+                                <id>copy-published-consumer-dependencies</id>
+                                <phase>pre-integration-test</phase>
+                                <goals><goal>copy-dependencies</goal></goals>
+                                <configuration>
+                                    <outputDirectory>${project.build.directory}/packaged-consumer</outputDirectory>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>copy-published-provider-poms</id>
+                                <phase>pre-integration-test</phase>
+                                <goals><goal>copy</goal></goals>
+                                <configuration>
+                                    <useBaseVersion>true</useBaseVersion>
+                                    <outputDirectory>${project.build.directory}/packaged-consumer</outputDirectory>
+                                    <artifactItems>
+                                        <artifactItem>
+                                            <groupId>com.microsoft.multiclouddb</groupId>
+                                            <artifactId>multiclouddb-api</artifactId>
+                                            <version>${multiclouddb-api.version}</version><type>pom</type>
+                                        </artifactItem>
+                                        <artifactItem>
+                                            <groupId>com.microsoft.multiclouddb</groupId>
+                                            <artifactId>multiclouddb-provider-cosmos</artifactId>
+                                            <version>${multiclouddb-provider-cosmos.version}</version><type>pom</type>
+                                        </artifactItem>
+                                        <artifactItem>
+                                            <groupId>com.microsoft.multiclouddb</groupId>
+                                            <artifactId>multiclouddb-provider-dynamo</artifactId>
+                                            <version>${multiclouddb-provider-dynamo.version}</version><type>pom</type>
+                                        </artifactItem>
+                                        <artifactItem>
+                                            <groupId>com.microsoft.multiclouddb</groupId>
+                                            <artifactId>multiclouddb-provider-spanner</artifactId>
+                                            <version>${multiclouddb-provider-spanner.version}</version><type>pom</type>
+                                        </artifactItem>
+                                    </artifactItems>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <execution>
+                                <id>verify-packaged-providers</id>
+                                <phase>integration-test</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <skip>${packaged.skipProbe}</skip>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <longClasspath>true</longClasspath>
+                                    <classpathScope>test</classpathScope>
+                                    <arguments>
+                                        <argument>-classpath</argument><classpath/>
+                                        <argument>com.multiclouddb.conformance.ConformanceHarness</argument>
+                                        <argument>${project.build.directory}/packaged-consumer</argument>
+                                        <argument>${project.build.testOutputDirectory}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>packaged-emulator-tests</id>
+            <activation><property><name>packagedEmulator</name></property></activation>
+            <properties>
+                <application.jackson.version>2.18.6</application.jackson.version>
+                <packaged.skipProbe>true</packaged.skipProbe>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <testIncludes combine.self="override"><testInclude>**/*.java</testInclude></testIncludes>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration><skipTests>false</skipTests></configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

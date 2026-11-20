@@ -9,6 +9,15 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Include matched-version STS, SSO and SSOOIDC modules inside the isolated runtime
+  so default-chain web-identity/profile/token factories remain discoverable.
+  Application-side AWS modules cannot satisfy relocated factory names.
+- Replace the default provider JAR with provider-local relocated AWS SDK and
+  its JSON, HTTP, Netty and other Java dependencies. API/SLF4J remain external.
+  Preserve the explicit JPMS module name and service discovery. Native exception
+  cause class identities change; portable errors, storage and API semantics do not.
+  Applications using AWS SDK types directly must declare their own SDK dependency.
+  See the [dependency boundary and migration guidance](../docs/guide.md).
 - Make `DynamoItemMapper` and its conversion methods package-private provider
   implementation details. Applications should use the portable client API rather
   than calling the native mapper directly.

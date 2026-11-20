@@ -72,6 +72,13 @@ jobs:
           echo ""
           echo "All required artifacts verified successfully"
 
+      - name: Verify staged provider isolation (classpath and JPMS)
+        run: |
+          mvn -f multiclouddb-conformance/pom.xml clean verify \
+            -DpackagedArtifacts \
+            -Dpackaged.repository=file://${{ github.workspace }}/staging \
+            -Dmaven.repo.local=${{ runner.temp }}/packaged-consumer-m2
+
       - name: Upload release artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -245,7 +252,9 @@ jobs:
       - name: Run Cosmos DB integration tests
         shell: bash
         run: |
-          mvn verify -Pemulator-cosmos -pl multiclouddb-conformance -am \
+          mvn install -Punit -pl multiclouddb-conformance -am -DskipTests
+          mvn -f multiclouddb-conformance/pom.xml clean verify -Pemulator-cosmos \
+            -DpackagedArtifacts -DpackagedEmulator \
             -Djunit.jupiter.execution.timeout.default=20s
 
       - name: Upload test reports
@@ -303,7 +312,9 @@ jobs:
 
       - name: Run DynamoDB integration tests
         run: |
-          mvn verify -Pemulator-dynamo -pl multiclouddb-conformance -am \
+          mvn install -Punit -pl multiclouddb-conformance -am -DskipTests
+          mvn -f multiclouddb-conformance/pom.xml clean verify -Pemulator-dynamo \
+            -DpackagedArtifacts -DpackagedEmulator \
             -Djunit.jupiter.execution.timeout.default=20s
 
       - name: Stop DynamoDB Local
@@ -371,7 +382,9 @@ jobs:
 
       - name: Run Spanner integration tests
         run: |
-          mvn verify -Pemulator-spanner -pl multiclouddb-conformance -am \
+          mvn install -Punit -pl multiclouddb-conformance -am -DskipTests
+          mvn -f multiclouddb-conformance/pom.xml clean verify -Pemulator-spanner \
+            -DpackagedArtifacts -DpackagedEmulator \
             -Djunit.jupiter.execution.timeout.default=20s
 
       - name: Spanner emulator diagnostics (on failure)

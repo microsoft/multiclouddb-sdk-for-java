@@ -38,6 +38,57 @@
         </developer>
     </developers>
 
+    <properties>
+        <shading.provider>cosmos</shading.provider>
+        <shading.prefix>com.multiclouddb.shaded.cosmos</shading.prefix>
+        <shading.nativePrefix>com_multiclouddb_shaded_cosmos</shading.nativePrefix>
+        <shading.moduleInfo>
+            module com.multiclouddb.provider.cosmos {
+                requires com.multiclouddb.api;
+                requires org.slf4j;
+                requires com.sun.jna;
+                requires com.sun.jna.platform;
+                requires java.logging;
+                requires java.management;
+                requires java.naming;
+                requires java.net.http;
+                requires java.sql;
+                requires java.xml;
+                requires java.desktop;
+                requires java.security.jgss;
+                requires jdk.unsupported;
+                uses com.multiclouddb.shaded.cosmos.com.azure.core.http.HttpClientProvider;
+                uses com.multiclouddb.shaded.cosmos.com.azure.cosmos.implementation.guava25.base.PatternCompiler;
+                uses com.multiclouddb.shaded.cosmos.com.azure.core.http.policy.BeforeRetryPolicyProvider;
+                uses com.multiclouddb.shaded.cosmos.com.azure.core.http.policy.AfterRetryPolicyProvider;
+                uses com.multiclouddb.shaded.cosmos.com.azure.core.util.metrics.MeterProvider;
+                uses com.multiclouddb.shaded.cosmos.com.azure.core.util.tracing.TracerProvider;
+                uses com.multiclouddb.shaded.cosmos.com.azure.core.util.tracing.Tracer;
+                uses com.multiclouddb.shaded.cosmos.com.azure.core.util.serializer.JsonSerializerProvider;
+                uses com.multiclouddb.shaded.cosmos.com.azure.core.util.serializer.MemberNameConverterProvider;
+                uses com.multiclouddb.shaded.cosmos.com.azure.json.JsonProvider;
+                uses com.multiclouddb.shaded.cosmos.io.netty.bootstrap.ChannelInitializerExtension;
+                uses java.nio.file.spi.FileSystemProvider;
+                uses com.multiclouddb.shaded.cosmos.com.fasterxml.jackson.core.JsonFactory;
+                uses com.multiclouddb.shaded.cosmos.com.fasterxml.jackson.core.ObjectCodec;
+                uses com.multiclouddb.shaded.cosmos.com.fasterxml.jackson.databind.Module;
+                provides com.multiclouddb.spi.MulticloudDbProviderAdapter
+                    with com.multiclouddb.provider.cosmos.CosmosProviderAdapter;
+                provides com.multiclouddb.shaded.cosmos.com.azure.core.http.HttpClientProvider
+                    with com.multiclouddb.shaded.cosmos.com.azure.core.http.netty.NettyAsyncHttpClientProvider;
+                provides com.multiclouddb.shaded.cosmos.com.fasterxml.jackson.core.JsonFactory
+                    with com.multiclouddb.shaded.cosmos.com.fasterxml.jackson.core.JsonFactory;
+                provides com.multiclouddb.shaded.cosmos.com.fasterxml.jackson.core.ObjectCodec
+                    with com.multiclouddb.shaded.cosmos.com.fasterxml.jackson.databind.ObjectMapper;
+                provides com.multiclouddb.shaded.cosmos.com.fasterxml.jackson.databind.Module
+                    with com.multiclouddb.shaded.cosmos.com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+                opens com.multiclouddb.shaded.cosmos.com.azure.identity.implementation to com.sun.jna;
+                opens com.multiclouddb.shaded.cosmos.com.microsoft.aad.msal4jextensions.persistence.linux to com.sun.jna;
+                opens com.multiclouddb.shaded.cosmos.com.microsoft.aad.msal4jextensions.persistence.mac to com.sun.jna;
+            }
+        </shading.moduleInfo>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>com.microsoft.multiclouddb</groupId>
@@ -86,6 +137,11 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration><forceCreation>true</forceCreation></configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <!-- Byte Buddy (used by Mockito) does not officially support
@@ -108,6 +164,14 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.moditect</groupId>
+                <artifactId>moditect-maven-plugin</artifactId>
             </plugin>
         </plugins>
     </build>

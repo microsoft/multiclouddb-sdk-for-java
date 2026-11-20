@@ -38,6 +38,75 @@
         </developer>
     </developers>
 
+    <properties>
+        <shading.provider>spanner</shading.provider>
+        <shading.prefix>com.multiclouddb.shaded.spanner</shading.prefix>
+        <shading.nativePrefix>com_multiclouddb_shaded_spanner</shading.nativePrefix>
+        <shading.moduleInfo>
+            module com.multiclouddb.provider.spanner {
+                requires com.multiclouddb.api;
+                requires org.slf4j;
+                requires org.conscrypt;
+                requires java.logging;
+                requires java.management;
+                requires java.naming;
+                requires java.sql;
+                requires java.xml;
+                requires java.security.jgss;
+                requires jdk.unsupported;
+                uses com.multiclouddb.shaded.spanner.io.grpc.NameResolverProvider;
+                uses com.multiclouddb.shaded.spanner.io.grpc.LoadBalancerProvider;
+                uses com.multiclouddb.shaded.spanner.io.grpc.ManagedChannelProvider;
+                uses com.multiclouddb.shaded.spanner.io.grpc.ServerProvider;
+                uses com.multiclouddb.shaded.spanner.io.grpc.xds.XdsCredentialsProvider;
+                uses com.multiclouddb.shaded.spanner.org.threeten.bp.zone.ZoneRulesProvider;
+                uses com.multiclouddb.shaded.spanner.org.threeten.bp.chrono.Chronology;
+                uses com.multiclouddb.shaded.spanner.io.opentelemetry.context.ContextStorageProvider;
+                uses com.multiclouddb.shaded.spanner.com.google.auth.http.HttpTransportFactory;
+                uses com.multiclouddb.shaded.spanner.com.google.cloud.grpc.GrpcTransportOptions.ExecutorFactory;
+                uses com.multiclouddb.shaded.spanner.com.google.cloud.spanner.SpannerFactory;
+                uses com.multiclouddb.shaded.spanner.com.google.cloud.spanner.spi.SpannerRpcFactory;
+                provides com.multiclouddb.spi.MulticloudDbProviderAdapter
+                    with com.multiclouddb.provider.spanner.SpannerProviderAdapter;
+                provides com.multiclouddb.shaded.spanner.io.grpc.NameResolverProvider
+                    with com.multiclouddb.shaded.spanner.io.grpc.internal.DnsNameResolverProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.netty.shaded.io.grpc.netty.UdsNameResolverProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.grpclb.SecretGrpclbNameResolverProvider.Provider,
+                         com.multiclouddb.shaded.spanner.io.grpc.googleapis.GoogleCloudToProdExperimentalNameResolverProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.googleapis.GoogleCloudToProdNameResolverProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.xds.XdsNameResolverProvider;
+                provides com.multiclouddb.shaded.spanner.io.grpc.ManagedChannelProvider
+                    with com.multiclouddb.shaded.spanner.io.grpc.netty.shaded.io.grpc.netty.NettyChannelProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.netty.shaded.io.grpc.netty.UdsNettyChannelProvider;
+                provides com.multiclouddb.shaded.spanner.io.grpc.ServerProvider
+                    with com.multiclouddb.shaded.spanner.io.grpc.netty.shaded.io.grpc.netty.NettyServerProvider;
+                provides com.multiclouddb.shaded.spanner.io.grpc.LoadBalancerProvider
+                    with com.multiclouddb.shaded.spanner.io.grpc.internal.PickFirstLoadBalancerProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.util.SecretRoundRobinLoadBalancerProvider.Provider,
+                         com.multiclouddb.shaded.spanner.io.grpc.util.OutlierDetectionLoadBalancerProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.grpclb.GrpclbLoadBalancerProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.xds.CdsLoadBalancerProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.xds.PriorityLoadBalancerProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.xds.WeightedTargetLoadBalancerProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.xds.ClusterManagerLoadBalancerProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.xds.ClusterResolverLoadBalancerProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.xds.ClusterImplLoadBalancerProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.xds.LeastRequestLoadBalancerProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.xds.RingHashLoadBalancerProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.xds.WrrLocalityLoadBalancerProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.xds.WeightedRoundRobinLoadBalancerProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.protobuf.services.internal.HealthCheckingRoundRobinLoadBalancerProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.rls.RlsLoadBalancerProvider;
+                provides com.multiclouddb.shaded.spanner.io.grpc.xds.XdsCredentialsProvider
+                    with com.multiclouddb.shaded.spanner.io.grpc.xds.internal.GoogleDefaultXdsCredentialsProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.xds.internal.InsecureXdsCredentialsProvider,
+                         com.multiclouddb.shaded.spanner.io.grpc.xds.internal.TlsXdsCredentialsProvider;
+                provides com.multiclouddb.shaded.spanner.org.threeten.bp.zone.ZoneRulesProvider
+                    with com.multiclouddb.shaded.spanner.org.threeten.bp.zone.TzdbZoneRulesProvider;
+            }
+        </shading.moduleInfo>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>com.google.code.gson</groupId>
@@ -94,11 +163,24 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration><forceCreation>true</forceCreation></configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.moditect</groupId>
+                <artifactId>moditect-maven-plugin</artifactId>
             </plugin>
         </plugins>
     </build>

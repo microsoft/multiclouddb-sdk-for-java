@@ -38,6 +38,36 @@
         </developer>
     </developers>
 
+    <properties>
+        <shading.provider>dynamo</shading.provider>
+        <shading.prefix>com.multiclouddb.shaded.dynamo</shading.prefix>
+        <shading.nativePrefix>com_multiclouddb_shaded_dynamo</shading.nativePrefix>
+        <shading.moduleInfo>
+            module com.multiclouddb.provider.dynamo {
+                requires com.multiclouddb.api;
+                requires org.slf4j;
+                requires java.logging;
+                requires java.management;
+                requires java.naming;
+                requires java.security.jgss;
+                requires java.xml;
+                requires jdk.unsupported;
+                uses com.multiclouddb.shaded.dynamo.software.amazon.awssdk.http.SdkHttpService;
+                uses com.multiclouddb.shaded.dynamo.io.netty.bootstrap.ChannelInitializerExtension;
+                uses com.multiclouddb.shaded.dynamo.software.amazon.awssdk.http.async.SdkAsyncHttpService;
+                uses com.multiclouddb.shaded.dynamo.software.amazon.awssdk.thirdparty.jackson.core.JsonFactory;
+                provides com.multiclouddb.spi.MulticloudDbProviderAdapter
+                    with com.multiclouddb.provider.dynamo.DynamoProviderAdapter;
+                provides com.multiclouddb.shaded.dynamo.software.amazon.awssdk.http.SdkHttpService
+                    with com.multiclouddb.shaded.dynamo.software.amazon.awssdk.http.apache.ApacheSdkHttpService;
+                provides com.multiclouddb.shaded.dynamo.software.amazon.awssdk.http.async.SdkAsyncHttpService
+                    with com.multiclouddb.shaded.dynamo.software.amazon.awssdk.http.nio.netty.NettySdkAsyncHttpService;
+                provides com.multiclouddb.shaded.dynamo.software.amazon.awssdk.thirdparty.jackson.core.JsonFactory
+                    with com.multiclouddb.shaded.dynamo.software.amazon.awssdk.thirdparty.jackson.core.JsonFactory;
+            }
+        </shading.moduleInfo>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>com.microsoft.multiclouddb</groupId>
@@ -46,6 +76,26 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>dynamodb</artifactId>
+        </dependency>
+        <!-- Default credentials discover these factories by name. Application SDK
+             modules cannot satisfy those lookups after provider-local relocation. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sts</artifactId>
+            <version>${aws-sdk.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sso</artifactId>
+            <version>${aws-sdk.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>ssooidc</artifactId>
+            <version>${aws-sdk.version}</version>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- Test -->
@@ -82,6 +132,11 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration><forceCreation>true</forceCreation></configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <!-- Byte Buddy (used by Mockito) does not officially support
@@ -107,6 +162,14 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.moditect</groupId>
+                <artifactId>moditect-maven-plugin</artifactId>
             </plugin>
         </plugins>
     </build>

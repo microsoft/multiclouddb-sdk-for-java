@@ -16,6 +16,13 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Replace the default provider JAR with provider-local relocated Google Cloud SDK,
+  Gson, gRPC/protobuf, Guava and other Java dependencies. API/SLF4J and Conscrypt
+  remain external; Conscrypt is a shared JNI exception. Preserve the explicit
+  JPMS module name, services and prefixed gRPC-Netty native resources. Native
+  exception cause class identities change. Stored JSON, field metadata and
+  change-stream parsing semantics are unchanged, including existing limitations.
+  See the [dependency boundary and migration guidance](../docs/guide.md).
 - Make `SpannerRowMapper` and its conversion method package-private provider
   implementation details. Applications should use the portable client API rather
   than calling the native mapper directly.
@@ -28,7 +35,8 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - Map values to Spanner typed mutations and detached row Maps, preserving
   existing storage formats and numeric conversions. Keep JSON processing
   internal to `SpannerRowMapper` and correct numeric lexical-length accounting.
-  Add direct `com.google.code.gson:gson:2.15.0` and JPMS `requires com.google.gson`.
+  Add build-time `com.google.code.gson:gson:2.15.0` and source-level JPMS
+  `requires com.google.gson`; the packaged JAR now includes relocated Gson as noted above.
   Common write validation now rejects null document roots before native I/O.
   **Breaking result-type migration:** see the [migration guide](../docs/guide.md#migrating-from-beta2).
   **Compatibility:** strict JSON parsing rejects unpaired UTF-16 surrogates;
