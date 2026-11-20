@@ -61,8 +61,9 @@ final class DynamoItemMapper {
         if (attribute.type() == AttributeValue.Type.S && attribute.s() != null) return attribute.s();
         if (attribute.type() == AttributeValue.Type.N && attribute.n() != null) {
             String text = attribute.n();
-            // Preserve the existing parser, including exponent/overflow failures.
-            if (text.contains(".")) return Double.parseDouble(text);
+            if (text.indexOf('.') >= 0 || text.indexOf('e') >= 0 || text.indexOf('E') >= 0) {
+                return Double.parseDouble(text);
+            }
             try {
                 return Integer.parseInt(text);
             } catch (NumberFormatException integerOverflow) {

@@ -143,8 +143,21 @@ If exact numeric representation is required and database-side numeric operations
 
 See [numeric guidance](guide.md#supported-values-and-numeric-precision) for representation choices and [provider mapping and serialization](guide.md#provider-mapping-and-serialization) for current provider-specific limitations.
 
-Spanner does not apply metadata-driven INT64 conversion. DynamoDB retains
-its exponent/overflow decoding limitations, and Spanner retains column-sensitive
+**Breaking write restriction:** create/update/upsert document numbers must be
+exactly Integer, Long or Double. Integers must be within inclusive
+`[-9007199254740991, 9007199254740991]`; Double must be finite and zero or have
+inclusive absolute magnitude `[1E-130, 9007199254740991]`. Both signs of zero are
+accepted without a sign-preservation promise. Violations, including previously
+accepted Byte/Short/Float/BigInteger/BigDecimal writes, fail with non-retryable
+`INVALID_REQUEST` before provider I/O. There is no automatic conversion.
+These bounds do not apply to reads, query inputs/results, feeds or cursor
+callbacks; reading an existing document does not guarantee it can be written
+back unchanged. See [migration guidance](guide.md#supported-values-and-numeric-precision).
+
+Spanner does not apply metadata-driven INT64 conversion. DynamoDB now reads
+decimal and exponent `N` tokens as Double, while plain integers still use
+Integer then Long. Plain integer overflow, high-precision decimal limitations
+and native `NS` conversion are not repaired. Spanner retains column-sensitive
 numeric/null mappings. See also
 [Spanner stored-data compatibility](guide.md#spanner-json-unicode-compatibility).
 

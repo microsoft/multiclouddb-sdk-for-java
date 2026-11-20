@@ -7,6 +7,14 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- Decode exponent-only native `N` tokens (for example `1E+3` and `1e-130`) as
+  Double on point-read, query and change-feed paths, including nested values.
+  Existing plain Integer/Long and dotted Double representations are retained.
+  This does not add arbitrary-precision reads, plain integer overflow support
+  or a new native number-set policy.
+
 ### Changed
 
 - Make `DynamoItemMapper` and its conversion methods package-private provider
@@ -18,8 +26,8 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   images remain empty Maps, and native NULL attributes remain null-valued fields.
   Common write validation now rejects null document roots before native I/O.
   This is not support for the full native type system: binary values are outside
-  the portable vocabulary, and existing exponent/integer-overflow decoding
-  limitations remain. See the [numeric guidance](../docs/guide.md#supported-values-and-numeric-precision).
+  the portable vocabulary. Exponent-only decoding is repaired separately above;
+  plain integer-overflow limitations remain. See the [numeric guidance](../docs/guide.md#supported-values-and-numeric-precision).
   **Breaking result-type migration:** see the [migration guide](../docs/guide.md#migrating-from-beta2).
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
 

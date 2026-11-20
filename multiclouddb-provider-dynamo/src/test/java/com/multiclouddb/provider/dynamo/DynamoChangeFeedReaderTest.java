@@ -118,10 +118,21 @@ class DynamoChangeFeedReaderTest {
         AttributeValue deep = AttributeValue.builder().s("private-value").build();
         for (int i = 0; i < 128; i++) deep = AttributeValue.builder().l(deep).build();
         assertNotNull(readRecord(record(OperationType.MODIFY, Map.of("nested", deep), Map.of())).data());
-        for (AttributeValue invalid : List.of(AttributeValue.fromN("1E+3"),
+        for (AttributeValue invalid : List.of(AttributeValue.fromN("1E+"),
                 AttributeValue.fromN("9223372036854775808"))) {
             org.junit.jupiter.api.Assertions.assertThrows(NumberFormatException.class,
                     () -> readRecord(record(OperationType.MODIFY, Map.of("private-field", invalid), Map.of())));
+        }
+    }
+
+    @Test
+    void exponentNumbersDecodeInSelectedNewAndOldImages() {
+        Map<String, AttributeValue> image = Map.of(
+                "n", AttributeValue.fromN("1E+3"),
+                "nested", AttributeValue.fromM(Map.of("small", AttributeValue.fromN("-1e-130"))));
+        for (OperationType operation : List.of(OperationType.INSERT, OperationType.MODIFY, OperationType.REMOVE)) {
+            assertEquals(Map.of("n", 1000.0D, "nested", Map.of("small", -1E-130)),
+                    readRecord(record(operation, image, image)).data());
         }
     }
 

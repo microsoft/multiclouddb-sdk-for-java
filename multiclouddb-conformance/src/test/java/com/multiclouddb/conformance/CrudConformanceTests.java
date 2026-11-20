@@ -31,6 +31,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -111,12 +112,23 @@ public abstract class CrudConformanceTests {
                 Map.of(1, "value"), nullKey, cyclicList, new java.util.concurrent.atomic.AtomicInteger(1))) {
             invalid.add(Map.of("nested", List.of(value)));
         }
+        for (Number value : List.<Number>of((byte) 1, (short) 1, 0.1F,
+                java.math.BigInteger.ONE, java.math.BigDecimal.ONE,
+                new java.util.concurrent.atomic.AtomicLong(1),
+                -9_007_199_254_740_992L, 9_007_199_254_740_992L,
+                -Math.nextDown(1E-130), Math.nextDown(1E-130),
+                -Math.nextUp(9_007_199_254_740_991D), Math.nextUp(9_007_199_254_740_991D))) {
+            invalid.add(Map.of("n", value));
+            invalid.add(Map.of("nestedObj", Map.of("n", value)));
+            invalid.add(Map.of("arrayField", List.of(value)));
+        }
         for (String operation : List.of("create", "update", "upsert")) {
             for (Map<String, Object> document : invalid) {
                 MulticloudDbException failure = assertThrows(MulticloudDbException.class,
                         () -> write(operation, key, document));
                 assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, failure.error().category());
                 assertEquals(operation, failure.error().operation());
+                assertFalse(failure.error().retryable());
             }
         }
     }
@@ -374,10 +386,7 @@ public abstract class CrudConformanceTests {
         doc.put("strField", "hello-world");
         doc.put("intField", 12345);
         doc.put("longField", 9_876_543_210L);
-        // Just under Long.MAX_VALUE and well above 2^53 (~9.007e15) — a silent
-        // int/long → double coercion would lose precision here, so a value
-        // mismatch (not just a type mismatch) would surface the regression.
-        doc.put("bigLongField", 9_223_372_036_854_775_800L);
+        doc.put("bigLongField", 9_007_199_254_740_991L);
         doc.put("doubleField", 3.14159);
         doc.put("boolTrue", true);
         doc.put("boolFalse", false);
@@ -402,10 +411,10 @@ public abstract class CrudConformanceTests {
             assertEquals(9_876_543_210L, ((Number) d.get("longField")).longValue(),
                     "long value fidelity without losing precision");
             assertTrue(integral(d.get("bigLongField")),
-                    "near-Long.MAX_VALUE must round-trip as an integral JSON number");
-            assertEquals(9_223_372_036_854_775_800L, ((Number) d.get("bigLongField")).longValue(),
-                    "near-Long.MAX_VALUE value fidelity (would fail on silent long → double)");
-            assertEquals(3.14159, ((Number) d.get("doubleField")).doubleValue(), 1e-9, "double fidelity");
+                    "the LCD integer boundary must round-trip as an integral JSON number");
+            assertEquals(9_007_199_254_740_991L, ((Number) d.get("bigLongField")).longValue(),
+                    "LCD integer boundary value fidelity");
+            assertEquals(3.14159, ((Number) d.get("doubleField")).doubleValue(), "double fidelity");
             assertEquals(true, d.get("boolTrue"), "boolean true fidelity");
             assertEquals(false, d.get("boolFalse"), "boolean false fidelity");
             assertTrue(d.containsKey("nullField"), "null field should round-trip as a present field");
@@ -422,6 +431,54 @@ public abstract class CrudConformanceTests {
             assertEquals(List.of(), d.get("emptyArray"), "empty array fidelity");
         } finally {
             safeDelete(key);
+        }
+    }
+
+    @Test @Order(14)
+    @DisplayName("LCD numeric boundaries survive scalar and nested read/query/rewrite round trips")
+    void numericBoundaryRoundtrip() {
+        String id = "conf-numeric-" + java.util.UUID.randomUUID();
+        MulticloudDbKey key = MulticloudDbKey.of(id, id);
+        try {
+            for (Number value : List.<Number>of(Integer.MIN_VALUE, Integer.MAX_VALUE,
+                    -9_007_199_254_740_991L, 9_007_199_254_740_991L,
+                    0.0D, -0.0D, 0.1D, 1E-130, -1E-130,
+                    Math.nextUp(1E-130), 9_007_199_254_740_991D, -9_007_199_254_740_991D)) {
+                String field = value instanceof Double ? "doubleField"
+                        : value instanceof Integer ? "intField" : "longField";
+                Map<String, Object> input = Map.of(field, value,
+                        "nestedObj", Map.of("n", value), "arrayField", List.of(value));
+                client.upsert(getAddress(), key, input);
+                Map<String, Object> read = client.read(getAddress(), key).document();
+                QueryPage page = client.query(getAddress(), QueryRequest.builder().partitionKey(id).build());
+                assertEquals(1, page.items().size());
+                for (Map<String, Object> result : List.of(read, page.items().get(0))) {
+                    assertNumericBoundary(result, field, value);
+                    client.upsert(getAddress(), key, Map.of(
+                            field, result.get(field),
+                            "nestedObj", result.get("nestedObj"),
+                            "arrayField", result.get("arrayField")));
+                    assertNumericBoundary(client.read(getAddress(), key).document(), field, value);
+                }
+            }
+        } finally {
+            safeDelete(key);
+        }
+    }
+
+    private static void assertNumericBoundary(Map<String, Object> document, String field, Number expected) {
+        Map<?, ?> nested = assertInstanceOf(Map.class, document.get("nestedObj"));
+        List<?> array = assertInstanceOf(List.class, document.get("arrayField"));
+        assertEquals(1, array.size());
+        for (Object value : List.of(document.get(field), nested.get("n"), array.get(0))) {
+            Number actual = assertInstanceOf(Number.class, value);
+            if (expected instanceof Double) {
+                assertTrue(expected.doubleValue() == actual.doubleValue(),
+                        "preserve the input Double value; either zero sign is allowed");
+            } else {
+                assertTrue(integral(actual), "integer input must retain an integral representation");
+                assertEquals(expected.longValue(), actual.longValue(), "preserve the input integer value");
+            }
         }
     }
 

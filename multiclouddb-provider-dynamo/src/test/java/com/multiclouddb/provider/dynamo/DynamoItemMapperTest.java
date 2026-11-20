@@ -82,8 +82,32 @@ class DynamoItemMapperTest {
         assertInstanceOf(Long.class, readNumber("2147483648"));
         assertInstanceOf(Double.class, readNumber("1.25"));
         assertEquals(Double.doubleToRawLongBits(-0.0), Double.doubleToRawLongBits((Double) readNumber("-0.0")));
-        assertThrows(NumberFormatException.class, () -> readNumber("1E+3"));
+        assertEquals(1000.0D, readNumber("1E+3"));
         assertThrows(NumberFormatException.class, () -> readNumber("9223372036854775808"));
+    }
+
+    @Test
+    void decodesExponentNumbersAtScalarAndNestedBoundaries() {
+        Map<String, Double> fixtures = Map.of(
+                "1E+3", 1000.0D, "-1e3", -1000.0D,
+                "1e-130", 1E-130, "-1E-130", -1E-130,
+                "9007199254740991E0", 9_007_199_254_740_991D,
+                "-9007199254740991e0", -9_007_199_254_740_991D,
+                "-0E0", -0.0D);
+        fixtures.forEach((text, expected) -> {
+            var nativeNumber = AttributeValue.fromN(text);
+            Map<String, Object> result = DynamoItemMapper.attributeMapToMap(Map.of(
+                    "n", nativeNumber,
+                    "nested", AttributeValue.fromM(Map.of("items", AttributeValue.fromL(List.of(nativeNumber))))));
+            assertEquals(expected, assertInstanceOf(Double.class, result.get("n")));
+            Map<?, ?> nested = assertInstanceOf(Map.class, result.get("nested"));
+            assertEquals(List.of(expected), nested.get("items"));
+            assertEquals(Double.doubleToRawLongBits(expected),
+                    Double.doubleToRawLongBits((Double) result.get("n")));
+        });
+        for (String invalid : List.of("1e", "e3", "1e+")) {
+            assertThrows(NumberFormatException.class, () -> readNumber(invalid));
+        }
     }
 
     @Test

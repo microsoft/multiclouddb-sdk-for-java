@@ -6,8 +6,6 @@ package com.multiclouddb.api.internal;
 import com.multiclouddb.api.MulticloudDbError;
 import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.MulticloudDbException;
-import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.util.ArrayDeque;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
@@ -22,7 +20,9 @@ import java.util.Map;
 final class DocumentValidator {
     static final int MAX_NESTING_DEPTH = 32;
     private static final int ACTIVE = -1;
-    private static final String NUMBER_TYPES = "Byte, Short, Integer, Long, Float, Double, BigInteger or BigDecimal";
+    private static final long MAX_INTEGER = 9_007_199_254_740_991L;
+    private static final double MIN_NONZERO_DOUBLE = 1E-130;
+    private static final String NUMBER_TYPES = "Integer, Long or Double";
 
     private DocumentValidator() {
     }
@@ -111,15 +111,23 @@ final class DocumentValidator {
     private static void validateScalar(Object value, String operation) {
         if (value instanceof Number number) {
             Class<?> kind = number.getClass();
-            if (kind != Byte.class && kind != Short.class && kind != Integer.class
-                    && kind != Long.class && kind != Float.class && kind != Double.class
-                    && kind != BigInteger.class && kind != BigDecimal.class) {
+            if (kind != Integer.class && kind != Long.class && kind != Double.class) {
                 throw invalid("Unsupported document number type " + kind.getName()
                         + "; expected exactly " + NUMBER_TYPES + ".", operation);
             }
-            if (number instanceof Float f && !Float.isFinite(f)
-                    || number instanceof Double d && !Double.isFinite(d)) {
-                throw invalid("Document number of type " + kind.getName() + " must be finite.", operation);
+            if (number instanceof Long integer && (integer < -MAX_INTEGER || integer > MAX_INTEGER)) {
+                throw invalid("Document Long must be between -9007199254740991 and 9007199254740991 inclusive.",
+                        operation);
+            }
+            if (number instanceof Double floating) {
+                if (!Double.isFinite(floating)) {
+                    throw invalid("Document number of type " + kind.getName() + " must be finite.", operation);
+                }
+                double magnitude = Math.abs(floating);
+                if (magnitude > MAX_INTEGER || magnitude != 0 && magnitude < MIN_NONZERO_DOUBLE) {
+                    throw invalid("Document Double must be zero or have absolute value between "
+                            + "1E-130 and 9007199254740991 inclusive.", operation);
+                }
             }
         } else if (value != null && !(value instanceof String) && !(value instanceof Boolean)) {
             throw invalid("Unsupported document value type " + value.getClass().getName()

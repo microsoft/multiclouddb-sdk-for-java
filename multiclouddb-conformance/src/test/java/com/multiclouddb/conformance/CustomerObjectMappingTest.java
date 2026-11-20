@@ -20,8 +20,6 @@ import software.amazon.awssdk.services.dynamodb.streams.DynamoDbStreamsClient;
 import software.amazon.awssdk.services.dynamodb.streams.DynamoDbStreamsClientBuilder;
 
 import java.io.IOException;
-import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -103,8 +101,10 @@ class CustomerObjectMappingTest {
                 assertNull(writes.get(2).conditionExpression());
                 assertEquals(KEY.partitionKey(), readFixture.get().get("partitionKey").s());
                 assertLiteralMapParity(client, last, Function.identity());
-                assertEquals("1", last.get().item().get("decimal_value").n());
-                assertEquals("123456789012345678901234567890", last.get().item().get("integer_value").n());
+                assertEquals("0.1", last.get().item().get("double_value").n());
+                assertEquals("9007199254740991", last.get().item().get("integer_value").n());
+                readFixture.set(Map.of("legacyLong", AttributeValue.fromN("9223372036854775807")));
+                assertEquals(Long.MAX_VALUE, client.read(ADDRESS, KEY).document().get("legacyLong"));
                 AttributeValue nested = AttributeValue.builder().s("private-value").build();
                 for (int i = 0; i < 128; i++) nested = AttributeValue.builder().l(nested).build();
                 readFixture.set(Map.of("deep", nested));
@@ -181,11 +181,16 @@ class CustomerObjectMappingTest {
                 assertTrue(readFixture.get().asMap().containsKey("data"));
                 assertEquals(KEY.partitionKey(), readFixture.get().asMap().get("partitionKey").getString());
                 assertLiteralMapParity(client, last, Mutation::asMap);
-                assertEquals(Value.string("1.00"), last.get().asMap().get("decimal_value"),
-                        "retain the existing Spanner top-level decimal STRING fallback");
-                assertEquals(Value.string("123456789012345678901234567890"), last.get().asMap().get("integer_value"));
-                assertEquals(Value.float64((double) 0.1F), last.get().asMap().get("float_value"),
-                        "retain Float-to-FLOAT64 mapping, not decimal-to-STRING mapping");
+                assertEquals(Value.float64(0.1D), last.get().asMap().get("double_value"));
+                assertEquals(Value.int64(9_007_199_254_740_991L), last.get().asMap().get("integer_value"));
+                readFixture.set(Mutation.newInsertBuilder(ADDRESS.collection())
+                        .set("legacyDecimal").to("1.00")
+                        .set("legacyLong").to(Long.MAX_VALUE)
+                        .set("legacyFloat").to((double) 0.1F).build());
+                Map<String, Object> legacy = client.read(ADDRESS, KEY).document();
+                assertEquals("1.00", legacy.get("legacyDecimal"));
+                assertEquals(Long.MAX_VALUE, legacy.get("legacyLong"));
+                assertEquals((double) 0.1F, legacy.get("legacyFloat"));
                 readFixture.set(Mutation.newInsertBuilder(ADDRESS.collection()).set("private-field")
                         .to(Value.json("[".repeat(128) + "null" + "]".repeat(128))).build());
                 assertNotNull(client.read(ADDRESS, KEY).document().get("private-field"));
@@ -325,10 +330,9 @@ class CustomerObjectMappingTest {
         baseline.put("partitionKey", "business");
         baseline.put("sortKey", "business");
         baseline.put("id", "business");
-        baseline.put("float_value", 0.1f);
-        baseline.put("decimal_value", new BigDecimal("1.00"));
-        baseline.put("integer_value", new BigInteger("123456789012345678901234567890"));
-        baseline.put("nested", Map.of("decimal", new BigDecimal("1.00")));
+        baseline.put("double_value", 0.1D);
+        baseline.put("integer_value", 9_007_199_254_740_991L);
+        baseline.put("nested", Map.of("double", 1E-130));
         baseline.put("nullable", null);
         Map<String, Object> encoded = new LinkedHashMap<>(baseline);
         client.upsert(ADDRESS, KEY, encoded);

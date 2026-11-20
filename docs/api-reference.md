@@ -62,6 +62,10 @@ provisioning prerequisites, and multi-thread pattern.
 - Writes take non-null `Map<String, Object>` with the
   [supported neutral values](guide.md#supported-values-and-numeric-precision).
   Do not mutate inputs during a synchronous call; the SDK does not retain them.
+  Numeric document inputs are exactly Integer/Long in inclusive
+  `[-9007199254740991, 9007199254740991]`, or finite Double that is zero or has
+  inclusive absolute magnitude `[1E-130, 9007199254740991]`. Invalid inputs fail
+  with non-retryable `INVALID_REQUEST` before provider I/O; no coercion is applied.
 - `QueryPage.items()` is `List<Map<String, Object>>`. Its list and row Maps are
   shallow read-only copies; nested containers remain mutable. Query parameter
   coercion is not the document-write validation contract.

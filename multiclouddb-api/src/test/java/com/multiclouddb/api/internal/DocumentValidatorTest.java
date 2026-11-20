@@ -22,7 +22,7 @@ class DocumentValidatorTest {
     void consumesFlatPrefixAndNestedSuffixThroughOneRootIterator() {
         var shared = new ArrayList<Object>(List.of("leaf"));
         for (List<Object> values : List.<List<Object>>of(
-                Arrays.asList(null, "text", true, 1, new BigDecimal("1.00")),
+                Arrays.asList(null, "text", true, 1, 1.0D),
                 Arrays.asList(null, 1, shared, false, shared, List.of()),
                 Arrays.asList(Map.of(), "suffix", shared))) {
             int[] reads = new int[values.size()];
@@ -131,16 +131,51 @@ class DocumentValidatorTest {
             assertDoesNotThrow(() -> DocumentValidator.validate(
                     Map.of("body", "x".repeat(formerLogicalBytes - 11)), "create"));
         }
-        for (Number value : List.of((byte) 1, (short) 2, 3, Long.MIN_VALUE, Long.MAX_VALUE,
-                0.1F, Float.MIN_VALUE, Float.MAX_VALUE, -0.0D, Double.MIN_VALUE, Double.MAX_VALUE,
-                BigInteger.TEN.pow(1500), new BigDecimal("1.00"), new BigDecimal("1E+1025"),
-                new BigDecimal("1E-1025"), new BigDecimal(BigInteger.TEN, Integer.MIN_VALUE))) {
+        for (Number value : List.of(3, -9_007_199_254_740_991L, 9_007_199_254_740_991L,
+                0.1D, -0.0D, 1E-130, 9_007_199_254_740_991D)) {
             Map<String, Object> input = Map.of("number", value);
             assertDoesNotThrow(() -> DocumentValidator.validate(input, "upsert"));
             assertSame(value, input.get("number"));
         }
         for (String text : List.of("\ud800", "\udfff", "\ud83d\ude00", "\u0000", "\uD55C\uAE00")) {
             assertDoesNotThrow(() -> DocumentValidator.validate(Map.of(text, text), "create"));
+        }
+    }
+
+    @Test
+    void appliesNumericBoundsToFlatAndNestedValuesWithoutChangingThem() {
+        for (Number number : List.of(Integer.MIN_VALUE, Integer.MAX_VALUE,
+                -9_007_199_254_740_991L, 9_007_199_254_740_991L,
+                0.0D, -0.0D, 0.1D, 1E-130, -1E-130, Math.nextUp(1E-130),
+                -9_007_199_254_740_991D, 9_007_199_254_740_991D)) {
+            for (Map<String, Object> input : List.of(Map.<String, Object>of("n", number),
+                    Map.<String, Object>of("nested", List.of(Map.of("n", number))))) {
+                assertDoesNotThrow(() -> DocumentValidator.validate(input, "upsert"));
+            }
+        }
+        for (Number number : List.of(-9_007_199_254_740_992L, 9_007_199_254_740_992L,
+                Long.MIN_VALUE, Long.MAX_VALUE, Double.MIN_VALUE, -Double.MIN_VALUE,
+                Math.nextDown(1E-130), -Math.nextDown(1E-130),
+                Math.nextUp(9_007_199_254_740_991D), -Math.nextUp(9_007_199_254_740_991D),
+                Double.MAX_VALUE, -Double.MAX_VALUE)) {
+            String expected = number instanceof Long
+                    ? "Document Long must be between -9007199254740991 and 9007199254740991 inclusive."
+                    : "Document Double must be zero or have absolute value between "
+                            + "1E-130 and 9007199254740991 inclusive.";
+            assertSafeDiagnostic(Map.of("private-field", number), expected, "private-field");
+            assertSafeDiagnostic(Map.of("private-field", List.of(Map.of("n", number))), expected, "private-field");
+        }
+    }
+
+    @Test
+    void rejectsOtherNumericClassesEvenWhenTheirValuesFit() {
+        for (Number number : List.of((byte) 1, (short) 1, 1.0F, BigInteger.ONE, BigDecimal.ONE,
+                new java.util.concurrent.atomic.AtomicInteger(1),
+                new java.util.concurrent.atomic.AtomicLong(1))) {
+            String expected = "Unsupported document number type " + number.getClass().getName()
+                    + "; expected exactly Integer, Long or Double.";
+            assertSafeDiagnostic(Map.of("private-field", number), expected, "private-field");
+            assertSafeDiagnostic(Map.of("private-field", List.of(number)), expected, "private-field");
         }
     }
 
@@ -251,7 +286,7 @@ class DocumentValidatorTest {
             @Override
             public String toString() { throw new AssertionError(secret); }
         };
-        String allowedNumbers = "Byte, Short, Integer, Long, Float, Double, BigInteger or BigDecimal";
+        String allowedNumbers = "Integer, Long or Double";
         for (Object value : List.of(hostile, hostileNumber)) {
             String expected = value instanceof Number
                     ? "Unsupported document number type " + value.getClass().getName()
@@ -267,8 +302,7 @@ class DocumentValidatorTest {
                     "Document Map key has type " + (key == null ? "null" : key.getClass().getName())
                             + "; expected a non-null java.lang.String.", secret);
         }
-        for (Number value : List.of(Float.NaN, Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY,
-                Double.NaN, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY)) {
+        for (Number value : List.of(Double.NaN, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY)) {
             assertSafeDiagnostic(Map.of(secret, value),
                     "Document number of type " + value.getClass().getName() + " must be finite.", secret);
         }

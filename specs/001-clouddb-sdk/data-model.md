@@ -45,11 +45,20 @@ Validation:
 
 ### Document
 Object-shaped `Map<String, Object>` data, not a shipped Document class.
-Nested values are string-keyed Maps, Lists, Strings, Booleans, null and exactly
-Byte, Short, Integer, Long, Float, Double, BigInteger or BigDecimal. Floating
-values must be finite. Reject cycles, invalid keys and unsupported Java objects;
+Write values are string-keyed Maps, Lists, Strings, Booleans, null and exactly
+Integer, Long or Double. Integers must be within the inclusive interval
+[-9007199254740991, 9007199254740991]. Double must be finite and zero or have
+inclusive absolute magnitude [1E-130, 9007199254740991]. Negative zero is
+accepted without a sign-preservation guarantee. Apply the same numeric bounds
+to nested Maps/Lists without normalization or coercion.
+Reject cycles, invalid keys and unsupported Java objects;
 shared acyclic subtrees are valid. Missing keys differ from present nulls.
-Preserve numeric conversion behavior. Write nesting permits at most 32 Map/List
+New write restrictions do not apply to query inputs, existing read/query/feed
+values or cursor callbacks. A readable document may fail subsequent write
+validation. Dynamo decimal/exponent N tokens decode to Double; plain integers
+remain Integer/Long, with overflow unsupported. Exact decimal scale and
+identical Java numeric subtypes are not guaranteed.
+Write nesting permits at most 32 Map/List
 levels below the root Map (depth zero), counting empty containers but not scalars.
 Native SDKs/services enforce size; no common byte estimate is imposed.
 

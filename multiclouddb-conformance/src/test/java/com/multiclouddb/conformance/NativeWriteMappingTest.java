@@ -10,8 +10,6 @@ import com.multiclouddb.provider.spanner.SpannerConstants;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 
-import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -29,11 +27,10 @@ class NativeWriteMappingTest {
             OperationOptions.defaults(), OperationOptions.builder().ttlSeconds(120).build());
 
     private static List<Map<String, Object>> fixtures() {
-        var numbers = List.<Number>of((byte) -2, (short) 3, 4, Long.MIN_VALUE, Long.MAX_VALUE,
-                0.1F, Float.MIN_VALUE, Float.MAX_VALUE, -0.0F, -0.0D, Double.MIN_VALUE, Double.MAX_VALUE,
-                new BigInteger("123456789012345678901234567890"),
-                new BigDecimal("1.00"), new BigDecimal("1E+10"),
-                new BigDecimal("0.000"), new BigDecimal("1E-1024"));
+        var numbers = List.<Number>of(Integer.MIN_VALUE, Integer.MAX_VALUE,
+                -9_007_199_254_740_991L, 9_007_199_254_740_991L,
+                0.1D, -0.0D, 0.0D, 1E-130, -1E-130,
+                9_007_199_254_740_991D, -9_007_199_254_740_991D);
         var fields = new LinkedHashMap<String, Object>();
         for (int i = 0; i < numbers.size(); i++) fields.put("n" + i, numbers.get(i));
         fields.put("strings", List.of("", "\"\\\b\f\n\r\t\u0001", "\u00e9\u4e2d",

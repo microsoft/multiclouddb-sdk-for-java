@@ -89,9 +89,13 @@ class CosmosMapContractTest {
             verify(container, atLeast(2)).createItem(any(Map.class), any(PartitionKey.class),
                     any(CosmosItemRequestOptions.class));
             assertLiteralMapParity(client, written::get, Function.identity());
-            assertEquals("1", written.get().get("decimal_value").toString(),
-                    "the existing default native tree conversion strips decimal trailing zeros");
-            assertEquals("123456789012345678901234567890", written.get().get("integer_value").toString());
+            assertEquals(0.1D, written.get().get("double_value"));
+            assertEquals(9_007_199_254_740_991L, written.get().get("integer_value"));
+            readFixture.set(new LinkedHashMap<>(Map.of("legacyLong", Long.MAX_VALUE,
+                    "legacyDecimal", new BigDecimal("1.00"),
+                    "legacyInteger", new BigInteger("123456789012345678901234567890"))));
+            assertEquals(readFixture.get(), client.read(ADDRESS, KEY).document(),
+                    "new write restrictions must not restrict previously readable native numbers");
 
             readFixture.get().put("_etag", "provider-value");
             assertFalse(client.read(ADDRESS, KEY).document().containsKey("_etag"));
@@ -214,10 +218,9 @@ class CosmosMapContractTest {
         baseline.put("partitionKey", "business");
         baseline.put("sortKey", "business");
         baseline.put("id", "business");
-        baseline.put("float_value", 0.1f);
-        baseline.put("decimal_value", new BigDecimal("1.00"));
-        baseline.put("integer_value", new BigInteger("123456789012345678901234567890"));
-        baseline.put("nested", Map.of("decimal", new BigDecimal("1.00")));
+        baseline.put("double_value", 0.1D);
+        baseline.put("integer_value", 9_007_199_254_740_991L);
+        baseline.put("nested", Map.of("double", 1E-130));
         baseline.put("nullable", null);
         Map<String, Object> encoded = new LinkedHashMap<>(baseline);
         client.upsert(ADDRESS, KEY, encoded);
@@ -281,11 +284,10 @@ class CosmosMapContractTest {
     }
 
     private static List<Map<String, Object>> fixtures() {
-        var numbers = List.<Number>of((byte) -2, (short) 3, 4, Long.MIN_VALUE, Long.MAX_VALUE,
-                0.1F, Float.MIN_VALUE, Float.MAX_VALUE, -0.0F, -0.0D, Double.MIN_VALUE, Double.MAX_VALUE,
-                new BigInteger("123456789012345678901234567890"),
-                new BigDecimal("1.00"), new BigDecimal("1E+10"),
-                new BigDecimal("0.000"), new BigDecimal("1E-1024"));
+        var numbers = List.<Number>of(Integer.MIN_VALUE, Integer.MAX_VALUE,
+                -9_007_199_254_740_991L, 9_007_199_254_740_991L,
+                0.1D, -0.0D, 0.0D, 1E-130, -1E-130,
+                9_007_199_254_740_991D, -9_007_199_254_740_991D);
         var fields = new LinkedHashMap<String, Object>();
         for (int i = 0; i < numbers.size(); i++) fields.put("n" + i, numbers.get(i));
         fields.put("strings", List.of("", "\"\\\b\f\n\r\t\u0001", "\u00e9\u4e2d",

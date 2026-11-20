@@ -133,6 +133,8 @@ version is intentional.
 This example uses the Map-based API. See
 [application mapping and migration](docs/guide.md#application-owned-mapping)
 for mapping examples, dependency requirements, and migration guidance.
+Numeric document writes accept only `Integer`, `Long` and bounded finite `Double`;
+see the [enforced numeric bounds and migration notes](docs/guide.md#supported-values-and-numeric-precision).
 The API runtime is Jackson-free; native providers may still depend on Jackson.
 The Java fragment is an instance-method body (with the shown imports);
 declare or handle `java.io.IOException`.
