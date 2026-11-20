@@ -2170,8 +2170,9 @@ metadata, so its final stored/commit size cannot be determined from the supplied
 fields alone. Cosmos and DynamoDB `update()` currently replace the document.
 
 Native failures continue through the existing provider error normalization.
-For example, Cosmos HTTP 413 retains the default non-retryable `PROVIDER_ERROR`
-classification, with its native status and cause preserved. DynamoDB
+For example, Cosmos HTTP 413 maps to non-retryable `INVALID_REQUEST`
+wherever it reaches the common Cosmos error mapper, with its native status,
+message, cause, provider details and diagnostics preserved. DynamoDB
 `ValidationException` maps to non-retryable `INVALID_REQUEST`; Spanner `INVALID_ARGUMENT` maps to
 `INVALID_REQUEST` with native retryability. Do not treat every provider quota
 error as a size error, or every `INVALID_REQUEST` as a size failure. Native
@@ -2179,6 +2180,10 @@ validation may occur after network I/O and incur cost. Inspect the normalized
 category/status and documented provider constraints; do not blindly retry an
 unchanged oversized request. No automatic chunking, offload or bypass option is
 provided.
+
+Cosmos HTTP 413 previously mapped to `PROVIDER_ERROR`. Update category-based
+switches, metrics and custom retry policies to account for `INVALID_REQUEST`;
+the native status remains 413 and `retryable` remains false.
 
 ### Exact input validation and nesting
 
