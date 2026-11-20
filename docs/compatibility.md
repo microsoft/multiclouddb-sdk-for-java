@@ -89,7 +89,7 @@ The raw HTTP or gRPC status code is also available via `error.statusCode()`.
 
 | Category  | Cosmos DB  | DynamoDB  | Spanner  |
 |-----------|------------|-----------|----------|
-| `INVALID_REQUEST`  | HTTP 400  | ValidationException, HTTP 400  | INVALID_ARGUMENT, FAILED_PRECONDITION  |
+| `INVALID_REQUEST`  | HTTP 400, 413  | ValidationException, HTTP 400  | INVALID_ARGUMENT, FAILED_PRECONDITION  |
 | `AUTHENTICATION_FAILED`  | HTTP 401  | UnrecognizedClientException, HTTP 401/403  | UNAUTHENTICATED  |
 | `AUTHORIZATION_FAILED`  | HTTP 403  | AccessDeniedException  | PERMISSION_DENIED  |
 | `NOT_FOUND`  | HTTP 404  | ResourceNotFoundException, HTTP 404  | NOT_FOUND  |
@@ -104,7 +104,12 @@ The raw HTTP or gRPC status code is also available via `error.statusCode()`.
 
 Document size limits depend on the provider. The SDK does not check payload size before sending a write. If a write fails because the payload is too large, reduce the payload or split the data across multiple documents before retrying; retrying the same payload will not resolve the error.
 
-Do not rely on the error category alone to identify size failures. Cosmos DB reports HTTP 413 as `PROVIDER_ERROR`; DynamoDB and Spanner size failures may appear as `INVALID_REQUEST`. Check the native status and error details to identify the cause.
+Do not rely on the error category alone to identify size failures. Cosmos HTTP 413 maps to non-retryable `INVALID_REQUEST` wherever it reaches the common Cosmos error mapper; DynamoDB and Spanner size failures may also appear as `INVALID_REQUEST`. Check the native status and error details to identify the cause.
+
+Cosmos HTTP 413 previously mapped to `PROVIDER_ERROR`. This category change can
+affect application switches, metrics and custom retry policies. The native
+status, message, cause, provider details and diagnostics are preserved, and
+`retryable` remains false. Other status mappings are unchanged.
 
 > ¹ DynamoDB uses `ConditionalCheckFailedException` for both the 409 (duplicate-key on `create`) and 412
 > (precondition failure on conditional `update`/`upsert`) cases - both currently map to `CONFLICT`.

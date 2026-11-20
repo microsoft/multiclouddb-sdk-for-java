@@ -107,6 +107,13 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Changed:**
 
+- Cosmos HTTP 413 now maps to non-retryable `INVALID_REQUEST` instead of
+  `PROVIDER_ERROR` wherever it reaches the common Cosmos error mapper. Native
+  status, message, cause, provider/operation, provider details and existing
+  diagnostics are preserved. This follow-up to the Map migration changes
+  category-based application switches, metrics and custom retry policies;
+  `retryable` remains false. No payload-size check or other status mapping is
+  changed.
 - Use detached Maps for Cosmos writes and point reads, and Object change-feed
   payloads with null meaning no available image; native Cosmos serialization remains.
   Preserve supplied empty AVAD bodies and envelope/metadata identity fallback,
