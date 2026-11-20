@@ -19,6 +19,9 @@ class QueryPageTest {
         row.put("nullValue", null);
         List<Map<String, Object>> input = new ArrayList<>(List.of(row));
         QueryPage page = new QueryPage(input, "");
+        var replacement = page.withDiagnostics(OperationDiagnostics.builder(ProviderId.COSMOS, "query").build());
+        assertSame(page.items(), replacement.items(), "Only metadata changes; owned rows must not be copied");
+        assertNull(page.diagnostics(), "Metadata replacement must not mutate the source page");
         input.clear();
         row.clear();
         assertEquals(1, page.items().size());
@@ -26,6 +29,7 @@ class QueryPageTest {
         assertNull(page.items().get(0).get("nullValue"));
         assertThrows(UnsupportedOperationException.class, () -> page.items().clear());
         assertThrows(UnsupportedOperationException.class, () -> page.items().get(0).clear());
+        assertThrows(UnsupportedOperationException.class, () -> replacement.items().get(0).clear());
         assertSame(nested, page.items().get(0).get("nested"));
         nested.clear();
         assertEquals(List.of(), page.items().get(0).get("nested"));

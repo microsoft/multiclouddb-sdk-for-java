@@ -36,6 +36,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+import static com.multiclouddb.conformance.ConformanceHarness.assertDiagnostics;
+import static com.multiclouddb.conformance.ConformanceHarness.assertResponse;
+import static com.multiclouddb.api.OperationOutcome.SUCCESS;
+import static com.multiclouddb.api.OperationOutcome.NOT_FOUND;
+import static com.multiclouddb.api.OperationOutcome.FAILURE;
 
 /**
  * Provider-agnostic conformance tests exercising the portable CRUD + query
@@ -117,6 +122,7 @@ public abstract class CrudConformanceTests {
                         () -> write(operation, key, document));
                 assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, failure.error().category());
                 assertEquals(operation, failure.error().operation());
+                assertDiagnostics(failure.diagnostics(), client.providerId(), operation, FAILURE);
             }
         }
     }
@@ -125,11 +131,14 @@ public abstract class CrudConformanceTests {
     void emptyMapsNestedNullsAndDetachedMutableResultsRemainSupported() {
         MulticloudDbKey key = MulticloudDbKey.of("conf-neutral-ownership", UUID.randomUUID().toString());
         try {
-            client.create(getAddress(), key, Map.of());
-            assertNotNull(client.read(getAddress(), key).result());
-            client.update(getAddress(), key, Map.of());
-            client.upsert(getAddress(), key, Map.of());
-            assertNotNull(client.read(getAddress(), key).result());
+            assertNull(assertResponse(client.create(getAddress(), key, Map.of()),
+                    client.providerId(), "create", SUCCESS));
+            assertNotNull(assertResponse(client.read(getAddress(), key), client.providerId(), "read", SUCCESS));
+            assertNull(assertResponse(client.update(getAddress(), key, Map.of()),
+                    client.providerId(), "update", SUCCESS));
+            assertNull(assertResponse(client.upsert(getAddress(), key, Map.of()),
+                    client.providerId(), "upsert", SUCCESS));
+            assertNotNull(assertResponse(client.read(getAddress(), key), client.providerId(), "read", SUCCESS));
             for (String operation : List.of("create", "update", "upsert")) {
                 if (operation.equals("create")) safeDelete(key);
                 Map<String, Object> inner = new LinkedHashMap<>();
@@ -181,9 +190,11 @@ public abstract class CrudConformanceTests {
     @DisplayName("upsert + read roundtrip")
     void upsertAndRead() {
         MulticloudDbKey key = MulticloudDbKey.of("conf-test-1", "conf-test-1");
-        client.upsert(getAddress(), key, Map.of("title", "Conformance Test Item", "value", 42, "active", true));
+        assertNull(assertResponse(client.upsert(getAddress(), key,
+                Map.of("title", "Conformance Test Item", "value", 42, "active", true)),
+                client.providerId(), "upsert", SUCCESS));
 
-        DocumentResult result = client.read(getAddress(), key).result();
+        DocumentResult result = assertResponse(client.read(getAddress(), key), client.providerId(), "read", SUCCESS);
         assertNotNull(result, "Document should be returned after upsert");
         assertEquals("Conformance Test Item", result.document().get("title"));
         assertEquals(42, ((Number) result.document().get("value")).intValue());
@@ -211,10 +222,11 @@ public abstract class CrudConformanceTests {
     }
 
     @Test @Order(3)
-    @DisplayName("read returns null for nonexistent key")
+    @DisplayName("read miss returns a non-null response with null result and NOT_FOUND")
     void readNonExistent() {
-        assertNull(client.read(getAddress(), MulticloudDbKey.of("does-not-exist-xyz", "does-not-exist-xyz")).result(),
-                "Should return null for nonexistent document");
+        assertNull(assertResponse(client.read(getAddress(),
+                        MulticloudDbKey.of("does-not-exist-xyz", "does-not-exist-xyz")),
+                client.providerId(), "read", NOT_FOUND), "Missing document must have a null result");
     }
 
     @Test @Order(4)
@@ -223,8 +235,8 @@ public abstract class CrudConformanceTests {
         MulticloudDbKey key = MulticloudDbKey.of("conf-test-delete", "conf-test-delete");
         client.upsert(getAddress(), key, Map.of("title", "To be deleted"));
         assertNotNull(client.read(getAddress(), key).result());
-        client.delete(getAddress(), key);
-        assertNull(client.read(getAddress(), key).result());
+        assertNull(assertResponse(client.delete(getAddress(), key), client.providerId(), "delete", SUCCESS));
+        assertNull(assertResponse(client.read(getAddress(), key), client.providerId(), "read", NOT_FOUND));
     }
 
     @Test @Order(5)
@@ -237,8 +249,9 @@ public abstract class CrudConformanceTests {
         // Delete is the LCD across Cosmos/Dynamo/Spanner: a missing key is a silent
         // no-op, never an exception. Callers that need NOT_FOUND on a missing key
         // must use update() instead.
-        assertDoesNotThrow(() -> client.delete(getAddress(), key),
-                "Delete of a nonexistent key must be silent — providers must not throw on missing");
+        assertNull(assertResponse(assertDoesNotThrow(() -> client.delete(getAddress(), key),
+                "Delete of a nonexistent key must be silent — providers must not throw on missing"),
+                client.providerId(), "delete", SUCCESS));
     }
 
     @Test @Order(6)
@@ -251,6 +264,8 @@ public abstract class CrudConformanceTests {
                 QueryRequest.builder().expression("SELECT * FROM c").maxPageSize(50).build());
         assertNotNull(page);
         assertFalse(page.items().isEmpty(), "Query should return at least our inserted items");
+        assertDiagnostics(page.diagnostics(), client.providerId(), "query", SUCCESS);
+        assertEquals(page.items().size(), page.diagnostics().itemCount());
         for (int i = 1; i <= 3; i++) safeDelete(MulticloudDbKey.of("conf-query-" + i, "conf-query-" + i));
     }
 
@@ -447,6 +462,7 @@ public abstract class CrudConformanceTests {
                     "create of duplicate key must throw");
             assertEquals(MulticloudDbErrorCategory.CONFLICT, ex.error().category(),
                     "Duplicate-create must normalize to CONFLICT across providers");
+            assertDiagnostics(ex.diagnostics(), client.providerId(), "create", FAILURE);
         } finally {
             safeDelete(key);
         }
@@ -467,6 +483,8 @@ public abstract class CrudConformanceTests {
         assertNotNull(page, "Query must return a non-null page even when no items match");
         assertNotNull(page.items(), "Page items() must never be null");
         assertTrue(page.items().isEmpty(), "Items list must be empty when no documents match");
+        assertDiagnostics(page.diagnostics(), client.providerId(), "query", SUCCESS);
+        assertEquals(0, page.diagnostics().itemCount());
     }
 
     @Test @Order(17)
@@ -515,6 +533,8 @@ public abstract class CrudConformanceTests {
             if (token != null) b.continuationToken(token);
             QueryPage p = client.query(getAddress(), b.build());
             assertNotNull(p);
+            assertDiagnostics(p.diagnostics(), client.providerId(), "query", SUCCESS);
+            assertEquals(p.items().size(), p.diagnostics().itemCount());
             for (Map<String, Object> item : p.items()) {
                 // The seed loop assigns the field "n" the values 1..seedCount, one
                 // value per inserted document, so "n" is guaranteed unique within
@@ -552,20 +572,26 @@ public abstract class CrudConformanceTests {
     @DisplayName("ensureDatabase() is idempotent on existing database")
     void ensureDatabaseIsIdempotent() {
         String db = getAddress().database();
-        assertDoesNotThrow(() -> client.ensureDatabase(db),
-                "ensureDatabase on existing database must not throw");
-        assertDoesNotThrow(() -> client.ensureDatabase(db),
-                "ensureDatabase must be idempotent on subsequent calls");
+        assertNull(assertResponse(client.ensureDatabase(db), client.providerId(), "ensureDatabase", SUCCESS));
+        assertNull(assertResponse(client.ensureDatabase(db), client.providerId(), "ensureDatabase", SUCCESS));
     }
 
     @Test @Order(20)
     @DisplayName("ensureContainer() is idempotent on existing container")
     void ensureContainerIsIdempotent() {
         ResourceAddress address = getAddress();
-        assertDoesNotThrow(() -> client.ensureContainer(address),
-                "ensureContainer on existing container must not throw");
-        assertDoesNotThrow(() -> client.ensureContainer(address),
-                "ensureContainer must be idempotent on subsequent calls");
+        assertNull(assertResponse(client.ensureContainer(address), client.providerId(), "ensureContainer", SUCCESS));
+        assertNull(assertResponse(client.ensureContainer(address), client.providerId(), "ensureContainer", SUCCESS));
+    }
+
+    @Test
+    @DisplayName("provisionSchema returns a summary for existing resources and the empty-schema no-op")
+    void provisionSchemaHasDiagnostics() {
+        assertNull(assertResponse(client.provisionSchema(Map.of(
+                getAddress().database(), List.of(getAddress().collection()))),
+                client.providerId(), "provisionSchema", SUCCESS));
+        assertNull(assertResponse(client.provisionSchema(Map.of()),
+                client.providerId(), "provisionSchema", SUCCESS));
     }
 
     @Test @Order(21)
@@ -634,6 +660,7 @@ public abstract class CrudConformanceTests {
     }
 
     private static void assertClientClosed(MulticloudDbException ex, String operation) {
+        assertDiagnostics(ex.diagnostics(), ex.error().provider(), operation, FAILURE);
         assertEquals(MulticloudDbErrorCategory.CLIENT_CLOSED, ex.error().category(),
                 operation + ": post-close operation must surface CLIENT_CLOSED, not "
                         + ex.error().category());

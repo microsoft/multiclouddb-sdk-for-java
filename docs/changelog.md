@@ -13,6 +13,11 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Added:**
 
+- Common `OperationResponse<T>` and diagnostics with wrapper start/end times,
+  monotonic duration, outcome, native status domain, and optional resource
+  consumption with explicit unit/coverage. Unavailable consumption differs
+  from observed zero; legacy `requestCharge()` retains its zero sentinel.
+
 - Portable change-feed API in `com.multiclouddb.api.changefeed`: `ChangeFeedCursor` (opaque, persistable via `toToken(serialize)` / `fromToken(token, deserialize)` with a `now()` live-tip sentinel), `ChangeFeedPage` (events + `nextCursor` + `hasMore`/`terminal`), `ChangeEvent` (with stable `providerEventId` for dedup), `ChangeType`, and `CursorExpiredException`. Two new entry points on `MulticloudDbClient`: `listCursors(ResourceAddress)` and `readChanges(ResourceAddress, ChangeFeedCursor[, OperationOptions])`. Provider SPI methods default to `UNSUPPORTED_CAPABILITY` so existing adapters compile unchanged. The cursor wire format is opaque, version-tagged Base64URL JSON; the 24-hour portable baseline is enforced client-side on the token''s last-issued timestamp. `OperationOptions.timeout()` is not enforced on the change-feed path in this release.
 - New error category `MulticloudDbErrorCategory.CURSOR_EXPIRED` carrying a canonical `providerDetails.reason` set (`TOKEN_AGED_OUT`, `PROVIDER_TRIMMED`, `ITERATOR_EXPIRED`, `MALFORMED`, `VERSION_UNSUPPORTED`, `PROVIDER_MISMATCH`, `RESOURCE_MISMATCH`), exported as public `CursorTokenCodec.REASON_*` constants.
 - New error category `MulticloudDbErrorCategory.CLIENT_CLOSED` surfaced by a `DefaultMulticloudDbClient` post-close guard on every public entry point (replaces provider-specific `IllegalStateException` leaks). `MulticloudDbClient.close()` is now idempotent.
@@ -20,6 +25,21 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - `OperationNames.LIST_CURSORS`, `READ_CHANGES`, `PROVISION_SCHEMA` propagated through `MulticloudDbError.operation()` and `OperationDiagnostics`.
 
 **Changed:**
+
+- **Breaking response migration:** public point CRUD, cursor discovery and
+  database/container/schema management now return `OperationResponse<T>`.
+  Unwrap reads and cursor lists with `.result()`; a read miss is a non-null
+  response with null result and `NOT_FOUND`. Recompile callers and external
+  provider implementations. Only point SPI return types change; management/
+  cursor SPI remains void/List. `QueryPage` and `ChangeFeedPage` remain unchanged
+  in type and receive the shared outer summary. See
+  [response migration](guide.md#response-migration).
+- Query diagnostics duration now measures the public wrapper call and operation
+  names identify public methods. Typed failures retain their native metadata,
+  category, subtype, cause and suppressed errors.
+- Attaching query diagnostics reuses the page's already-owned list and row maps,
+  avoiding a second materialization outside the measured interval. Public
+  `QueryPage` constructors retain defensive copying.
 
 - Cache completed container identities during common write/cursor validation.
   Write validation rechecks subtree height at each reuse depth; cycles and writes
@@ -100,6 +120,10 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Added:**
 
+- Point responses preserve available HTTP status, Activity ID, RU, ETag and
+  session token; absorbed read/delete 404s retain observed diagnostics.
+  Consumption requires an actual charge header and uses `UNKNOWN` coverage.
+
 - Change-feed reader backed by `CosmosContainer.queryChangeFeed(...)` and `getFeedRanges()`. `listCursors` mints one cursor per feed range at the live tip via a one-item warmup query that captures a real continuation token (with a `@@PIT:<epoch-millis>` fallback for older SDKs). `readChanges` drains one page per call, rotates the partition list across ranges so multi-range cursors are not starved, and uses All-Versions-and-Deletes (AVAD) mode so `ChangeEvent.type()` distinguishes `CREATE` / `UPDATE` / `DELETE`. The target container must be provisioned with an AVAD `ChangeFeedPolicy`. HTTP 410 GONE on `queryChangeFeed` is mapped to `CursorExpiredException(reason=PROVIDER_TRIMMED)`.
 - Extended-retention provisioning: `CosmosProviderClient.ensureContainer(address)` provisions an AVAD `ChangeFeedPolicy` carrying the duration from `ChangeFeedConfig.extendedRetention(...)` when the user opted in, and reads back the active policy — throwing `UNSUPPORTED_CAPABILITY(reason="extended_retention_not_enacted")` when a pre-existing container''s retention does not match. A 400 BadRequest whose message fingerprint indicates the Cosmos account lacks Continuous Backup is re-mapped to `UNSUPPORTED_CAPABILITY(reason="continuous_backup_required")`. `CosmosCapabilities` declares `EXTENDED_CHANGE_FEED_HISTORY_CAP` (up to 30 days via Continuous Backup; 7d minimum).
 - `consistencyLevel` connection config key for opt-in client-level read consistency override (`STRONG`, `BOUNDED_STALENESS`, `SESSION`, `CONSISTENT_PREFIX`, `EVENTUAL`). When absent, reads inherit the account''s configured default.
@@ -117,6 +141,10 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   Common write validation now rejects null document roots before native I/O.
   **Breaking result-type migration:** see the [migration guide](guide.md#migrating-from-beta2).
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
+- **Breaking:** point SPI methods now return response carriers. Public
+  point/cursor/management callers follow the shared
+  [response migration](guide.md#response-migration); query/feed page types and
+  management/cursor SPI signatures are unchanged. Recompile consumers.
 - Cosmos clients now always use Gateway mode with HTTP/2 enabled. The
   `azure-cosmos` dependency is upgraded from 4.78.0 to 4.82.0 so account-advertised
   Gateway V2 endpoints and the SDK connectivity probe select routing automatically.
@@ -167,6 +195,10 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Added:**
 
+- Point responses preserve available HTTP status/request ID and consumed
+  capacity, distinguishing absent capacity from observed zero. Initial coverage
+  is `UNKNOWN`, not a guaranteed retry-inclusive total.
+
 - Change-feed reader backed by DynamoDB Streams (`DescribeStream`, `GetShardIterator`, `GetRecords`). `listCursors` returns one cursor per open shard at the live tip with a pre-resolved `LATEST` iterator (`@@ITER:<iterator>` continuation), avoiding silent event loss between mint and first read. `readChanges` drains one shard''s page per call, rotates the partition list across shards, transitions to an `AFTER_SEQUENCE_NUMBER` continuation on the first observed record, and absorbs shard splits/closes. `TrimmedDataAccessException` → `CursorExpiredException(reason=PROVIDER_TRIMMED)`; `ExpiredIteratorException` → `reason=ITERATOR_EXPIRED`. Change-event payloads use the shared `DynamoItemMapper`; binary support and numeric exponent/overflow decoding are not added by this migration. The target table must have `StreamSpecification(NEW_AND_OLD_IMAGES)` enabled; otherwise `UNSUPPORTED_CAPABILITY(reason="stream_not_enabled")`.
 - `DynamoCapabilities` declares `EXTENDED_CHANGE_FEED_HISTORY_UNSUPPORTED` (DynamoDB Streams is fixed at 24h server-side; SDK-managed archive-on-read via customer-provisioned Kafka is on the v1.x roadmap). Callers that opt in to `ChangeFeedConfig.extendedRetention(...)` fail fast at client-build time via the API-module factory gate; the `DynamoProviderClient` constructor mirrors the gate for SPI-direct integrators.
 - Default sort-key ordering: scan paths sort items per-page by sort key ascending, matching DynamoDB''s native `Query` API and the Cosmos provider''s default. Per-page only.
@@ -181,6 +213,10 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   Common write validation now rejects null document roots before native I/O.
   **Breaking result-type migration:** see the [migration guide](guide.md#migrating-from-beta2).
   ([PR #122](https://github.com/microsoft/multiclouddb-sdk-for-java/pull/122))
+- **Breaking:** point SPI methods now return response carriers. Public
+  point/cursor/management callers follow the shared
+  [response migration](guide.md#response-migration); query/feed page types and
+  management/cursor SPI signatures are unchanged. Recompile consumers.
 - `SORT_KEY_ASC` comparator handles numeric sort keys with type-aware comparison (Long/Integer use native compare; mixed numerics fall back to `BigDecimal`) so integers beyond `2^53` are no longer truncated.
 - `BETWEEN` translation wraps in parentheses (`(field BETWEEN ? AND ?)`) for cross-provider consistency.
 
@@ -209,6 +245,10 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 ### [Unreleased]
 
 **Added:**
+
+- Common response timing/outcome and available gRPC error status, without
+  inventing success status, request charge or an ETag from a commit timestamp.
+  Billing guidance uses Cloud Billing; no PROFILE or commit-stat collection.
 
 - Change-feed reader backed by Spanner change streams via the `READ_<stream>` TVF (single-use read-only transaction; 5-second bounded window per call). `listCursors` bootstraps the partition tree with a `NULL` partition token and anchors each cursor''s bookmark at `max(now, childStart)` so `now()` cursors honour their live-tip contract on the emulator. `readChanges` drains a bounded window, absorbs `child_partitions_record` rows (splits/merges), rotates the partition list, and surfaces `isTerminal()=true` when a cursor''s sole partition closes without children. Each `data_change_record.mod` becomes one `ChangeEvent` with a stable `providerEventId` (`<server_transaction_id>:<commit_ts>:<record_sequence>:<mod_index>`). `INVALID_ARGUMENT` / `NOT_FOUND` / `OUT_OF_RANGE` on the TVF → `CursorExpiredException(reason=PROVIDER_TRIMMED)`.
 - Per-collection change-stream name resolution: defaults to `<collection>_changes`; override via the `changeStream.<collection>` connection key.
@@ -239,6 +279,10 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 **Breaking changes:**
 
+- Point SPI methods now return response carriers. Public point/cursor/management
+  callers follow the shared [response migration](guide.md#response-migration);
+  query/feed page types and management/cursor SPI signatures are unchanged.
+  Recompile consumers.
 - `update()` is a partial update preserving previously written fields (read-modify-write transaction). **Known cross-provider asymmetry:** Cosmos and DynamoDB `update()` are still full-document replaces.
 - Document field named `data` is rejected with `MulticloudDbException(INVALID_REQUEST)` (case-insensitive — Spanner resolves column names case-insensitively). The `data` column is reserved for the internal `FIELD_DATA` metadata.
 - `upsert()` is a full document replace; columns absent from the upserted document become NULL on read (matches the Cosmos / DynamoDB upsert contract).

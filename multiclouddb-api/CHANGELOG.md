@@ -18,6 +18,8 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   Preserve legacy getters and ordinary validation exception behavior; enrich
   typed SDK errors without replacing their subtype. Query duration now covers
   the public wrapper. Management summaries do not aggregate child operations.
+- Attach query diagnostics without re-copying already-owned row maps;
+  public `QueryPage` constructors retain their defensive copies.
 
 - **Breaking:** Narrow cursor deserializer callback numeric results to the exact
   Byte, Short, Integer, Long, Float, Double, BigInteger and BigDecimal classes.

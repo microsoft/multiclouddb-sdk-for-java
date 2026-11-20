@@ -197,14 +197,16 @@ class DefaultMulticloudDbClientDiagnosticsTest {
         var metadata = OperationDiagnostics.builder(ProviderId.COSMOS, "native-query", Duration.ofDays(1))
                 .requestCharge(2.5).requestId("query-id").build();
         var query = QueryRequest.builder().build();
-        when(provider.query(ADDRESS, query, OPTIONS))
-                .thenReturn(new QueryPage(List.of(Map.of("nested", nested)), "token", metadata));
+        var nativePage = new QueryPage(List.of(Map.of("nested", nested)), "token", metadata);
+        when(provider.query(ADDRESS, query, OPTIONS)).thenReturn(nativePage);
         var cursor = ChangeFeedCursor.now();
         when(provider.readChanges(ADDRESS, cursor, OPTIONS))
                 .thenReturn(new ChangeFeedPage(List.of(), cursor, false, true));
         when(provider.listCursors(ADDRESS)).thenReturn(List.of(cursor));
         var client = client(provider, ProviderId.COSMOS);
         var page = client.query(ADDRESS, query, OPTIONS);
+        assertSame(nativePage.items(), page.items(), "Attaching diagnostics must not copy materialized rows");
+        assertSame(metadata, nativePage.diagnostics(), "The provider page must remain unchanged");
         assertSame(nested, page.items().get(0).get("nested"));
         assertEquals("token", page.continuationToken());
         assertEquals(2.5, page.diagnostics().requestCharge());

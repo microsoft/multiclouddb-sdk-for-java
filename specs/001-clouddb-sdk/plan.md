@@ -186,11 +186,19 @@ No constitution violations to justify. The design adds ~15 new types to `multicl
 
 Three primitives on `MulticloudDbClient`:
 
-1. `List<ChangeFeedCursor> listCursors(ResourceAddress addr)` — returns one cursor per provider-internal partition, anchored at the live tip.
+1. `OperationResponse<List<ChangeFeedCursor>> listCursors(ResourceAddress addr)` — `result()` returns one cursor per provider-internal partition, anchored at the live tip; `diagnostics()` supplies the common outer summary.
 2. `ChangeFeedPage readChanges(ResourceAddress addr, ChangeFeedCursor cursor)` — drains one bounded page (events + a refreshed cursor + `hasMore` + `isTerminal`).
 3. `readChanges(ResourceAddress addr, ChangeFeedCursor cursor, OperationOptions opts)` — accepts `OperationOptions` for forward-compatibility; **v1 providers do not honour any option field**.
 
 Plus two cursor factories: `ChangeFeedCursor.now()` (live-tip sentinel) and `ChangeFeedCursor.fromToken(token, deserialize)` (resume from a previously persisted token). Tokens are opaque Base64URL JSON carrying provider id, resource binding, anchor, partition list, and an `issuedAt` epoch-ms with a 24h portable age cap (CursorTokenCodec.MAX_TOKEN_AGE_MILLIS).
+
+**Response migration amendment:** public point, cursor-discovery and management
+calls now return `OperationResponse<T>`; cursor results are unwrapped with
+`.result()`. `QueryPage`/`ChangeFeedPage` remain page types with common wrapper
+timing/outcome diagnostics. Only point SPI return types change; cursor SPI still
+returns `List<ChangeFeedCursor>` and management SPI remains void. Cursor/feed/
+management summaries do not introduce native detail collectors or aggregation.
+Recompile callers and providers; see [response migration](../../docs/guide.md#response-migration).
 
 ### Per-provider mapping
 

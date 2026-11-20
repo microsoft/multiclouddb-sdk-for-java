@@ -114,8 +114,16 @@ Each run exercises the full CRUD surface on a `products` collection:
 | 6 | Filter by category | `client.query(expression)` |
 | 7 | Filter in-stock + price | `client.query(expression)` |
 | 8 | Delete one item | `client.delete(...)` |
-| 9 | Confirm deletion | `client.query(...)` |
+| 9 | Confirm deletion and NOT_FOUND response | `client.read(...)` and `client.query(...)` |
 | 10 | Cleanup all items | `client.delete(...)` |
+
+Point and management calls use `OperationResponse<T>`; reads unwrap `.result()`.
+The harness checks common diagnostics (provider, operation, outcome, start/end
+and non-negative monotonic duration) on measured point, query and management
+calls, including a non-null read-miss response with null result and `NOT_FOUND`.
+Status domain and consumption amount/unit/coverage are checked when present.
+It does not require Spanner consumption, complete retry totals, or ordered
+wall-clock timestamps. Query pagination and payload checks remain unchanged.
 
 ---
 

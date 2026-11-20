@@ -24,6 +24,10 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static com.multiclouddb.conformance.ConformanceHarness.assertDiagnostics;
+import static com.multiclouddb.conformance.ConformanceHarness.assertResponse;
+import static com.multiclouddb.api.OperationOutcome.SUCCESS;
+import static com.multiclouddb.api.OperationOutcome.FAILURE;
 
 /**
  * Conformance tests for User Story 14 — Portable Change Feed (FR-cf-001 … FR-cf-014).
@@ -109,7 +113,8 @@ public abstract class ChangeFeedConformanceTest {
     @Order(1)
     @DisplayName("FR-cf-001: listCursors returns >=1 cursor for a provisioned resource")
     void listCursorsReturnsAtLeastOne() {
-        List<ChangeFeedCursor> cursors = client.listCursors(getAddress()).result();
+        List<ChangeFeedCursor> cursors = assertResponse(client.listCursors(getAddress()),
+                client.providerId(), "listCursors", SUCCESS);
         assertNotNull(cursors, "listCursors must never return null");
         assertFalse(cursors.isEmpty(),
                 "listCursors must return >=1 cursor for a provisioned resource");
@@ -333,6 +338,7 @@ public abstract class ChangeFeedConformanceTest {
                 () -> client.readChanges(getAddress(), cursor));
         assertEquals(CursorTokenCodec.REASON_PROVIDER_MISMATCH,
                 ex.error().providerDetails().get("reason"));
+        assertDiagnostics(ex.diagnostics(), client.providerId(), "readChanges", FAILURE);
     }
 
     // -------------------------------------------- FR-cf-010
@@ -353,6 +359,7 @@ public abstract class ChangeFeedConformanceTest {
                 () -> client.readChanges(getAddress(), cursor));
         assertEquals(CursorTokenCodec.REASON_RESOURCE_MISMATCH,
                 ex.error().providerDetails().get("reason"));
+        assertDiagnostics(ex.diagnostics(), client.providerId(), "readChanges", FAILURE);
     }
 
     // -------------------------------------------- FR-cf-011
@@ -377,6 +384,8 @@ public abstract class ChangeFeedConformanceTest {
             assertNotNull(c, "drained cursor must be non-null");
             // Reading from the caught-up cursor returns an empty page with a non-null nextCursor.
             ChangeFeedPage empty = client.readChanges(getAddress(), c);
+            assertDiagnostics(empty.diagnostics(), client.providerId(), "readChanges", SUCCESS);
+            assertEquals(empty.events().size(), empty.diagnostics().itemCount());
             assertNotNull(empty.nextCursor(), "empty page must still carry a non-null nextCursor");
             // And calling readChanges again must not throw.
             assertDoesNotThrow(() -> client.readChanges(getAddress(), empty.nextCursor()));
@@ -431,6 +440,8 @@ public abstract class ChangeFeedConformanceTest {
             boolean progressed = false;
             for (int i = 0; i < live.length; i++) {
                 ChangeFeedPage page = client.readChanges(getAddress(), live[i]);
+                assertDiagnostics(page.diagnostics(), client.providerId(), "readChanges", SUCCESS);
+                assertEquals(page.events().size(), page.diagnostics().itemCount());
                 live[i] = page.nextCursor();
                 for (ChangeEvent ev : page.events()) {
                     if (ev.key().equals(key)) return ev;
@@ -463,6 +474,8 @@ public abstract class ChangeFeedConformanceTest {
             boolean progressed = false;
             for (int i = 0; i < live.length; i++) {
                 ChangeFeedPage page = client.readChanges(getAddress(), live[i]);
+                assertDiagnostics(page.diagnostics(), client.providerId(), "readChanges", SUCCESS);
+                assertEquals(page.events().size(), page.diagnostics().itemCount());
                 live[i] = page.nextCursor();
                 for (ChangeEvent ev : page.events()) {
                     sink.add(ev);
@@ -487,6 +500,8 @@ public abstract class ChangeFeedConformanceTest {
             boolean anyMore = false;
             for (int i = 0; i < live.length; i++) {
                 ChangeFeedPage page = client.readChanges(getAddress(), live[i]);
+                assertDiagnostics(page.diagnostics(), client.providerId(), "readChanges", SUCCESS);
+                assertEquals(page.events().size(), page.diagnostics().itemCount());
                 live[i] = page.nextCursor();
                 if (page.hasMore() || !page.events().isEmpty()) anyMore = true;
             }

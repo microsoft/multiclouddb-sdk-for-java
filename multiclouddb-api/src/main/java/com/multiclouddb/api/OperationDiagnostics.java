@@ -119,7 +119,9 @@ public final class OperationDiagnostics {
     public ProviderId provider() { return provider; }
     public String operation()   { return operation; }
     public Duration duration()  { return duration; }
+    /** Wall-clock invocation start, or null before public-wrapper completion. */
     public Instant startTime() { return startTime; }
+    /** Wall-clock completion; may precede startTime after a clock adjustment. */
     public Instant endTime() { return endTime; }
     public OperationOutcome outcome() { return outcome; }
     public StatusCodeDomain statusCodeDomain() { return statusCodeDomain; }
@@ -202,9 +204,11 @@ public final class OperationDiagnostics {
         public Builder endTime(Instant endTime) { this.endTime = endTime; return this; }
         public Builder outcome(OperationOutcome outcome) { this.outcome = outcome; return this; }
         public Builder statusCodeDomain(StatusCodeDomain domain) { this.statusCodeDomain = domain; return this; }
+        /** Non-null consumption determines requestCharge at build time regardless of setter order. */
         public Builder consumption(ResourceConsumption consumption) { this.consumption = consumption; return this; }
         public Builder requestId(String requestId)       { this.requestId = requestId; return this; }
         public Builder statusCode(Integer statusCode)    { this.statusCode = statusCode; return this; }
+        /** Legacy-only charge; overridden by a non-null consumption value at build time. */
         public Builder requestCharge(double charge)      { this.requestCharge = charge; return this; }
         public Builder etag(String etag)                 { this.etag = etag; return this; }
         public Builder sessionToken(String sessionToken) { this.sessionToken = sessionToken; return this; }

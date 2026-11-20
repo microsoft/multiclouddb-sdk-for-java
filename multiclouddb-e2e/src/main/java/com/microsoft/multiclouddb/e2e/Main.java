@@ -8,6 +8,9 @@ import com.multiclouddb.api.DocumentResult;
 import com.multiclouddb.api.MulticloudDbClient;
 import com.multiclouddb.api.MulticloudDbClientFactory;
 import com.multiclouddb.api.MulticloudDbKey;
+import com.multiclouddb.api.OperationDiagnostics;
+import com.multiclouddb.api.OperationOutcome;
+import com.multiclouddb.api.OperationResponse;
 import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
@@ -72,8 +75,8 @@ public class Main {
 
         // ── Schema provisioning ───────────────────────────────────────
         System.out.println("── Schema provisioning ────────────────────────────────────────");
-        client.ensureDatabase(address.database());
-        client.ensureContainer(address);
+        checkResponse(client.ensureDatabase(address.database()), "ensureDatabase", OperationOutcome.SUCCESS);
+        checkResponse(client.ensureContainer(address), "ensureContainer", OperationOutcome.SUCCESS);
         System.out.println("  Database and collection are ready.");
         System.out.println();
 
@@ -148,6 +151,9 @@ public class Main {
         // ── DELETE ────────────────────────────────────────────────────
         System.out.println("── DELETE (prod-003) ──────────────────────────────────────────");
         delete("prod-003");
+        if (read("prod-003") != null) {
+            throw new AssertionError("Deleted prod-003 must have a null read result");
+        }
         System.out.println();
 
         // ── LIST (confirm deletion, expect 4 items) ───────────────────
@@ -183,7 +189,7 @@ public class Main {
                 "price", price, "inStock", inStock);
 
         System.out.printf("  client.upsert(address, key(%s), doc)%n", id);
-        client.upsert(address, key, doc);
+        checkResponse(client.upsert(address, key, doc), "upsert", OperationOutcome.SUCCESS);
         System.out.printf("    → upserted: %s | %s | $%.2f | inStock=%b%n",
                 id, name, price, inStock);
     }
@@ -192,7 +198,13 @@ public class Main {
         MulticloudDbKey key = MulticloudDbKey.of(id, id);
 
         System.out.printf("  client.read(address, key(%s))%n", id);
-        DocumentResult result = client.read(address, key).result();
+        var response = client.read(address, key);
+        if (response == null) {
+            throw new AssertionError("read must return a response even when the document is absent");
+        }
+        DocumentResult result = response.result();
+        checkDiagnostics(response.diagnostics(), "read",
+                result == null ? OperationOutcome.NOT_FOUND : OperationOutcome.SUCCESS);
         if (result != null) {
             Map<String, Object> document = result.document();
             System.out.printf("    → name=%s, price=%s%n",
@@ -207,7 +219,7 @@ public class Main {
         MulticloudDbKey key = MulticloudDbKey.of(id, id);
 
         System.out.printf("  client.delete(address, key(%s))%n", id);
-        client.delete(address, key);
+        checkResponse(client.delete(address, key), "delete", OperationOutcome.SUCCESS);
         System.out.println("    → deleted");
     }
 
@@ -227,6 +239,10 @@ public class Main {
 
         while (true) {
             QueryPage page = client.query(address, currentRequest);
+            checkDiagnostics(page.diagnostics(), "query", OperationOutcome.SUCCESS);
+            if (page.diagnostics().itemCount() != page.items().size()) {
+                throw new AssertionError("query diagnostics must describe this page's item count");
+            }
             totalItems += page.items().size();
 
             System.out.printf("    → page %d: %d item(s) returned%s%n",
@@ -249,5 +265,29 @@ public class Main {
 
         System.out.printf("    → total: %d item(s) across %d page(s)%n", totalItems, pageNumber);
         return totalItems;
+    }
+
+    private void checkResponse(OperationResponse<Void> response, String operation, OperationOutcome outcome) {
+        if (response == null || response.result() != null) {
+            throw new AssertionError(operation + " must return a non-null response with no body");
+        }
+        checkDiagnostics(response.diagnostics(), operation, outcome);
+    }
+
+    private void checkDiagnostics(OperationDiagnostics diagnostics, String operation, OperationOutcome outcome) {
+        if (diagnostics == null || !client.providerId().equals(diagnostics.provider())
+                || !operation.equals(diagnostics.operation()) || diagnostics.outcome() != outcome
+                || diagnostics.startTime() == null || diagnostics.endTime() == null
+                || diagnostics.duration() == null || diagnostics.duration().isNegative()) {
+            throw new AssertionError(operation + " must provide completed common diagnostics");
+        }
+        if (diagnostics.statusCode() != null && diagnostics.statusCodeDomain() == null) {
+            throw new AssertionError("Native status requires a status domain");
+        }
+        var consumption = diagnostics.consumption();
+        if (consumption != null && (!Double.isFinite(consumption.amount()) || consumption.amount() < 0
+                || consumption.unit() == null || consumption.coverage() == null)) {
+            throw new AssertionError("Observed consumption requires a valid amount, unit and coverage");
+        }
     }
 }

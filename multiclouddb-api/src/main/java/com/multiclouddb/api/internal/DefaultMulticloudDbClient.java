@@ -224,7 +224,7 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
                 LOG.debug("query completed: address={}, items={}, hasMore={}, duration={}ms",
                         address, page.items().size(), page.continuationToken() != null,
                         start.elapsed().toMillis());
-                return new QueryPage(page.items(), page.continuationToken(),
+                return page.withDiagnostics(
                         completeDiagnostics(page.diagnostics(), OperationNames.QUERY, OperationOutcome.SUCCESS, start)
                                 .itemCount(page.items().size()).build());
             } catch (ExpressionParseException | ExpressionValidationException e) {

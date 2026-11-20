@@ -1020,6 +1020,12 @@ wait "$child"
     '    com.multiclouddb.api.MulticloudDbClientConfig config ='
   foreach ($sourceCase in @(
       @{
+        Name = 'response-only-assertion'
+        Expected = 'assertNotNull(response.result())'
+        Source = $sentinelBaseline.Replace(
+          'assertNotNull(result.result());', 'assertNotNull(result);')
+      },
+      @{
         Name = 'cosmos-then-dynamo'
         Expected = 'exactly one provider invocation'
         Source = $sentinelBaseline.Replace(
@@ -1413,6 +1419,29 @@ $tamperedOutput
     'Result entry point did not accept the exact passing sentinel.'
 
   $passingReport = [IO.File]::ReadAllBytes($fixtureReport)
+  foreach ($marker in @('delete', 'close')) {
+    $markerPath = Join-Path $fixtureRoot "multiclouddb-conformance/target/fixture-markers/$marker"
+    if (Test-Path -LiteralPath $markerPath) {
+      Remove-Item -LiteralPath $markerPath -Force
+    }
+  }
+  $missingResultOutput = Invoke-CheckedProcess -FilePath $realMaven `
+    -ArgumentList @('-B', '-o', '-pl', 'multiclouddb-conformance', '-am',
+      '-Dtest=LiveCosmosEntraAuthenticationTest',
+      '-Dsurefire.failIfNoSpecifiedTests=false', '-Dfixture.read.missing=true',
+      "-Dcosmos.endpoint=$($environment['COSMOS_ENDPOINT'])",
+      'test') -WorkingDirectory $fixtureRoot -Environment $environment `
+    -ExpectedExitCode 1
+  Assert-Contains $missingResultOutput 'expected: not <null>' `
+    "A non-null carrier with a null document must fail the sentinel payload assertion.`n$missingResultOutput"
+  foreach ($marker in @('delete', 'close')) {
+    Assert-True (Test-Path -LiteralPath (
+        Join-Path $fixtureRoot "multiclouddb-conformance/target/fixture-markers/$marker")) `
+      "Missing-result failure did not run $marker cleanup."
+  }
+  [IO.File]::WriteAllBytes($fixtureReport, $passingReport)
+  Write-Host 'PASS missing read payload rejected despite non-null response carrier.'
+
   Remove-Item -LiteralPath $fixtureReport -Force
   try {
     $missingReportOutput = Invoke-SourceScript `

@@ -19,7 +19,7 @@ public final class LiveCosmosEntraAuthenticationTest {
       try {
         client.create(address, key, Map.of("id", key.partitionKey()));
         var result = client.read(address, key);
-        assertNotNull(result);
+        assertNotNull(result.result());
       } finally {
         client.delete(address, key);
       }

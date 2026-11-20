@@ -642,7 +642,7 @@ expansion rather than relying on this source gate.
               $createPattern =
                 "(?s)\b$clientName\s*\.\s*create\s*\(\s*$addressName\s*,\s*$keyName\s*,"
               $readPattern =
-                "(?s)\b(?:var|DocumentResult)\s+(?<result>\w+)\s*=\s*$clientName\s*\.\s*read\s*\(\s*$addressName\s*,\s*$keyName\s*(?:,|\))"
+                "(?s)\b(?:var|(?:com\.multiclouddb\.api\.)?OperationResponse\s*<\s*(?:com\.multiclouddb\.api\.)?DocumentResult\s*>)\s+(?<result>\w+)\s*=\s*$clientName\s*\.\s*read\s*\(\s*$addressName\s*,\s*$keyName\s*\)\s*;"
               $createMatch = [regex]::Match(
                 $tryBody, $createPattern)
               $readMatch = [regex]::Match(
@@ -659,7 +659,7 @@ expansion rather than relying on this source gate.
                   $readMatch.Groups['result'].Value)
                 $assertMatch = [regex]::Match(
                   $tryBody,
-                  "(?s)\bassertNotNull\s*\(\s*$readResultName\s*\)")
+                  "(?s)\bassertNotNull\s*\(\s*$readResultName\s*\.\s*result\s*\(\s*\)\s*\)")
                 if ($assertMatch.Success `
                     -and $readMatch.Index -lt $assertMatch.Index) {
                   $protectedFlow = $true
@@ -669,7 +669,7 @@ expansion rather than relying on this source gate.
             }
             if (-not $protectedFlow) {
               $missingContract.Add(
-                'ordered create/read/assertNotNull protected by the finally that deletes the same client/address/key')
+                'ordered create/read/assertNotNull(response.result()) protected by the finally that deletes the same client/address/key')
             }
           }
         }

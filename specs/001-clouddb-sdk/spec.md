@@ -1018,7 +1018,7 @@ The following operators and functions form the portable query subset, available 
 | Change feed extended history (>24h) | Cosmos DB (native), Spanner (native); DynamoDB requires a customer-maintained external store (populated by the customer's own connector; SDK reads only) |
 | Change feed delete tracking in extended history | Cosmos DB (All Changes and Deletes mode), DynamoDB (REMOVE events read from a customer-maintained external store), Spanner (DELETE change records) |
 | Provider portability gate (2-of-3 enforcement) | CI/governance — applies to all features in portable contract |
-| Request cost metrics on responses | Cosmos DB (RU charge), DynamoDB (consumed capacity), Spanner (operation stats where available) |
+| Resource consumption on responses | Cosmos DB (observed point RU), DynamoDB (observed point capacity); unavailable for Spanner, which uses Cloud Billing for monetary costs |
 | `LOCAL_QUORUM` consistency level | Cosmos DB (`LATEST_COMMITTED`, preview/direct mode), DynamoDB (strong read on table/LSI), Spanner (strong read; stronger global guarantee) |
 | Typed composite sort keys | Cosmos DB, DynamoDB (N/S types), Spanner (native typed columns) |
 | Retry with consistency downgrade | Cosmos DB, DynamoDB, Spanner (provider-neutral; config-driven) |
@@ -1196,8 +1196,8 @@ The following operators and functions form the portable query subset, available 
 - **Provider target set — compile-time enforcement**: Compile-time validation is the primary enforcement mechanism for application developers. CI-time enforcement (the 2-of-3 gate) applies to SDK releases, not to application builds.
 - **Provider target set — existing features**: The 2-of-3 portability gate applies to new features going forward. Existing features that were released before this policy was enacted are grandfathered and not subject to retroactive enforcement unless they undergo significant modification.
 - **Provider target set — provider-specific extensions**: Features explicitly declared as provider-specific extensions (e.g., Cosmos DB stored procedures or direct use of DAX-specific APIs beyond the portable cache contract) are exempt from target-set validation. The portable read-through-cache abstraction may use DAX internally and remains subject to `READ_THROUGH_CACHE` capability validation.
-- **Request cost metrics — availability**: Cost metrics are best-effort. Not all providers expose cost information for all operation types (e.g., Spanner may not expose per-operation cost for administrative operations). The SDK documents which operations expose cost metrics per provider.
-- **Request cost metrics — DynamoDB ReturnConsumedCapacity**: To receive cost metrics from DynamoDB, the SDK automatically adds `ReturnConsumedCapacity=TOTAL` to requests when cost metrics are enabled. This adds negligible overhead but applications should be aware it is included in the request.
+- **Resource consumption — availability**: Consumption is optional, not currency. Point responses expose observed Cosmos RU or DynamoDB capacity when supplied, with `UNKNOWN` coverage across retries/internal requests. Spanner consumption is unavailable for all operations in this scope; PROFILE and commit statistics are not collected. Query/feed and management summaries do not add new cost collectors or child aggregation. Legacy query `requestCharge()` remains a zero-sentinel number, not evidence of new-field availability.
+- **Resource consumption — DynamoDB ReturnConsumedCapacity**: Existing point and Query/Scan requests use `ReturnConsumedCapacity=TOTAL`; PartiQL paths do not request capacity. This change adds no native requests and makes no overhead or billing-total guarantee.
 - **Local quorum consistency — portable minimum**: `LOCAL_QUORUM` means latest committed in the serving region at read start. Cosmos DB `LATEST_COMMITTED` and DynamoDB strong reads satisfy that minimum; Spanner strong reads exceed it with global external consistency. Session and bounded-staleness reads are weaker and cannot be substituted.
 - **Typed sort keys — encoding**: For providers that store sort keys as strings (DynamoDB S type), the SDK uses type-specific encoding to preserve natural ordering: zero-padded fixed-width numeric encoding for NUMERIC, ISO-8601 encoding for TIMESTAMP. The encoding scheme is deterministic and documented but adds a small overhead to key operations.
 - **Retry with consistency downgrade — scope**: Consistency downgrade retry applies only to read operations (read-by-key and query). Write operations are never automatically retried at a different consistency level.
@@ -1410,14 +1410,15 @@ This checklist is used to accept the feature as “done” at the spec level.
 - [ ] A CI gate validates that every portable feature has conformance test coverage for at least 2 of 3 providers (release gate).
 - [ ] Regressions in provider conformance tests block release until resolved.
 
-### Request Cost Metrics
+### Resource Consumption and Diagnostics
 
-- [ ] Every successful data-plane response includes a numeric cost metric reflecting the provider's native request charge.
-- [ ] Cost metrics are available for both write and query operations on all supported providers.
-- [ ] When a provider does not expose cost for a specific operation type, the cost field is null (not an error).
-- [ ] For bulk operations, aggregate cost metrics are available; per-item breakdown is available where the provider supports it.
-- [ ] Cost metrics are included in diagnostic log lines when diagnostics logging is enabled.
-- [ ] The same cost-reading code works across all providers by configuration only.
+- [ ] Completed responses/pages carry common wrapper timing and outcome; typed SDK failures carry `FAILURE` diagnostics.
+- [ ] Point consumption is populated only from actually observed Cosmos RU or DynamoDB capacity, with explicit unit and coverage.
+- [ ] Unavailable consumption is null, distinct from an observed zero. Spanner consumption stays unavailable; no per-call monetary estimate or PROFILE collection is required.
+- [ ] Initial point coverage is `UNKNOWN`; no total across hidden retries/internal requests is asserted.
+- [ ] Query/feed retain their existing metadata without new cost collectors. Bulk/per-item and provisioning-child aggregation are deferred follow-ups, not acceptance requirements for this response migration.
+- [ ] Existing logging behavior is preserved and documented by operation; no always-on aggregation or universal full-native logging is implied.
+- [ ] The same availability-aware consumption-reading code works across providers by configuration only.
 
 ### Local Quorum Consistency
 

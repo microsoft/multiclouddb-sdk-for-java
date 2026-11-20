@@ -1053,9 +1053,11 @@ client.delete(addr, MulticloudDbKey.of("customer-456", "order-123"));
 client.delete(addr, MulticloudDbKey.of("customer-456", "order-123"));
 ```
 
-If you need to detect whether a key exists, use `read()` — it returns
-`null` on every provider when the key does not exist, and does not mutate
-state. `update()` also throws `NOT_FOUND` on a missing key, but it
+If you need to detect whether a key exists, use `read()` — it returns a
+non-null response with `result() == null` and `diagnostics().outcome() == NOT_FOUND` when
+the key does not exist, and does not mutate state. Check
+`client.read(addr, key).result() != null`, not whether the response is non-null.
+`update()` also throws `NOT_FOUND` on a missing key, but it
 requires a document body and **overwrites the existing document on hit**,
 so it is not a safe pure existence probe.
 

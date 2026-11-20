@@ -37,12 +37,16 @@ import java.util.concurrent.TimeUnit;
  * Write inputs follow {@link com.multiclouddb.api.MulticloudDbClient}'s neutral
  * value contract. Implementations must not mutate or retain caller input after
  * return, and must detach returned data from retained native response state.
+ * Point methods must return a non-null {@link OperationResponse} with non-null
+ * diagnostics, including on an ordinary read miss or idempotent delete.
+ * Native metadata may be unavailable; the public wrapper finalizes timing and outcome.
  */
 public interface MulticloudDbProviderClient extends AutoCloseable {
 
     /**
      * Insert a new document. Fails if a document with the same key already exists.
      *
+     * @return non-null response with null result and available provider metadata
      * @throws MulticloudDbException with category CONFLICT if the key already exists
      */
     OperationResponse<Void> create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
@@ -57,17 +61,20 @@ public interface MulticloudDbProviderClient extends AutoCloseable {
     /**
      * Update an existing document. Fails if the key does not exist.
      *
+     * @return non-null response with null result and available provider metadata
      * @throws MulticloudDbException with category NOT_FOUND if the key does not exist
      */
     OperationResponse<Void> update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Upsert (create or replace) a document.
+     * @return non-null response with null result and available provider metadata
      */
     OperationResponse<Void> upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Delete a document by key.
+     * @return non-null response with null result, also when the key is absent
      */
     OperationResponse<Void> delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
 
