@@ -2230,7 +2230,7 @@ HTTP 404 with `NOT_FOUND`, a Dynamo read miss HTTP 200 with `NOT_FOUND`, and an
 idempotent Cosmos delete HTTP 404 with `SUCCESS`.
 
 Consumption is observed RU or capacity, **not currency**. Null means unavailable;
-a present zero is a measured zero. `coverage()` is `UNKNOWN` for current point
+a present zero is a measured zero. `coverage()` is `UNKNOWN` for current point/page
 mappings: the returned amount is not a guaranteed total across hidden retries
 or internal requests. Do not combine different units. Legacy `requestCharge()`
 still uses zero for both unavailable and measured zero; old builder calls do
@@ -2250,13 +2250,33 @@ OperationDiagnostics diag = page.diagnostics(); // non-null on SDK-completed pag
 System.out.printf("Provider  : %s%n", diag.provider().id());
 System.out.printf("Operation : %s%n", diag.operation());
 System.out.printf("Latency   : %s ms%n", diag.duration().toMillis());
-System.out.printf("Legacy charge: %.2f%n", diag.requestCharge());
 System.out.printf("Item count: %d%n", diag.itemCount());
+if (diag.requestId() != null) {
+    // Use according to the application's correlation-ID logging policy.
+    System.out.printf("Request ID: %s%n", diag.requestId());
+}
+if (diag.statusCode() != null) {
+    System.out.printf("Status: %s %d%n", diag.statusCodeDomain(), diag.statusCode());
+}
+if (diag.consumption() != null) {
+    ResourceConsumption usage = diag.consumption();
+    System.out.printf("Usage: %s %s (%s)%n", usage.amount(), usage.unit(), usage.coverage());
+}
 ```
 
 Manually constructed legacy pages/diagnostics can still have absent diagnostics
 or timing fields. Only results completed by the public client are guaranteed
 to have the common summary.
+
+Change-feed pages use the same access pattern:
+
+```java
+// Use a previously acquired cursor on a provider with CHANGE_FEED support.
+ChangeFeedPage page = client.readChanges(address, cursor);
+OperationDiagnostics diag = page.diagnostics();
+System.out.printf("Outcome: %s, events: %d%n", diag.outcome(), diag.itemCount());
+cursor = page.nextCursor(); // Preserve the cursor separately from diagnostics.
+```
 
 ### Populated Fields by Operation
 
@@ -2265,16 +2285,26 @@ to have the common summary.
 | Common summary | Start/end, monotonic duration, outcome, provider/operation | Same | Same |
 | Point native metadata | HTTP status/Activity ID, ETag/session token, RU when returned | HTTP status/request ID, capacity when returned | No synthesized success status, ID, ETag or consumption |
 | Typed provider failure | Available HTTP status/ID and RU | Available HTTP status/ID; consumption generally unavailable | Available gRPC error code; consumption unavailable |
-| Query page | Existing legacy RU/item count; no native ID/status mapping | Existing HTTP/ID/capacity when returned, item count | Wrapper summary/item count only |
-| Feed page | Wrapper summary/event count | Same | Same |
+| Query page | Activity/correlation ID, session token/response ETag, typed RU when returned, item count; native success status unavailable | HTTP/request ID, typed capacity when returned (Query/Scan and both PartiQL routes), item count | Wrapper summary/item count only |
+| Feed page | Observed page ID/tokens/RU and event count; native success status unavailable | GetRecords HTTP/request ID and event count; no capacity value | Wrapper summary/event count only |
 | Cursor/management | Wrapper summary only; no native aggregation | Same; ensureDatabase is a local no-op | Same |
 
 Use `statusCodeDomain()` with `statusCode()`: HTTP and gRPC numbers are different
 domains. `requestId()` is a provider identifier, not a wrapper/trace ID or a list
-of attempts. Query `consumption()` remains unavailable where only the legacy
-numeric value survives; the new typed mapping is point-first. Existing Dynamo
-PartiQL paths do not request consumed capacity. No additional queries, profile
-execution or polling are introduced to populate diagnostics.
+of attempts. Cosmos pages prefer Activity ID and fall back to the native
+correlated activity ID when supplied. The pinned Cosmos `FeedResponse` exposes
+no public HTTP status, so successful query/feed pages do not invent HTTP 200
+or 304. A page ETag is native page metadata, not an individual document's ETag.
+DynamoDB prefers response metadata IDs, then HTTP headers; blank/`UNKNOWN`
+sentinels remain unavailable. Both PartiQL routes now request
+`ReturnConsumedCapacity.TOTAL`, matching Query/Scan and point operations.
+Empty native pages still retain their observations. When no native data page
+is produced (including local/terminal or cursor-hydration-only paths), only
+the common summary is guaranteed. Feed observations do not aggregate cursor
+discovery, shard-transition requests or hidden retries. Specialized native
+cursor-expiry and provisioning errors retain their available native diagnostics
+without changing their exception subtype/category. No additional requests,
+profile execution or polling are introduced to populate diagnostics.
 
 ### Response Migration
 

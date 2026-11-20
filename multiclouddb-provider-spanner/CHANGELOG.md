@@ -16,6 +16,10 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Preserve gRPC status/domain in specialized change-stream and provisioning
+  error diagnostics while retaining exception categories, subtypes and causes.
+  Success cost/IDs remain unavailable; no PROFILE or additional requests.
+
 - **Breaking point SPI return migration:** Return portable point carriers for
   public wrapper timing/outcome; retain gRPC error status through SDK errors.
   Do not invent success status, charge or ETag. Spanner costs are documented

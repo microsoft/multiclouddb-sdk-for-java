@@ -42,7 +42,8 @@ public final class DynamoErrorMapper {
                 retryable,
                 httpStatus,
                 details);
-        return new MulticloudDbException(error, e);
+        return new MulticloudDbException(error, e)
+                .withDiagnostics(DynamoDiagnosticsMapper.from(e, operation));
     }
 
     private static MulticloudDbErrorCategory mapCategory(DynamoDbException e) {

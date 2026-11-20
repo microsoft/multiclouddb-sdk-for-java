@@ -6,6 +6,8 @@ package com.multiclouddb.provider.dynamo;
 import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.MulticloudDbException;
 import com.multiclouddb.api.OperationNames;
+import com.multiclouddb.api.StatusCodeDomain;
+import software.amazon.awssdk.http.SdkHttpResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -84,6 +86,21 @@ class DynamoErrorMappingTest {
 
         assertEquals("ValidationException", result.error().providerDetails().get("errorCode"));
         assertEquals("req-abc-123", result.error().providerDetails().get("requestId"));
+        assertEquals("req-abc-123", result.diagnostics().requestId());
+        assertEquals(400, result.diagnostics().statusCode());
+        assertEquals(StatusCodeDomain.HTTP, result.diagnostics().statusCodeDomain());
+        assertNull(result.diagnostics().consumption());
+    }
+
+    @Test
+    void diagnosticsUseNativeHeaderWhenExceptionRequestIdIsUnknown() {
+        DynamoDbException ex = mockDynamoException(503, "InternalServerError");
+        when(ex.requestId()).thenReturn("UNKNOWN");
+        when(ex.awsErrorDetails().sdkHttpResponse()).thenReturn(SdkHttpResponse.builder().statusCode(503)
+                .putHeader(DynamoConstants.HEADER_REQUEST_ID, "header-error-id").build());
+        var result = DynamoErrorMapper.map(ex, OperationNames.QUERY);
+        assertEquals("header-error-id", result.diagnostics().requestId());
+        assertSame(ex, result.getCause());
     }
 
     @Test

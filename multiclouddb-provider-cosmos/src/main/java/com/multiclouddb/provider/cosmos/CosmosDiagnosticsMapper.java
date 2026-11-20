@@ -5,6 +5,7 @@ package com.multiclouddb.provider.cosmos;
 
 import com.azure.cosmos.CosmosException;
 import com.azure.cosmos.models.CosmosItemResponse;
+import com.azure.cosmos.models.FeedResponse;
 import com.multiclouddb.api.OperationDiagnostics;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.ResourceConsumption;
@@ -24,6 +25,22 @@ final class CosmosDiagnosticsMapper {
     static OperationDiagnostics from(CosmosException error, String operation) {
         return metadata(operation, error.getStatusCode(), error.getActivityId(),
                 error.getResponseHeaders(), error.getRequestCharge()).build();
+    }
+
+    static OperationDiagnostics from(FeedResponse<?> response, String operation) {
+        String requestId = response.getActivityId();
+        if (requestId == null || requestId.isBlank()) {
+            var correlationId = response.getCorrelationActivityId();
+            requestId = correlationId == null ? null : correlationId.toString();
+        }
+        // FeedResponse exposes no public HTTP status; do not infer 200/304.
+        var builder = metadata(operation, 0, requestId,
+                response.getResponseHeaders(), response.getRequestCharge())
+                .requestCharge(response.getRequestCharge());
+        if (response.getSessionToken() != null) {
+            builder.sessionToken(response.getSessionToken());
+        }
+        return builder.build();
     }
 
     private static OperationDiagnostics.Builder metadata(String operation, int status, String requestId,

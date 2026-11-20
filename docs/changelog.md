@@ -36,7 +36,8 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   [response migration](guide.md#response-migration).
 - Query diagnostics duration now measures the public wrapper call and operation
   names identify public methods. Typed failures retain their native metadata,
-  category, subtype, cause and suppressed errors.
+  category, subtype, cause and suppressed errors. Blank/`UNKNOWN` fallback
+  request IDs remain unavailable without changing raw provider error details.
 - Attaching query diagnostics reuses the page's already-owned list and row maps,
   avoiding a second materialization outside the measured interval. Public
   `QueryPage` constructors retain defensive copying.
@@ -125,6 +126,10 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
   Exception ETag/session-token headers are matched case-insensitively and
   remain unavailable when absent.
   Consumption requires an actual charge header and uses `UNKNOWN` coverage.
+- Query/change-feed pages now retain available Activity/correlation ID, session
+  token, response ETag and typed RU, including measured zero. Cosmos FeedResponse
+  exposes no public HTTP status, so no successful page status is synthesized.
+  Specialized cursor-expiry/AVAD/provisioning errors retain native diagnostics.
 
 - Change-feed reader backed by `CosmosContainer.queryChangeFeed(...)` and `getFeedRanges()`. `listCursors` mints one cursor per feed range at the live tip via a one-item warmup query that captures a real continuation token (with a `@@PIT:<epoch-millis>` fallback for older SDKs). `readChanges` drains one page per call, rotates the partition list across ranges so multi-range cursors are not starved, and uses All-Versions-and-Deletes (AVAD) mode so `ChangeEvent.type()` distinguishes `CREATE` / `UPDATE` / `DELETE`. The target container must be provisioned with an AVAD `ChangeFeedPolicy`. HTTP 410 GONE on `queryChangeFeed` is mapped to `CursorExpiredException(reason=PROVIDER_TRIMMED)`.
 - Extended-retention provisioning: `CosmosProviderClient.ensureContainer(address)` provisions an AVAD `ChangeFeedPolicy` carrying the duration from `ChangeFeedConfig.extendedRetention(...)` when the user opted in, and reads back the active policy — throwing `UNSUPPORTED_CAPABILITY(reason="extended_retention_not_enacted")` when a pre-existing container''s retention does not match. A 400 BadRequest whose message fingerprint indicates the Cosmos account lacks Continuous Backup is re-mapped to `UNSUPPORTED_CAPABILITY(reason="continuous_backup_required")`. `CosmosCapabilities` declares `EXTENDED_CHANGE_FEED_HISTORY_CAP` (up to 30 days via Continuous Backup; 7d minimum).
@@ -207,6 +212,11 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - Point responses preserve available HTTP status/request ID and consumed
   capacity, distinguishing absent capacity from observed zero. Initial coverage
   is `UNKNOWN`, not a guaranteed retry-inclusive total.
+- Query/Scan and both PartiQL routes populate typed consumed capacity and
+  HTTP/request ID metadata; PartiQL now requests `ReturnConsumedCapacity.TOTAL`.
+  Point/page/error IDs fall back to native HTTP headers when needed. Streams
+  GetRecords pages (including closed shards) retain HTTP/request ID but have no
+  consumed capacity. No additional requests or aggregation are introduced.
 
 - Change-feed reader backed by DynamoDB Streams (`DescribeStream`, `GetShardIterator`, `GetRecords`). `listCursors` returns one cursor per open shard at the live tip with a pre-resolved `LATEST` iterator (`@@ITER:<iterator>` continuation), avoiding silent event loss between mint and first read. `readChanges` drains one shard''s page per call, rotates the partition list across shards, transitions to an `AFTER_SEQUENCE_NUMBER` continuation on the first observed record, and absorbs shard splits/closes. `TrimmedDataAccessException` → `CursorExpiredException(reason=PROVIDER_TRIMMED)`; `ExpiredIteratorException` → `reason=ITERATOR_EXPIRED`. Change-event payloads use the shared `DynamoItemMapper`; binary support and numeric exponent/overflow decoding are not added by this migration. The target table must have `StreamSpecification(NEW_AND_OLD_IMAGES)` enabled; otherwise `UNSUPPORTED_CAPABILITY(reason="stream_not_enabled")`.
 - `DynamoCapabilities` declares `EXTENDED_CHANGE_FEED_HISTORY_UNSUPPORTED` (DynamoDB Streams is fixed at 24h server-side; SDK-managed archive-on-read via customer-provisioned Kafka is on the v1.x roadmap). Callers that opt in to `ChangeFeedConfig.extendedRetention(...)` fail fast at client-build time via the API-module factory gate; the `DynamoProviderClient` constructor mirrors the gate for SPI-direct integrators.
@@ -258,6 +268,8 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - Common response timing/outcome and available gRPC error status, without
   inventing success status, request charge or an ETag from a commit timestamp.
   Billing guidance uses Cloud Billing; no PROFILE or commit-stat collection.
+- Specialized change-stream/provisioning errors retain native gRPC status/domain
+  in diagnostics without changing their exception subtype, category or cause.
 
 - Change-feed reader backed by Spanner change streams via the `READ_<stream>` TVF (single-use read-only transaction; 5-second bounded window per call). `listCursors` bootstraps the partition tree with a `NULL` partition token and anchors each cursor''s bookmark at `max(now, childStart)` so `now()` cursors honour their live-tip contract on the emulator. `readChanges` drains a bounded window, absorbs `child_partitions_record` rows (splits/merges), rotates the partition list, and surfaces `isTerminal()=true` when a cursor''s sole partition closes without children. Each `data_change_record.mod` becomes one `ChangeEvent` with a stable `providerEventId` (`<server_transaction_id>:<commit_ts>:<record_sequence>:<mod_index>`). `INVALID_ARGUMENT` / `NOT_FOUND` / `OUT_OF_RANGE` on the TVF → `CursorExpiredException(reason=PROVIDER_TRIMMED)`.
 - Per-collection change-stream name resolution: defaults to `<collection>_changes`; override via the `changeStream.<collection>` connection key.

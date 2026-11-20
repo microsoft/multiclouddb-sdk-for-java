@@ -785,7 +785,8 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
                         + "ChangeFeedConfig.extendedRetention(...). Underlying message: " + msg,
                 ProviderId.COSMOS, operation, false,
                 Map.of("reason", "continuous_backup_required",
-                        "statusCode", String.valueOf(e.getStatusCode()))), e);
+                        "statusCode", String.valueOf(e.getStatusCode()))), e)
+                .withDiagnostics(CosmosDiagnosticsMapper.from(e, operation));
     }
 
     /**
@@ -973,9 +974,8 @@ public class CosmosProviderClient implements MulticloudDbProviderClient {
      */
     private OperationDiagnostics buildFeedDiagnostics(String operation, ResourceAddress address,
             FeedResponse<?> page, int itemCount, java.time.Duration duration) {
-        OperationDiagnostics diag = OperationDiagnostics
-                .builder(ProviderId.COSMOS, operation, duration)
-                .requestCharge(page.getRequestCharge())
+        OperationDiagnostics diag = CosmosDiagnosticsMapper.from(page, operation).toBuilder()
+                .duration(duration)
                 .itemCount(itemCount)
                 .build();
 

@@ -6,6 +6,9 @@ package com.multiclouddb.provider.dynamo;
 import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
+import com.multiclouddb.api.ResourceConsumption;
+import com.multiclouddb.api.StatusCodeDomain;
+import com.multiclouddb.api.query.TranslatedQuery;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,8 +18,14 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.QueryResponse;
 import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
 import software.amazon.awssdk.services.dynamodb.model.ScanResponse;
+import software.amazon.awssdk.services.dynamodb.model.ConsumedCapacity;
+import software.amazon.awssdk.awscore.DefaultAwsResponseMetadata;
+import software.amazon.awssdk.services.dynamodb.model.ExecuteStatementRequest;
+import software.amazon.awssdk.services.dynamodb.model.ExecuteStatementResponse;
+import software.amazon.awssdk.services.dynamodb.model.ReturnConsumedCapacity;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -146,5 +155,85 @@ class DynamoQueryRoutingTest {
         verify(mockDynamoClient).scan(any(ScanRequest.class));
         verify(mockDynamoClient, never()).query(any(
                 software.amazon.awssdk.services.dynamodb.model.QueryRequest.class));
+    }
+
+    @Test
+    void everyQueryRoutePreservesObservedCapacityAndNativeMetadata() {
+        var metadata = DefaultAwsResponseMetadata.create(Map.of("AWS_REQUEST_ID", "metadata-id"));
+        var http = SdkHttpResponse.builder().statusCode(200)
+                .putHeader(DynamoConstants.HEADER_REQUEST_ID, "header-id").build();
+        ResourceAddress address = new ResourceAddress("testdb", "users");
+        for (ConsumedCapacity capacity : java.util.Arrays.asList(
+                ConsumedCapacity.builder().capacityUnits(2.5).build(),
+                ConsumedCapacity.builder().capacityUnits(0d).build(),
+                ConsumedCapacity.builder().build(), null)) {
+            var scan = ScanResponse.builder().consumedCapacity(capacity);
+            scan.responseMetadata(metadata);
+            scan.sdkHttpResponse(http);
+            when(mockDynamoClient.scan(any(ScanRequest.class))).thenReturn(scan.build());
+            var keyQuery = QueryResponse.builder().consumedCapacity(capacity);
+            keyQuery.responseMetadata(metadata);
+            keyQuery.sdkHttpResponse(http);
+            when(mockDynamoClient.query(any(software.amazon.awssdk.services.dynamodb.model.QueryRequest.class)))
+                    .thenReturn(keyQuery.build());
+            var statement = ExecuteStatementResponse.builder().consumedCapacity(capacity).nextToken("next-page");
+            statement.responseMetadata(metadata);
+            statement.sdkHttpResponse(http);
+            when(mockDynamoClient.executeStatement(any(ExecuteStatementRequest.class)))
+                    .thenReturn(statement.build());
+            for (QueryRequest query : List.of(QueryRequest.builder().build(),
+                    QueryRequest.builder().partitionKey("pk").build(),
+                    QueryRequest.builder().expression("age > :a").parameters(Map.of("a", 1)).build(),
+                    QueryRequest.builder().partitionKey("pk").expression("age > :a")
+                            .parameters(Map.of("a", 1)).build(),
+                    QueryRequest.builder().nativeExpression("SELECT * FROM \"testdb__users\"").build())) {
+                assertQueryDiagnostics(client.query(address, query, null), capacity);
+            }
+            var translated = TranslatedQuery.withPositionalParameters(
+                    "SELECT * FROM \"users\" WHERE age > ?", "age > ?", List.of(1));
+            var page = client.queryWithTranslation(address, translated, QueryRequest.builder().build(), null);
+            assertQueryDiagnostics(page, capacity);
+            assertEquals("next-page", page.continuationToken());
+        }
+        ArgumentCaptor<ExecuteStatementRequest> captor = ArgumentCaptor.forClass(ExecuteStatementRequest.class);
+        verify(mockDynamoClient, times(8)).executeStatement(captor.capture());
+        assertTrue(captor.getAllValues().stream()
+                .allMatch(request -> request.returnConsumedCapacity() == ReturnConsumedCapacity.TOTAL));
+    }
+
+    @Test
+    void queryFallsBackToHttpRequestIdAndLeavesMissingMetadataUnavailable() {
+        ResourceAddress address = new ResourceAddress("testdb", "users");
+        var http = SdkHttpResponse.builder().statusCode(200)
+                .putHeader(DynamoConstants.HEADER_REQUEST_ID, "header-id").build();
+        var response = ScanResponse.builder();
+        response.sdkHttpResponse(http);
+        when(mockDynamoClient.scan(any(ScanRequest.class)))
+                .thenReturn(response.build())
+                .thenReturn(ScanResponse.builder().build());
+        assertEquals("header-id", client.query(address, QueryRequest.builder().build(), null)
+                .diagnostics().requestId());
+        var absent = client.query(address, QueryRequest.builder().build(), null).diagnostics();
+        assertNull(absent.requestId(), "AWS UNKNOWN sentinel is not an observed ID");
+        assertNull(absent.statusCode());
+        assertNull(absent.statusCodeDomain());
+        assertNull(absent.consumption());
+    }
+
+    private static void assertQueryDiagnostics(QueryPage page, ConsumedCapacity capacity) {
+        var diag = page.diagnostics();
+        assertEquals("metadata-id", diag.requestId());
+        assertEquals(200, diag.statusCode());
+        assertEquals(StatusCodeDomain.HTTP, diag.statusCodeDomain());
+        assertEquals(page.items().size(), diag.itemCount());
+        if (capacity == null || capacity.capacityUnits() == null) {
+            assertNull(diag.consumption());
+            assertEquals(0, diag.requestCharge());
+        } else {
+            assertEquals(capacity.capacityUnits(), diag.consumption().amount());
+            assertEquals(capacity.capacityUnits(), diag.requestCharge());
+            assertEquals(ResourceConsumption.Unit.DYNAMODB_CAPACITY_UNIT, diag.consumption().unit());
+            assertEquals(ResourceConsumption.Coverage.UNKNOWN, diag.consumption().coverage());
+        }
     }
 }

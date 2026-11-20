@@ -30,6 +30,27 @@ class DynamoNativeWriteMappingTest {
             OperationOptions.defaults(), OperationOptions.builder().ttlSeconds(120).build());
 
     @Test
+    void missingUpdateRetainsHttpHeaderIdInDiagnostics() {
+        var sdk = mock(DynamoDbClient.class);
+        var http = software.amazon.awssdk.http.SdkHttpResponse.builder().statusCode(400)
+                .putHeader(DynamoConstants.HEADER_REQUEST_ID, "update-header-id").build();
+        var nativeError = ConditionalCheckFailedException.builder().statusCode(400).requestId("UNKNOWN")
+                .message("missing item").awsErrorDetails(software.amazon.awssdk.awscore.exception.AwsErrorDetails.builder()
+                        .errorCode("ConditionalCheckFailedException").sdkHttpResponse(http).build()).build();
+        when(sdk.putItem(any(PutItemRequest.class))).thenThrow(nativeError);
+        var client = new DynamoProviderClient(sdk);
+        var failure = assertThrows(MulticloudDbException.class,
+                () -> client.update(ADDRESS, KEYS.get(0), Map.of("name", "Ada"), OperationOptions.defaults()));
+        assertEquals(MulticloudDbErrorCategory.NOT_FOUND, failure.error().category());
+        assertSame(nativeError, failure.getCause());
+        assertEquals("update-header-id", failure.diagnostics().requestId());
+        assertEquals(400, failure.diagnostics().statusCode());
+        assertEquals(StatusCodeDomain.HTTP, failure.diagnostics().statusCodeDomain());
+        assertNull(failure.diagnostics().consumption());
+        verify(sdk).putItem(any(PutItemRequest.class));
+    }
+
+    @Test
     void pointResponsesDistinguishMissingCapacityFromObservedZero() throws Exception {
         var sdk = mock(DynamoDbClient.class);
         var streams = mock(DynamoDbStreamsClient.class);

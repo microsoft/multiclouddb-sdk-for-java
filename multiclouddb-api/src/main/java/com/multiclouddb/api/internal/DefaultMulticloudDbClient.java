@@ -488,7 +488,8 @@ public final class DefaultMulticloudDbClient implements MulticloudDbClient {
                 OperationOutcome.FAILURE, timing);
         if (e.diagnostics() == null || e.diagnostics().requestId() == null) {
             String requestId = e.error().providerDetails().get("requestId");
-            builder.requestId("UNKNOWN".equals(requestId) ? null : requestId);
+            builder.requestId(requestId == null || requestId.isBlank() || "UNKNOWN".equals(requestId)
+                    ? null : requestId);
         }
         if ((e.diagnostics() == null || e.diagnostics().statusCode() == null)
                 && e.error().statusCode() != null

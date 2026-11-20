@@ -10,6 +10,7 @@ import com.multiclouddb.api.changefeed.ChangeEvent;
 import com.multiclouddb.api.changefeed.ChangeType;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.ResourceAddress;
+import com.multiclouddb.api.StatusCodeDomain;
 import com.multiclouddb.api.changefeed.ChangeFeedCursor;
 import com.multiclouddb.api.changefeed.ChangeFeedPage;
 import com.multiclouddb.api.changefeed.CursorExpiredException;
@@ -20,6 +21,7 @@ import com.multiclouddb.api.changefeed.internal.PartitionPosition;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
+import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.DescribeStreamRequest;
 import software.amazon.awssdk.services.dynamodb.model.DescribeStreamResponse;
@@ -83,6 +85,34 @@ class DynamoChangeFeedReaderTest {
     private static final String TABLE = "test-table";
     private static final String STREAM_ARN = "arn:aws:dynamodb:us-east-1:123:table/test-table/stream/2025-01-01T00:00:00.000";
     private static final ResourceAddress ADDR = new ResourceAddress("test-db", TABLE);
+
+    @Test
+    void recordPageMetadataSurvivesOpenAndClosedShards() {
+        for (boolean closed : List.of(false, true)) {
+            DynamoDbStreamsClient streams = mockStreamsWithShards();
+            var http = SdkHttpResponse.builder().statusCode(200)
+                    .putHeader(DynamoConstants.HEADER_REQUEST_ID, "records-id").build();
+            var response = GetRecordsResponse.builder()
+                    .records(record(OperationType.INSERT, Map.of("name", AttributeValue.fromS("Ada")), null))
+                    .nextShardIterator(closed ? null : "next");
+            response.sdkHttpResponse(http);
+            when(streams.getRecords(any(GetRecordsRequest.class))).thenReturn(response.build());
+            var cursor = new ChangeFeedCursor(new CursorToken(ProviderId.DYNAMO, ADDR, System.currentTimeMillis(),
+                    CursorAnchor.NOW, List.of(new PartitionPosition(STREAM_ARN + "::shard-1", "@@ITER:ready"))));
+            var page = new DynamoChangeFeedReader(ProviderId.DYNAMO, streams).readChanges(
+                    mockDdbWithStream(STREAM_ARN), ADDR, TABLE, cursor, OperationOptions.defaults());
+            assertEquals(closed, page.isTerminal());
+            assertEquals(1, page.events().size());
+            assertEquals(Map.of("name", "Ada"), page.events().get(0).data());
+            assertEquals("records-id", page.diagnostics().requestId());
+            assertEquals(200, page.diagnostics().statusCode());
+            assertEquals(StatusCodeDomain.HTTP, page.diagnostics().statusCodeDomain());
+            assertEquals(1, page.diagnostics().itemCount());
+            org.junit.jupiter.api.Assertions.assertNull(page.diagnostics().consumption(),
+                    "GetRecords does not return consumed capacity");
+            org.mockito.Mockito.verify(streams).getRecords(any(GetRecordsRequest.class));
+        }
+    }
 
     @Test
     void finalEventsPreserveSelectedNewOldEmptyAndAbsentImages() {
@@ -488,6 +518,7 @@ class DynamoChangeFeedReaderTest {
 
         DynamoDbException expired = (DynamoDbException) DynamoDbException.builder()
                 .message("Iterator expired")
+                .statusCode(400).requestId("expired-request")
                 .awsErrorDetails(AwsErrorDetails.builder()
                         .errorCode("ExpiredIteratorException")
                         .build())
@@ -506,5 +537,9 @@ class DynamoChangeFeedReaderTest {
                         + "the public docs/guide.md recovery table relies on this exact string");
         assertEquals("ITERATOR_EXPIRED", reason,
                 "constant value must remain ITERATOR_EXPIRED -- wire-format break otherwise");
+        assertEquals("expired-request", ex.diagnostics().requestId());
+        assertEquals(400, ex.diagnostics().statusCode());
+        assertEquals(StatusCodeDomain.HTTP, ex.diagnostics().statusCodeDomain());
+        org.junit.jupiter.api.Assertions.assertSame(expired, ex.getCause());
     }
 }

@@ -12,8 +12,9 @@ import java.util.Objects;
  * <p>
  * Results completed by {@link MulticloudDbClient} have wrapper start/end times,
  * monotonic duration and a logical outcome. Provider metadata and objects
- * constructed outside that boundary may have unavailable fields. Point
- * responses expose Cosmos RU or DynamoDB capacity when supplied; Spanner
+ * constructed outside that boundary may have unavailable fields. Point/query
+ * responses expose Cosmos RU or DynamoDB capacity when supplied; Cosmos feed
+ * pages also expose observed RU. DynamoDB Streams has no capacity value. Spanner
  * has no per-request consumption value. These units are not monetary cost.
  * Status codes require their domain; gRPC codes are not HTTP codes.
  * Native identifiers/tokens can be sensitive and should not be logged blindly.
@@ -51,7 +52,7 @@ public final class OperationDiagnostics {
     private final String sessionToken;
 
     /**
-     * Number of items in the page for query operations; 0 for point operations.
+     * Number of items/events in a query/change-feed page; 0 for point operations.
      */
     private final int itemCount;
 
@@ -149,7 +150,7 @@ public final class OperationDiagnostics {
     /** Cosmos session-consistency token, or null. */
     public String sessionToken() { return sessionToken; }
 
-    /** Number of items returned by a query page; 0 for point operations. */
+    /** Number of items/events returned by a query/change-feed page; 0 for point operations. */
     public int itemCount()       { return itemCount; }
 
     @Override

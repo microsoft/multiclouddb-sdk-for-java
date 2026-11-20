@@ -880,13 +880,13 @@ The SDK enforces a strict no-code-escape-hatch policy to preserve portability:
 
 #### Request Cost Metrics Requirements
 
-- **FR-126**: SDK-completed response/page objects MUST include common diagnostics. Point consumption, when available, MUST include a non-negative finite amount, a provider resource unit and coverage of the whole call (COMPLETE, PARTIAL or UNKNOWN), not a currency value.
+- **FR-126**: SDK-completed response/page objects MUST include common diagnostics. Consumption, when available, MUST include a non-negative finite amount, a provider resource unit and coverage of the whole call (COMPLETE, PARTIAL or UNKNOWN), not a currency value.
 - **FR-127**: Each provider adapter MUST extract and populate the cost metric from the provider's native response metadata:
-  - **Cosmos DB**: RU from already-returned point response/exception metadata when present.
+  - **Cosmos DB**: RU from already-returned point, query/feed page and exception metadata when present.
   - **DynamoDB**: `consumedCapacity` from response (requires `ReturnConsumedCapacity` on request).
   - **Spanner**: Consumption unavailable. Do not enable PROFILE/commit statistics or query Billing to manufacture a value.
-- **FR-128**: Unavailable consumption MUST be null, distinct from observed zero. Preserve/document legacy requestCharge's zero sentinel; do not infer availability from it. Existing query legacy fields can remain without a new typed consumption value in the point-first migration.
-- **FR-129**: Complete request/child/bulk consumption aggregation is deferred. Do not claim a complete total from one observed response, sum overlapping durations, or invent missing values. Initial point coverage is UNKNOWN unless native completeness is proven.
+- **FR-128**: Unavailable consumption MUST be null, distinct from observed zero. Preserve/document legacy requestCharge's zero sentinel; do not infer availability from it. Query mappings MUST populate typed consumption when native RU/capacity is supplied; both DynamoDB PartiQL routes request TOTAL capacity. DynamoDB Streams consumption remains unavailable.
+- **FR-129**: Complete request/child/bulk consumption aggregation is deferred. Do not claim a complete total from one observed response, sum overlapping durations, or invent missing values. Initial point/page coverage is UNKNOWN unless native completeness is proven.
 - **FR-130**: Preserve existing provider logging configuration and behavior. Response diagnostics do not imply automatic logging, file output, native-detail access or a MultiCloud OTel implementation.
 
 #### Local Quorum Consistency Requirements
@@ -1197,7 +1197,7 @@ The following operators and functions form the portable query subset, available 
 - **Provider target set — existing features**: The 2-of-3 portability gate applies to new features going forward. Existing features that were released before this policy was enacted are grandfathered and not subject to retroactive enforcement unless they undergo significant modification.
 - **Provider target set — provider-specific extensions**: Features explicitly declared as provider-specific extensions (e.g., Cosmos DB stored procedures or direct use of DAX-specific APIs beyond the portable cache contract) are exempt from target-set validation. The portable read-through-cache abstraction may use DAX internally and remains subject to `READ_THROUGH_CACHE` capability validation.
 - **Resource consumption — availability**: Consumption is optional, not currency. Point responses expose observed Cosmos RU or DynamoDB capacity when supplied, with `UNKNOWN` coverage across retries/internal requests. Spanner consumption is unavailable for all operations in this scope; PROFILE and commit statistics are not collected. Query/feed and management summaries do not add new cost collectors or child aggregation. Legacy query `requestCharge()` remains a zero-sentinel number, not evidence of new-field availability.
-- **Resource consumption — DynamoDB ReturnConsumedCapacity**: Existing point and Query/Scan requests use `ReturnConsumedCapacity=TOTAL`; PartiQL paths do not request capacity. This change adds no native requests and makes no overhead or billing-total guarantee.
+- **Resource consumption — DynamoDB ReturnConsumedCapacity**: Point, Query/Scan and native/translated PartiQL requests use `ReturnConsumedCapacity=TOTAL`. This change adds no native requests and makes no overhead or billing-total guarantee.
 - **Local quorum consistency — portable minimum**: `LOCAL_QUORUM` means latest committed in the serving region at read start. Cosmos DB `LATEST_COMMITTED` and DynamoDB strong reads satisfy that minimum; Spanner strong reads exceed it with global external consistency. Session and bounded-staleness reads are weaker and cannot be substituted.
 - **Typed sort keys — encoding**: For providers that store sort keys as strings (DynamoDB S type), the SDK uses type-specific encoding to preserve natural ordering: zero-padded fixed-width numeric encoding for NUMERIC, ISO-8601 encoding for TIMESTAMP. The encoding scheme is deterministic and documented but adds a small overhead to key operations.
 - **Retry with consistency downgrade — scope**: Consistency downgrade retry applies only to read operations (read-by-key and query). Write operations are never automatically retried at a different consistency level.

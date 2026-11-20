@@ -200,6 +200,15 @@ returns `List<ChangeFeedCursor>` and management SPI remains void. Cursor/feed/
 management summaries do not introduce native detail collectors or aggregation.
 Recompile callers and providers; see [response migration](../../docs/guide.md#response-migration).
 
+**Native metadata completion amendment:** query and change-feed pages retain
+already-returned Cosmos page IDs/tokens/RU and Dynamo query/scan/PartiQL
+HTTP/ID/capacity or Streams GetRecords HTTP/ID metadata. Both PartiQL routes
+request TOTAL capacity. Specialized native errors retain diagnostics without
+changing category/subtype. Cosmos FeedResponse has no public success status;
+Spanner success cost/IDs and Dynamo Streams capacity remain unavailable.
+No new native calls, PROFILE, request aggregation or management/cursor SPI
+changes are introduced.
+
 ### Per-provider mapping
 
 | Provider | Native API | Notes |

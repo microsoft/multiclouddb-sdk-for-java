@@ -1133,7 +1133,9 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
                                 Map.of("reason", "extended_retention_not_enacted",
                                         "capability", com.multiclouddb.api.Capability.EXTENDED_CHANGE_FEED_HISTORY,
                                         "requestedRetention", retention.toString(),
-                                        "activeRetention", activeRetention.toString())), cause);
+                                        "activeRetention", activeRetention.toString())), cause)
+                                .withDiagnostics(cause instanceof SpannerException se
+                                        ? SpannerErrorMapper.diagnostics(se, OperationNames.ENSURE_CONTAINER) : null);
                     }
                     if (activeRetention == null) {
                         // INFORMATION_SCHEMA read-back returned no row, or its
@@ -1169,7 +1171,8 @@ public class SpannerProviderClient implements MulticloudDbProviderClient {
                                     + "Underlying message: " + causeMsg,
                             ProviderId.SPANNER, OperationNames.ENSURE_CONTAINER, false,
                             Map.of("reason", "retention_exceeds_native_max",
-                                    "requestedRetention", retention.toString())), cause);
+                                    "requestedRetention", retention.toString())), cause)
+                            .withDiagnostics(SpannerErrorMapper.diagnostics(se, OperationNames.ENSURE_CONTAINER));
                 } else if (cause instanceof SpannerException se) {
                     throw SpannerErrorMapper.map(se, OperationNames.ENSURE_CONTAINER);
                 } else {

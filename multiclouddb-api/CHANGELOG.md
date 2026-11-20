@@ -20,6 +20,8 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   the public wrapper. Management summaries do not aggregate child operations.
 - Attach query diagnostics without re-copying already-owned row maps;
   public `QueryPage` constructors retain their defensive copies.
+- Keep blank/`UNKNOWN` fallback request IDs unavailable in normalized error
+  diagnostics without changing the original provider error details.
 
 - **Breaking:** Narrow cursor deserializer callback numeric results to the exact
   Byte, Short, Integer, Long, Float, Double, BigInteger and BigDecimal classes.

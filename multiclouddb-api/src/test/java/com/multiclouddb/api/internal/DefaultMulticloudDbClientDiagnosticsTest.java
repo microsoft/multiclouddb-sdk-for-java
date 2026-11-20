@@ -117,6 +117,23 @@ class DefaultMulticloudDbClientDiagnosticsTest {
     }
 
     @Test
+    void failureFallbackDoesNotReintroduceUnavailableRequestIds() {
+        for (String id : List.of("", " ", "UNKNOWN")) {
+            var provider = mock(MulticloudDbProviderClient.class);
+            var failure = new MulticloudDbException(new MulticloudDbError(
+                    MulticloudDbErrorCategory.TRANSIENT_FAILURE, "unavailable", ProviderId.DYNAMO,
+                    "read", true, 503, Map.of("requestId", id)))
+                    .withDiagnostics(OperationDiagnostics.builder(ProviderId.DYNAMO, "read").build());
+            when(provider.read(ADDRESS, KEY, OPTIONS)).thenThrow(failure);
+            var thrown = assertThrows(MulticloudDbException.class,
+                    () -> client(provider, ProviderId.DYNAMO).read(ADDRESS, KEY, OPTIONS));
+            assertSame(failure, thrown);
+            assertEquals(id, thrown.error().providerDetails().get("requestId"), "raw error details stay intact");
+            assertNull(thrown.diagnostics().requestId());
+        }
+    }
+
+    @Test
     void guardsAreEnrichedWithoutWrappingOrdinaryValidationErrors() throws Exception {
         var provider = mock(MulticloudDbProviderClient.class);
         when(provider.capabilities()).thenReturn(new CapabilitySet(List.of()));

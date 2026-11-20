@@ -16,8 +16,6 @@ import com.multiclouddb.api.OperationDiagnostics;
 import com.multiclouddb.api.OperationNames;
 import com.multiclouddb.api.OperationOptions;
 import com.multiclouddb.api.OperationResponse;
-import com.multiclouddb.api.ResourceConsumption;
-import com.multiclouddb.api.StatusCodeDomain;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
@@ -351,7 +349,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
                     OperationNames.UPDATE,
                     false,
                     e.statusCode(),
-                    details), e);
+                    details), e).withDiagnostics(DynamoDiagnosticsMapper.from(e, OperationNames.UPDATE));
         } catch (DynamoDbException e) {
             throw DynamoErrorMapper.map(e, OperationNames.UPDATE);
         }
@@ -438,21 +436,11 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
 
     private OperationDiagnostics pointDiagnostics(String operation,
             software.amazon.awssdk.services.dynamodb.model.DynamoDbResponse response, ConsumedCapacity capacity) {
-        var builder = OperationDiagnostics.builder(ProviderId.DYNAMO, operation)
-                .requestId(pointRequestId(response));
-        if (response.sdkHttpResponse() != null && response.sdkHttpResponse().statusCode() > 0) {
-            builder.statusCode(response.sdkHttpResponse().statusCode()).statusCodeDomain(StatusCodeDomain.HTTP);
-        }
-        if (capacity != null && capacity.capacityUnits() != null) {
-            builder.consumption(new ResourceConsumption(capacity.capacityUnits(),
-                    ResourceConsumption.Unit.DYNAMODB_CAPACITY_UNIT, ResourceConsumption.Coverage.UNKNOWN));
-        }
-        return builder.build();
+        return DynamoDiagnosticsMapper.from(response, operation, capacity);
     }
 
     private static String pointRequestId(software.amazon.awssdk.services.dynamodb.model.DynamoDbResponse response) {
-        String id = response.responseMetadata() == null ? null : response.responseMetadata().requestId();
-        return id == null || id.isBlank() || "UNKNOWN".equals(id) ? null : id;
+        return DynamoDiagnosticsMapper.requestId(response);
     }
 
     /**
@@ -600,6 +588,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
 
             ExecuteStatementRequest.Builder stmtBuilder = ExecuteStatementRequest.builder()
                     .statement(stmt)
+                    .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL)
                     .limit(pageSize);
 
             if (!params.isEmpty()) stmtBuilder.parameters(params);
@@ -623,9 +612,9 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
             items.sort(SORT_KEY_ASC);
 
             OperationDiagnostics diag = buildQueryDiagnostics(OperationNames.QUERY_WITH_TRANSLATION, address,
-                    response.responseMetadata().requestId(),
+                    response,
                     response.consumedCapacity(), items.size(), response.nextToken(),
-                    java.time.Duration.between(queryStart, java.time.Instant.now()), response.sdkHttpResponse());
+                    java.time.Duration.between(queryStart, java.time.Instant.now()));
 
             return new QueryPage(items, response.nextToken(), diag);
         } catch (DynamoDbException e) {
@@ -659,6 +648,7 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
 
         ExecuteStatementRequest.Builder stmtBuilder = ExecuteStatementRequest.builder()
                 .statement(statement)
+                .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL)
                 .limit(pageSize);
 
         if (!params.isEmpty()) stmtBuilder.parameters(params);
@@ -673,9 +663,9 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
         }
 
         OperationDiagnostics partiqlDiag = buildQueryDiagnostics(DynamoConstants.OP_QUERY_PARTIQL, null,
-                response.responseMetadata().requestId(),
+                response,
                 response.consumedCapacity(), items.size(), response.nextToken(),
-                java.time.Duration.between(partiqlStart, java.time.Instant.now()), response.sdkHttpResponse());
+                java.time.Duration.between(partiqlStart, java.time.Instant.now()));
 
         return new QueryPage(items, response.nextToken(), partiqlDiag);
     }
@@ -748,9 +738,9 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
         }
 
         OperationDiagnostics keyCondDiag = buildQueryDiagnostics(DynamoConstants.OP_QUERY_KEY_CONDITION, address,
-                response.sdkHttpResponse().firstMatchingHeader(DynamoConstants.HEADER_REQUEST_ID).orElse(null),
+                response,
                 response.consumedCapacity(), items.size(), continuationToken,
-                java.time.Duration.between(keyQueryStart, java.time.Instant.now()), response.sdkHttpResponse());
+                java.time.Duration.between(keyQueryStart, java.time.Instant.now()));
 
         return new QueryPage(items, continuationToken, keyCondDiag);
     }
@@ -798,9 +788,9 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
         }
 
         OperationDiagnostics scanDiag = buildQueryDiagnostics(DynamoConstants.OP_QUERY_SCAN, null,
-                response.sdkHttpResponse().firstMatchingHeader(DynamoConstants.HEADER_REQUEST_ID).orElse(null),
+                response,
                 response.consumedCapacity(), items.size(), continuationToken,
-                java.time.Duration.between(scanStart, java.time.Instant.now()), response.sdkHttpResponse());
+                java.time.Duration.between(scanStart, java.time.Instant.now()));
 
         return new QueryPage(items, continuationToken, scanDiag);
     }
@@ -864,9 +854,9 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
         }
 
         OperationDiagnostics filterDiag = buildQueryDiagnostics(DynamoConstants.OP_QUERY_SCAN_FILTER, null,
-                response.sdkHttpResponse().firstMatchingHeader(DynamoConstants.HEADER_REQUEST_ID).orElse(null),
+                response,
                 response.consumedCapacity(), items.size(), continuationToken,
-                java.time.Duration.between(filterScanStart, java.time.Instant.now()), response.sdkHttpResponse());
+                java.time.Duration.between(filterScanStart, java.time.Instant.now()));
 
         return new QueryPage(items, continuationToken, filterDiag);
     }
@@ -1204,31 +1194,24 @@ public class DynamoProviderClient implements MulticloudDbProviderClient {
      *                        {@link DynamoConstants})
      * @param address         the resource address, or {@code null} for PartiQL
      *                        passthrough queries where the address is not available
-     * @param requestId       the AWS request ID, or {@code null} for Scan responses
-     *                        (extracted from HTTP headers separately)
+     * @param response        the native response carrying request ID and HTTP metadata
      * @param consumedCapacity the consumed capacity, or {@code null}
      * @param itemCount       the number of items in the current page
      * @param nextToken       the pagination token, or {@code null} if no more pages
      */
     private OperationDiagnostics buildQueryDiagnostics(String operation, ResourceAddress address,
-            String requestId, ConsumedCapacity consumedCapacity,
-            int itemCount, String nextToken, java.time.Duration duration,
-            SdkHttpResponse httpResponse) {
-        double capacityUnits = consumedCapacity != null && consumedCapacity.capacityUnits() != null
-                ? consumedCapacity.capacityUnits() : 0.0;
-        int statusCode = httpResponse != null ? httpResponse.statusCode() : 0;
+            software.amazon.awssdk.services.dynamodb.model.DynamoDbResponse response, ConsumedCapacity consumedCapacity,
+            int itemCount, String nextToken, java.time.Duration duration) {
+        SdkHttpResponse httpResponse = response.sdkHttpResponse();
         String db  = address != null ? address.database()   : "-";
         String col = address != null ? address.collection() : "-";
-        OperationDiagnostics diag = OperationDiagnostics
-                .builder(ProviderId.DYNAMO, operation, duration)
-                .requestId(requestId)
-                .statusCode(statusCode)
-                .requestCharge(capacityUnits)
+        OperationDiagnostics diag = DynamoDiagnosticsMapper.from(response, operation, consumedCapacity).toBuilder()
+                .duration(duration)
                 .itemCount(itemCount)
                 .build();
 
         LOG.debug("dynamo.diagnostics op={} db={} col={} requestId={} capacityUnits={} itemCount={} hasMore={}",
-                operation, db, col, requestId, capacityUnits, itemCount, nextToken != null);
+                operation, db, col, diag.requestId(), diag.requestCharge(), itemCount, nextToken != null);
 
         if (config.nativeDiagnosticsEnabled()) {
             LOG.info("dynamo.native-diagnostics op={} db={} col={} headers={} consumedCapacity={}",

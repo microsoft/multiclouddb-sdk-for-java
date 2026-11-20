@@ -8,6 +8,7 @@ import com.multiclouddb.api.MulticloudDbError;
 import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.MulticloudDbKey;
 import com.multiclouddb.api.OperationOptions;
+import com.multiclouddb.api.OperationNames;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.ResourceAddress;
 import com.multiclouddb.api.changefeed.ChangeEvent;
@@ -304,7 +305,8 @@ final class DynamoChangeFeedReader {
                             + "the cursor's records are older than the 24h stream retention",
                     providerId, "readChanges", false,
                     Map.of(CursorTokenCodec.DETAIL_REASON,
-                            CursorTokenCodec.REASON_PROVIDER_TRIMMED)), e);
+                            CursorTokenCodec.REASON_PROVIDER_TRIMMED)), e)
+                    .withDiagnostics(DynamoDiagnosticsMapper.from(e, OperationNames.READ_CHANGES));
         } catch (DynamoDbException e) {
             throw maybeExpiredIterator(e, "readChanges");
         }
@@ -327,15 +329,19 @@ final class DynamoChangeFeedReader {
             }
 
             String nextIter = resp.nextShardIterator();
+            var diagnostics = DynamoDiagnosticsMapper.from(resp, OperationNames.READ_CHANGES, null).toBuilder()
+                    .itemCount(events.size()).build();
             String newContinuation;
             boolean shardClosed = nextIter == null;
             if (shardClosed) {
                 // Shard finished — emit child shards into the next cursor.
-                return absorbClosedShard(
+                ChangeFeedPage page = absorbClosedShard(
                         events.isEmpty()
                                 ? token
                                 : token.withPartitions(positions, System.currentTimeMillis()),
                         positions, streamArn, shardId, events);
+                return new ChangeFeedPage(page.events(), page.nextCursor(), page.hasMore(),
+                        page.isTerminal(), diagnostics);
             }
             // Continuation strategy:
             //   - We saw records: use the last sequence number (AFTER_SEQUENCE_NUMBER on resume).
@@ -365,14 +371,15 @@ final class DynamoChangeFeedReader {
                 if (!events.isEmpty()) hasMore = true;
             }
             CursorToken next = token.withPartitions(positions, System.currentTimeMillis());
-            return new ChangeFeedPage(events, new ChangeFeedCursor(next), hasMore, false);
+            return new ChangeFeedPage(events, new ChangeFeedCursor(next), hasMore, false, diagnostics);
         } catch (TrimmedDataAccessException e) {
             throw new CursorExpiredException(new MulticloudDbError(
                     MulticloudDbErrorCategory.CURSOR_EXPIRED,
                     "DynamoDB Streams returned TrimmedDataAccessException during GetRecords",
                     providerId, "readChanges", false,
                     Map.of(CursorTokenCodec.DETAIL_REASON,
-                            CursorTokenCodec.REASON_PROVIDER_TRIMMED)), e);
+                            CursorTokenCodec.REASON_PROVIDER_TRIMMED)), e)
+                    .withDiagnostics(DynamoDiagnosticsMapper.from(e, OperationNames.READ_CHANGES));
         } catch (DynamoDbException e) {
             throw maybeExpiredIterator(e, "readChanges");
         }
@@ -392,7 +399,8 @@ final class DynamoChangeFeedReader {
                             + "Re-bootstrap by calling listCursors().",
                     providerId, operation, false,
                     Map.of(CursorTokenCodec.DETAIL_REASON,
-                            CursorTokenCodec.REASON_ITERATOR_EXPIRED)), e);
+                            CursorTokenCodec.REASON_ITERATOR_EXPIRED)), e)
+                    .withDiagnostics(DynamoDiagnosticsMapper.from(e, operation));
         }
         // Defensive: if the SDK ever delivers a Trimmed exception as a generic
         // DynamoDbException with the errorCode set instead of a typed
@@ -404,7 +412,8 @@ final class DynamoChangeFeedReader {
                             + "records are older than the 24h stream retention",
                     providerId, operation, false,
                     Map.of(CursorTokenCodec.DETAIL_REASON,
-                            CursorTokenCodec.REASON_PROVIDER_TRIMMED)), e);
+                            CursorTokenCodec.REASON_PROVIDER_TRIMMED)), e)
+                    .withDiagnostics(DynamoDiagnosticsMapper.from(e, operation));
         }
         return mapStreamsException(e, operation);
     }
@@ -420,7 +429,8 @@ final class DynamoChangeFeedReader {
         boolean retryable = e.statusCode() >= 500 || e.statusCode() == 429;
         return new com.multiclouddb.api.MulticloudDbException(new MulticloudDbError(
                 MulticloudDbErrorCategory.PROVIDER_ERROR, e.getMessage(),
-                providerId, operation, retryable, e.statusCode(), details), e);
+                providerId, operation, retryable, e.statusCode(), details), e)
+                .withDiagnostics(DynamoDiagnosticsMapper.from(e, operation));
     }
 
     private CursorToken hydrateSentinel(DynamoDbClient ddb, ResourceAddress address, String tableName) {

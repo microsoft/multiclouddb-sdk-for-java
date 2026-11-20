@@ -6,7 +6,12 @@ package com.multiclouddb.provider.cosmos;
 import com.azure.cosmos.*;
 import com.azure.cosmos.models.CosmosItemRequestOptions;
 import com.azure.cosmos.models.CosmosItemResponse;
+import com.azure.cosmos.models.CosmosQueryRequestOptions;
+import com.azure.cosmos.models.CosmosContainerProperties;
+import com.azure.cosmos.models.FeedResponse;
 import com.azure.cosmos.models.PartitionKey;
+import com.azure.cosmos.models.SqlQuerySpec;
+import com.azure.cosmos.util.CosmosPagedIterable;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
@@ -15,6 +20,7 @@ import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.multiclouddb.api.*;
+import com.multiclouddb.api.changefeed.ChangeFeedConfig;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedConstruction;
 
@@ -22,6 +28,7 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.Instant;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -46,6 +53,110 @@ class CosmosMapContractTest {
     // The application, not the adapter, chooses how provider root metadata is handled.
     @JsonIgnoreProperties(ignoreUnknown = true)
     record Batch<T>(String batchName, LocalDate createdOn, List<T> items, int quantity, double ratio) {}
+
+    @Test
+    void managementCapabilityFailureRetainsNativeDiagnostics() throws Exception {
+        CosmosClient sdk = mock(CosmosClient.class);
+        CosmosDatabase database = mock(CosmosDatabase.class);
+        when(sdk.getDatabase(ADDRESS.database())).thenReturn(database);
+        CosmosException nativeError = mock(CosmosException.class);
+        when(nativeError.getStatusCode()).thenReturn(400);
+        when(nativeError.getMessage()).thenReturn("Continuous Backup is required");
+        when(nativeError.getActivityId()).thenReturn("management-id");
+        when(nativeError.getRequestCharge()).thenReturn(1d);
+        when(nativeError.getResponseHeaders()).thenReturn(Map.of("x-ms-request-charge", "1"));
+        when(database.createContainerIfNotExists(any(CosmosContainerProperties.class))).thenThrow(nativeError);
+        try (MockedConstruction<CosmosClientBuilder> ignored = mockConstruction(CosmosClientBuilder.class,
+                withSettings().defaultAnswer(RETURNS_SELF),
+                (builder, context) -> when(builder.buildClient()).thenReturn(sdk));
+             MulticloudDbClient client = MulticloudDbClientFactory.create(MulticloudDbClientConfig.builder()
+                     .provider(ProviderId.COSMOS)
+                     .connection(Map.of("endpoint", "https://example.documents.azure.com:443/", "key", "dGVzdA=="))
+                     .changeFeed(ChangeFeedConfig.builder().extendedRetention(Duration.ofDays(7)).build())
+                     .build())) {
+            var failure = assertThrows(MulticloudDbException.class, () -> client.ensureContainer(ADDRESS));
+            assertEquals(MulticloudDbErrorCategory.UNSUPPORTED_CAPABILITY, failure.error().category());
+            assertEquals("continuous_backup_required", failure.error().providerDetails().get("reason"));
+            assertSame(nativeError, failure.getCause());
+            assertEquals("management-id", failure.diagnostics().requestId());
+            assertEquals(400, failure.diagnostics().statusCode());
+            assertEquals(StatusCodeDomain.HTTP, failure.diagnostics().statusCodeDomain());
+            assertEquals(1, failure.diagnostics().consumption().amount());
+            assertEquals(OperationOutcome.FAILURE, failure.diagnostics().outcome());
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void queryResponsesRetainPageMetadataWithoutInventingStatusOrConsumption() throws Exception {
+        CosmosClient sdk = mock(CosmosClient.class);
+        CosmosDatabase database = mock(CosmosDatabase.class);
+        CosmosContainer container = mock(CosmosContainer.class);
+        CosmosPagedIterable<Object> pages = mock(CosmosPagedIterable.class);
+        FeedResponse<Object> page = mock(FeedResponse.class);
+        when(sdk.getDatabase(ADDRESS.database())).thenReturn(database);
+        when(database.getContainer(ADDRESS.collection())).thenReturn(container);
+        when(container.queryItems(any(SqlQuerySpec.class), any(CosmosQueryRequestOptions.class), eq(Object.class)))
+                .thenReturn(pages);
+        when(pages.iterableByPage(anyInt())).thenReturn(List.of(page));
+        when(page.getResults()).thenReturn(List.of(Map.of("name", "Ada")));
+        when(page.getContinuationToken()).thenReturn("next-page");
+        when(page.getActivityId()).thenReturn("query-activity");
+        when(page.getSessionToken()).thenReturn("session");
+        when(page.getRequestCharge()).thenReturn(2.5);
+        when(page.getResponseHeaders()).thenReturn(Map.of("X-Ms-Request-Charge", "2.5", "ETag", "\"page-etag\""));
+
+        try (MockedConstruction<CosmosClientBuilder> ignored = mockConstruction(CosmosClientBuilder.class,
+                withSettings().defaultAnswer(RETURNS_SELF),
+                (builder, context) -> when(builder.buildClient()).thenReturn(sdk));
+             MulticloudDbClient client = MulticloudDbClientFactory.create(MulticloudDbClientConfig.builder()
+                     .provider(ProviderId.COSMOS)
+                     .connection(Map.of("endpoint", "https://example.documents.azure.com:443/", "key", "dGVzdA=="))
+                     .build())) {
+            for (QueryRequest query : List.of(QueryRequest.builder().build(),
+                    QueryRequest.builder().nativeExpression("SELECT * FROM c").build(),
+                    QueryRequest.builder().expression("name = @name").parameters(Map.of("name", "Ada")).build())) {
+                var result = client.query(ADDRESS, query);
+                assertEquals(List.of(Map.of("name", "Ada")), result.items());
+                assertEquals("next-page", result.continuationToken());
+                var diag = result.diagnostics();
+                assertEquals("query-activity", diag.requestId());
+                assertEquals("session", diag.sessionToken());
+                assertEquals("\"page-etag\"", diag.etag());
+                assertEquals(2.5, diag.consumption().amount());
+                assertEquals(ResourceConsumption.Unit.COSMOS_REQUEST_UNIT, diag.consumption().unit());
+                assertEquals(ResourceConsumption.Coverage.UNKNOWN, diag.consumption().coverage());
+                assertEquals(2.5, diag.requestCharge());
+                assertEquals(1, diag.itemCount());
+                assertEquals(OperationOutcome.SUCCESS, diag.outcome());
+                assertEquals("query", diag.operation());
+                assertNotNull(diag.startTime());
+                assertNotNull(diag.endTime());
+                assertFalse(diag.duration().isNegative());
+                assertNull(diag.statusCode(), "FeedResponse has no public HTTP status");
+                assertNull(diag.statusCodeDomain());
+            }
+            UUID correlation = UUID.fromString("12345678-1234-1234-1234-123456789abc");
+            when(page.getActivityId()).thenReturn(null);
+            when(page.getCorrelationActivityId()).thenReturn(correlation);
+            when(page.getResults()).thenReturn(List.of());
+            when(page.getRequestCharge()).thenReturn(0d);
+            when(page.getResponseHeaders()).thenReturn(Map.of("x-ms-request-charge", "0"));
+            var zero = client.query(ADDRESS, QueryRequest.builder().build()).diagnostics();
+            assertEquals(correlation.toString(), zero.requestId());
+            assertEquals(0, zero.consumption().amount());
+            assertEquals(0, zero.itemCount());
+
+            when(page.getCorrelationActivityId()).thenReturn(null);
+            when(page.getSessionToken()).thenReturn(null);
+            when(page.getResponseHeaders()).thenReturn(Map.of());
+            var absent = client.query(ADDRESS, QueryRequest.builder().build()).diagnostics();
+            assertNull(absent.requestId());
+            assertNull(absent.consumption());
+            assertNull(absent.etag());
+            assertNull(absent.sessionToken());
+        }
+    }
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final List<MulticloudDbKey> KEYS = List.of(

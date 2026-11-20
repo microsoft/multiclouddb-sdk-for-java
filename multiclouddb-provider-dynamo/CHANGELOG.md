@@ -9,6 +9,13 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Complete Query/Scan and both PartiQL diagnostics with observed typed capacity
+  and HTTP/request ID metadata; PartiQL now requests `ReturnConsumedCapacity.TOTAL`.
+  Reuse metadata mapping for point operations and Streams GetRecords, including
+  final closed-shard pages and specialized errors. Missing/UNKNOWN IDs fall back
+  to native HTTP headers when present. Streams capacity remains unavailable.
+  No additional requests or request aggregation are introduced.
+
 - **Breaking point SPI return migration:** Return portable point carriers with
   available HTTP status/request ID and typed consumed capacity. Distinguish
   absent capacity from observed zero; missing/UNKNOWN request IDs stay absent.
