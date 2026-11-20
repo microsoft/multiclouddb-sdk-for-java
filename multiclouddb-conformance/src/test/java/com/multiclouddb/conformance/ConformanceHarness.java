@@ -112,8 +112,7 @@ public final class ConformanceHarness {
         inspectPublishedArtifacts(dependencies, runtime);
         for (String scope : List.of("all", "cosmos", "dynamo", "spanner")) {
           List<Path> scopedRuntime = runtime.stream().filter(p ->
-                  scope.equals("all") || !p.getFileName().toString().startsWith("multiclouddb-provider-")
-                          || p.getFileName().toString().startsWith("multiclouddb-provider-" + scope + "-")).toList();
+                  scope.equals("all") || belongsToProviderRuntime(p, scope)).toList();
           for (boolean modules : List.of(false, true)) {
             for (boolean competing : scope.equals("all") ? List.of(false, true) : List.of(false)) {
                 List<String> command = new ArrayList<>();
@@ -129,7 +128,9 @@ public final class ConformanceHarness {
                     Map<String, List<String>> openedPackages = Map.of(
                             "cosmos", List.of("com.azure.cosmos.implementation", "com.azure.core.http",
                                     "com.fasterxml.jackson.databind", "io.netty.handler.ssl", "io.netty.channel.epoll"),
-                            "dynamo", List.of("software.amazon.awssdk.http", "software.amazon.awssdk.http.async"),
+                            "dynamo", List.of("software.amazon.awssdk.http", "software.amazon.awssdk.http.async",
+                                    "software.amazon.awssdk.auth.credentials.internal",
+                                    "software.amazon.awssdk.profiles"),
                             "spanner", List.of("io.grpc", "io.grpc.netty.shaded.io.netty.handler.ssl",
                                     "io.grpc.netty.shaded.io.netty.channel.epoll",
                                     "com.google.cloud", "com.google.cloud.spanner"));
@@ -154,13 +155,44 @@ public final class ConformanceHarness {
                 }
                 command.addAll(List.of("-classpath", classpath, ConformanceHarness.class.getName(),
                         "--probe", Boolean.toString(modules), Boolean.toString(competing), scope));
-                Process process = new ProcessBuilder(command).inheritIO().start();
-                if (!process.waitFor(90, TimeUnit.SECONDS)) {
-                    process.destroyForcibly();
-                    throw new AssertionError("Packaged consumer timed out: module-path=" + modules);
+                // Keep native command lines short even with deep Windows paths and competing SDKs.
+                Path argumentFile = Files.createTempFile(dependencies.getParent(), "consumer-", ".args");
+                Path home = Files.createTempDirectory(dependencies.getParent(), "consumer-home-");
+                try {
+                    command.add(1, "-Duser.home=" + home);
+                    command.add(1, "-Dpackaged.fixtureHome=" + home);
+                    command.add(1, "-Daws.region=us-east-1");
+                    command.add(1, "-Daws.disableEc2Metadata=true");
+                    command.add(1, "-Daws.configFile=" + home.resolve("config"));
+                    command.add(1, "-Daws.sharedCredentialsFile=" + home.resolve("credentials"));
+                    Files.write(argumentFile, command.subList(1, command.size()).stream()
+                            .map(ConformanceHarness::quoteJavaArgument).toList());
+                    ProcessBuilder builder = new ProcessBuilder(command.get(0), "@" + argumentFile).inheritIO();
+                    builder.environment().keySet().removeIf(key -> key.startsWith("AWS_")
+                            || Set.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS").contains(key));
+                    builder.environment().put("HOME", home.toString());
+                    builder.environment().put("USERPROFILE", home.toString());
+                    Process process = builder.start();
+                    try {
+                        if (!process.waitFor(90, TimeUnit.SECONDS)) {
+                            throw new AssertionError("Packaged consumer timed out: module-path=" + modules);
+                        }
+                        require(process.exitValue() == 0,
+                                "Packaged consumer failed: scope=" + scope + ", module-path=" + modules
+                                        + ", competing=" + competing);
+                    } finally {
+                        if (process.isAlive()) {
+                            process.destroyForcibly();
+                            process.waitFor();
+                        }
+                    }
+                } finally {
+                    Files.deleteIfExists(argumentFile);
+                    // This is a newly-created, task-owned fixture directory, never the real user home.
+                    try (var files = Files.walk(home)) {
+                        for (Path file : files.sorted(Comparator.reverseOrder()).toList()) Files.delete(file);
+                    }
                 }
-                require(process.exitValue() == 0,
-                        "Packaged consumer failed: module-path=" + modules + ", competing=" + competing);
             }
           }
         }
@@ -169,6 +201,19 @@ public final class ConformanceHarness {
     private static boolean isPublishedRuntime(Path path) {
         return path.getFileName().toString().matches(
                 "(multiclouddb-(api|provider-(cosmos|dynamo|spanner))-|slf4j-api-|jna-|conscrypt-openjdk-uber-).*\\.jar");
+    }
+
+    private static boolean belongsToProviderRuntime(Path path, String provider) {
+        String name = path.getFileName().toString();
+        return name.startsWith("multiclouddb-api-") || name.startsWith("slf4j-api-")
+                || name.startsWith("multiclouddb-provider-" + provider + "-")
+                || (provider.equals("cosmos") && name.startsWith("jna-"))
+                || (provider.equals("spanner") && name.startsWith("conscrypt-openjdk-uber-"));
+    }
+
+    private static String quoteJavaArgument(String argument) {
+        return "\"" + argument.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", "\\n").replace("\r", "\\r") + "\"";
     }
 
     private static String joinPaths(List<Path> paths) {
@@ -243,6 +288,12 @@ public final class ConformanceHarness {
             for (int i = 0; i < dependencies.getLength(); i++) {
                 var dependency = (org.w3c.dom.Element) dependencies.item(i);
                 actual.add(dependency.getElementsByTagName("artifactId").item(0).getTextContent());
+                var scopes = dependency.getElementsByTagName("scope");
+                require(scopes.getLength() == 0 || Set.of("compile", "runtime").contains(scopes.item(0).getTextContent()),
+                        "Required runtime dependency has a non-runtime scope: " + dependency.getTextContent());
+                var optional = dependency.getElementsByTagName("optional");
+                require(optional.getLength() == 0 || "false".equals(optional.item(0).getTextContent()),
+                        "Required runtime dependency is optional: " + dependency.getTextContent());
             }
             require(actual.equals(expected), "Published dependency leakage: " + pom + " -> " + actual);
         }
@@ -256,11 +307,103 @@ public final class ConformanceHarness {
             require(adapter.getClass().getModule().isNamed() == modules, "Wrong module/classpath lane");
             require(adapter.createExpressionTranslator() != null, "Translator discovery failed");
         }
+        if (scope.equals("dynamo") || scope.equals("all")) probeAwsCredentialFactories();
         if (!scope.equals("all")) {
-            System.out.println("Standalone provider discovery OK: " + scope + ", module-path=" + modules);
+            probeStandalonePublicFactory(scope);
+            System.out.println("Standalone provider discovery/public error path OK: " + scope + ", module-path=" + modules);
             return;
         }
+        probeCombinedProviders(modules, competing);
+    }
 
+    private static void probeAwsCredentialFactories() throws Exception {
+        String aws = "com.multiclouddb.shaded.dynamo.software.amazon.awssdk.";
+        Object webFactory = call(aws + "auth.credentials.internal.WebIdentityCredentialsUtils", null, "factory");
+        requireJarOrigin(webFactory.getClass(), "multiclouddb-provider-dynamo-");
+        Class<?> profileFileType = Class.forName(aws + "profiles.ProfileFile");
+        Class<?> profileType = Class.forName(aws + "profiles.Profile");
+        Class<?> builderType = Class.forName(aws + "profiles.ProfileFile$Builder");
+        Class<?> fileType = Class.forName(aws + "profiles.ProfileFile$Type");
+        String fixtureHome = System.getProperty("packaged.fixtureHome");
+        require(fixtureHome != null && fixtureHome.equals(System.getProperty("user.home")),
+                "AWS probes must run through the launcher with an isolated fixture home");
+        Path tokenCache = Files.createDirectories(Path.of(fixtureHome, ".aws", "sso", "cache"));
+        String sessionHash = HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-1")
+                .digest("fixture".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        Files.writeString(tokenCache.resolve(sessionHash + ".json"),
+                "{\"accessToken\":\"fixture-only-not-a-real-token\",\"expiresAt\":\"2999-01-01T00:00:00Z\"}");
+        String config = """
+                [profile source]
+                aws_access_key_id = fixture-only
+                aws_secret_access_key = fixture-only
+                [profile assume]
+                role_arn = arn:aws:iam::123456789012:role/fixture
+                source_profile = source
+                [profile web]
+                role_arn = arn:aws:iam::123456789012:role/fixture
+                web_identity_token_file = unused-fixture-token
+                [profile sso]
+                sso_session = fixture
+                sso_account_id = 123456789012
+                sso_role_name = fixture
+                [sso-session fixture]
+                sso_region = us-east-1
+                sso_start_url = https://fixture.invalid/start
+                """;
+        Object builder = call(profileFileType.getName(), null, "builder");
+        method(builderType, "content", java.io.InputStream.class).invoke(builder,
+                new java.io.ByteArrayInputStream(config.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        method(builderType, "type", fileType).invoke(builder, fileType.getField("CONFIGURATION").get(null));
+        Object file = method(builderType, "build").invoke(builder);
+        Method profiles = method(profileFileType, "profiles");
+        Map<?, ?> profileMap = (Map<?, ?>) profiles.invoke(file);
+        java.util.function.Function<String, Optional<?>> lookup = name -> Optional.ofNullable(profileMap.get(name));
+        Class<?> credentialsUtils = Class.forName(aws + "auth.credentials.internal.ProfileCredentialsUtils");
+        for (String name : List.of("assume", "web", "sso")) {
+            Object utils = credentialsUtils.getConstructor(profileFileType, profileType, java.util.function.Function.class)
+                    .newInstance(file, profileMap.get(name), lookup);
+            Optional<?> selected = (Optional<?>) method(credentialsUtils, "credentialsProvider").invoke(utils);
+            require(selected.isPresent(), "AWS profile factory absent: " + name);
+            try (AutoCloseable provider = (AutoCloseable) selected.orElseThrow()) {
+                requireJarOrigin(provider.getClass(), "multiclouddb-provider-dynamo-");
+            }
+        }
+        // The sso_session path above invokes SSOOIDC token discovery and reads only
+        // the synthetic unexpired cache; no refresh or AWS/SSO request is made.
+    }
+
+    private static void probeStandalonePublicFactory(String scope) throws Exception {
+        if (scope.equals("cosmos")) {
+            try (MulticloudDbClient ignored = MulticloudDbClientFactory.create(MulticloudDbClientConfig.builder()
+                    .provider(ProviderId.COSMOS).connection("endpoint", "not a valid URI")
+                    .connection("key", "invalid-base64!").build())) {
+                throw new AssertionError("Cosmos accepted an invalid native client configuration");
+            } catch (IllegalArgumentException expected) {
+                require(Arrays.stream(expected.getStackTrace()).anyMatch(frame ->
+                                frame.getClassName().startsWith("com.multiclouddb.shaded.cosmos.com.azure.")),
+                        "Cosmos did not reach its packaged native validation: " + expected);
+            }
+            return;
+        }
+        MulticloudDbClientConfig config = scope.equals("dynamo")
+                ? MulticloudDbClientConfig.builder().provider(ProviderId.DYNAMO)
+                        .connection("endpoint", "http://127.0.0.1:1").connection("region", "us-east-1")
+                        .auth("accessKeyId", "fixture").auth("secretAccessKey", "fixture").build()
+                : MulticloudDbClientConfig.builder().provider(ProviderId.SPANNER)
+                        .connection("projectId", "fixture").connection("instanceId", "fixture")
+                        .connection("databaseId", "fixture").connection("emulatorHost", "127.0.0.1:1").build();
+        MulticloudDbClient client = MulticloudDbClientFactory.create(config);
+        client.close();
+        try {
+            client.read(new ResourceAddress("fixture", "fixture"), MulticloudDbKey.of("key", "key"));
+            throw new AssertionError("Closed packaged client accepted a read: " + scope);
+        } catch (MulticloudDbException expected) {
+            require(expected.error().category() == MulticloudDbErrorCategory.CLIENT_CLOSED,
+                    "Wrong packaged public error: " + expected);
+        }
+    }
+
+    private static void probeCombinedProviders(boolean modules, boolean competing) throws Exception {
         String cosmos = "com.multiclouddb.shaded.cosmos.";
         String spanner = "com.multiclouddb.shaded.spanner.";
         Object mapper = call(cosmos + "com.azure.cosmos.implementation.Utils", null, "getSimpleObjectMapper");

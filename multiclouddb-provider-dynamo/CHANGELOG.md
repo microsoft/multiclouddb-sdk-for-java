@@ -9,6 +9,9 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Include matched-version STS, SSO and SSOOIDC modules inside the isolated runtime
+  so default-chain web-identity/profile/token factories remain discoverable.
+  Application-side AWS modules cannot satisfy relocated factory names.
 - Replace the default provider JAR with provider-local relocated AWS SDK and
   its JSON, HTTP, Netty and other Java dependencies. API/SLF4J remain external.
   Preserve the explicit JPMS module name and service discovery. Native exception

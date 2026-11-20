@@ -236,6 +236,7 @@
                                 <configuration>
                                     <skip>${packaged.skipProbe}</skip>
                                     <executable>${java.home}/bin/java</executable>
+                                    <longClasspath>true</longClasspath>
                                     <classpathScope>test</classpathScope>
                                     <arguments>
                                         <argument>-classpath</argument><classpath/>

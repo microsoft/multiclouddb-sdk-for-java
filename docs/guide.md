@@ -766,8 +766,38 @@ Native causes are retained for diagnosis, but their class identities/names chang
 use `MulticloudDbException` and its portable error category instead. Native SDK
 ServiceLoader extensions, agents and reflection-based integrations targeting the
 original namespaces do not automatically apply to the private copies.
+This also affects public **implementation helpers on the classpath**, not just
+exception causes. For example, `CosmosErrorMapper.map(CosmosException, String)`
+now has a relocated native parameter in its bytecode descriptor: existing binaries
+must not link against the old signature. `DynamoContinuationToken.decode(String)`
+still erases to `Map`, but its values are private `AttributeValue` instances;
+casting them to the application's AWS `AttributeValue` fails at runtime.
+These provider packages were already unexported on JPMS. Use the portable API
+instead of importing implementation helpers; no portable API signature changes.
 Native SDK logger categories are relocated too; apply existing level/filter
 policies to the corresponding `com.multiclouddb.shaded.<provider>` prefix.
+An application `jcl-over-slf4j` bridge does not replace the providers' private
+Commons Logging. With that bridge present, the private Apache HTTP clients select
+`Jdk14Logger` (JUL) rather than the application's `SLF4JLog`. Without the bridge,
+JUL was already the baseline. This describes adapter selection, not guaranteed
+end-to-end log delivery; configure JUL/bridging explicitly for your deployment.
+
+Some tuning keys and resource names are also relocated. Verified examples in the
+current packaged artifacts are `com.multiclouddb.shaded.cosmos.io.netty.leakDetection.level`
+and `com.multiclouddb.shaded.dynamo.io.netty.leakDetection.level`, plus Cosmos
+`com.multiclouddb.shaded.cosmos.reactor.netty.ioWorkerCount` and
+`com.multiclouddb.shaded.cosmos.reactor.netty.pool.maxConnections`.
+Do not apply a blanket prefix replacement to every `io.netty`, `reactor` or
+`io.grpc` setting: inspect the specific packaged constant/resource and recheck
+after SDK upgrades. AWS's global execution-interceptor lookup now targets
+`com/multiclouddb/shaded/dynamo/software/amazon/awssdk/global/handlers/execution.interceptors`.
+Its referenced class names are private too; an application resource targeting
+the original SDK is not a provider extension point.
+
+Dynamo embeds the matched AWS STS, SSO and SSOOIDC modules needed by its default
+credential chain, including profile and web-identity factory discovery. Applications
+still supply their usual credential/profile/token configuration; this does not
+perform SSO login or guarantee that a configured role or token is authorized.
 JAR sizes increase, and embedded dependency/security updates require a new provider
 release rather than an application dependency override.
 
@@ -791,7 +821,12 @@ mvn -f multiclouddb-conformance/pom.xml clean verify -DpackagedArtifacts
 
 This forks clean and competing-dependency consumers on both classpath and
 module-path, checking published POMs, class origins, services, MR-JAR selection,
-JSON codecs and native loading. White-box probes open selected packages **only
+JSON codecs and native loading. Standalone lanes retain only each provider's
+published runtime closure and exercise public factory/error paths. AWS profile
+probes exercise STS, SSO and SSOOIDC discovery with synthetic profiles and an
+unexpired fake token cache in a temporary home; they do not log in or contact AWS.
+Java argument files keep child JVM launches independent of classpath command-line
+length. White-box probes open selected packages **only
 in the test JVM**; provider modules do not export their private implementation.
 For local emulator conformance, add `-DpackagedEmulator -Pemulator-dynamo`
 (or `emulator-cosmos` / `emulator-spanner`) and the existing emulator connection
