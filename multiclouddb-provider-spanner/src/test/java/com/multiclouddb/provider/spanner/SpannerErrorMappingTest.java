@@ -58,6 +58,9 @@ class SpannerErrorMappingTest {
 
         // NOT_FOUND gRPC status = 5
         assertEquals(5, result.error().statusCode());
+        assertEquals(5, result.diagnostics().statusCode());
+        assertEquals(com.multiclouddb.api.StatusCodeDomain.GRPC, result.diagnostics().statusCodeDomain());
+        assertNull(result.diagnostics().consumption());
         assertFalse(result.error().providerDetails().containsKey("grpcStatusCode"),
                 "numeric code must not be duplicated in providerDetails");
     }

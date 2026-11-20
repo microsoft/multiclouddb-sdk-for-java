@@ -9,6 +9,20 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- Complete query/change-feed page diagnostics with available Activity/correlation
+  ID, session token, response ETag and typed RU (including observed zero).
+  Preserve native metadata on cursor-expiry/AVAD/provisioning errors.
+  FeedResponse exposes no public HTTP status; success status remains unavailable.
+  No additional requests or request aggregation are introduced.
+
+- **Breaking point SPI return migration:** Return portable point carriers and
+  retain response/exception HTTP status, Activity ID, RU presence, ETag and
+  session token. Preserve read/delete 404 semantics while retaining diagnostics.
+  Exception headers are matched case-insensitively for ETag and session token,
+  including absorbed 404s; absent headers remain unavailable.
+  Consumption coverage is unknown across hidden requests; no extra read or
+  verbose capture is introduced.
+
 - Cosmos HTTP 413 now maps to non-retryable `INVALID_REQUEST` instead of
   `PROVIDER_ERROR` wherever it reaches the common Cosmos error mapper. Native
   status, message, cause, provider/operation, provider details and existing

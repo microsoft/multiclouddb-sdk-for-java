@@ -6,6 +6,7 @@ package com.multiclouddb.conformance.us2;
 import com.multiclouddb.api.*;
 import com.multiclouddb.api.MulticloudDbKey;
 import com.multiclouddb.conformance.ConformanceConfig;
+import com.multiclouddb.conformance.ConformanceHarness;
 import org.junit.jupiter.api.*;
 
 import java.util.List;
@@ -47,21 +48,17 @@ public abstract class DiagnosticsConformanceTest {
         // Use a deliberately invalid/nonexistent address to trigger an error
         ResourceAddress badAddress = new ResourceAddress("nonexistent-db-12345", "nonexistent-collection-12345");
         try {
-            client.read(badAddress, MulticloudDbKey.of("nonexistent-key", "nonexistent-key"), OperationOptions.defaults());
-            // Some providers may return null instead of throwing — that's OK, skip
-            // diagnostics check
+            var response = client.read(badAddress, MulticloudDbKey.of("nonexistent-key", "nonexistent-key"),
+                    OperationOptions.defaults());
+            // Cosmos absorbs native 404s; that path must still expose an explicit read miss.
+            assertNull(ConformanceHarness.assertResponse(response, providerId(), OperationNames.READ,
+                    OperationOutcome.NOT_FOUND));
         } catch (MulticloudDbException e) {
             assertNotNull(e.error(), "MulticloudDbException should have an error");
             assertEquals(providerId(), e.error().provider());
 
-            // Diagnostics may or may not be attached depending on where the error occurs
-            if (e.diagnostics() != null) {
-                assertNotNull(e.diagnostics().provider(), "Diagnostics should have a provider");
-                assertEquals(providerId(), e.diagnostics().provider());
-                assertNotNull(e.diagnostics().operation(), "Diagnostics should have an operation name");
-                assertNotNull(e.diagnostics().duration(), "Diagnostics should have a duration");
-                assertFalse(e.diagnostics().duration().isNegative(), "Duration should not be negative");
-            }
+            ConformanceHarness.assertDiagnostics(e.diagnostics(), providerId(), OperationNames.READ,
+                    OperationOutcome.FAILURE);
         }
     }
 
@@ -71,12 +68,16 @@ public abstract class DiagnosticsConformanceTest {
     void exceptionErrorHasProvider() {
         ResourceAddress badAddress = new ResourceAddress("nonexistent-db-12345", "nonexistent-collection-12345");
         try {
-            client.delete(badAddress, MulticloudDbKey.of("no-such-key", "no-such-key"), OperationOptions.defaults());
+            assertNull(ConformanceHarness.assertResponse(client.delete(badAddress,
+                    MulticloudDbKey.of("no-such-key", "no-such-key"), OperationOptions.defaults()),
+                    providerId(), OperationNames.DELETE, OperationOutcome.SUCCESS));
         } catch (MulticloudDbException e) {
             assertEquals(providerId(), e.error().provider(),
                     "Error provider should match the client's provider");
             assertNotNull(e.error().category(), "Error should have a category");
             assertNotNull(e.error().message(), "Error should have a message");
+            ConformanceHarness.assertDiagnostics(e.diagnostics(), providerId(), OperationNames.DELETE,
+                    OperationOutcome.FAILURE);
         }
     }
 
@@ -90,10 +91,8 @@ public abstract class DiagnosticsConformanceTest {
                     java.util.Map.of("test", true),
                     OperationOptions.defaults());
         } catch (MulticloudDbException e) {
-            if (e.diagnostics() != null) {
-                assertEquals(OperationNames.UPSERT, e.diagnostics().operation(),
-                        "Diagnostics operation name must match OperationNames.UPSERT");
-            }
+            ConformanceHarness.assertDiagnostics(e.diagnostics(), providerId(), OperationNames.UPSERT,
+                    OperationOutcome.FAILURE);
             assertNotNull(e.error().operation());
         }
     }
@@ -106,10 +105,8 @@ public abstract class DiagnosticsConformanceTest {
         try {
             client.delete(badAddress, MulticloudDbKey.of("no-key", "no-key"), OperationOptions.defaults());
         } catch (MulticloudDbException e) {
-            if (e.diagnostics() != null) {
-                assertEquals(OperationNames.DELETE, e.diagnostics().operation(),
-                        "Diagnostics operation name must match OperationNames.DELETE");
-            }
+            ConformanceHarness.assertDiagnostics(e.diagnostics(), providerId(), OperationNames.DELETE,
+                    OperationOutcome.FAILURE);
         }
     }
 

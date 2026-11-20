@@ -23,6 +23,12 @@ class DocumentValidationConformanceTest {
     void depthAndNativeSizeDelegationAreConsistentAcrossProvidersAndWrites() throws Exception {
         for (ProviderId provider : List.of(ProviderId.COSMOS, ProviderId.DYNAMO, ProviderId.SPANNER)) {
             var boundary = mock(MulticloudDbProviderClient.class);
+            when(boundary.create(any(), any(), anyMap(), any())).thenReturn(
+                    new OperationResponse<>(null, OperationDiagnostics.builder(provider, "create").build()));
+            when(boundary.update(any(), any(), anyMap(), any())).thenReturn(
+                    new OperationResponse<>(null, OperationDiagnostics.builder(provider, "update").build()));
+            when(boundary.upsert(any(), any(), anyMap(), any())).thenReturn(
+                    new OperationResponse<>(null, OperationDiagnostics.builder(provider, "upsert").build()));
             try (var client = new DefaultMulticloudDbClient(boundary,
                     MulticloudDbClientConfig.builder().provider(provider).build())) {
                 for (String operation : List.of("create", "update", "upsert")) {

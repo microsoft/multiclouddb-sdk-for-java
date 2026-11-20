@@ -84,6 +84,7 @@ public abstract class ErrorNormalizationConformanceTest {
      * and a non-negative duration.
      */
     private void assertDiagnosticsPopulated(MulticloudDbException ex, String expectedOp) {
+        ConformanceHarness.assertDiagnostics(ex.diagnostics(), providerId(), expectedOp, OperationOutcome.FAILURE);
         OperationDiagnostics diag = ex.diagnostics();
         assertNotNull(diag, "Exception must carry OperationDiagnostics");
         assertEquals(providerId(), diag.provider(),

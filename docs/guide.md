@@ -539,7 +539,7 @@ ObjectMapper mapper = applicationConfiguredMapper;
 Map<String, Object> fields = mapper.convertValue(customer,
         new TypeReference<Map<String, Object>>() {});
 client.upsert(address, key, fields);
-DocumentResult result = client.read(address, key);
+DocumentResult result = client.read(address, key).result();
 if (result == null) throw new IllegalStateException("Document not found.");
 Customer restored = mapper.convertValue(result.document(), Customer.class);
 ```
@@ -562,7 +562,7 @@ illustrates handwritten mapping:
 PlainCustomerMapping mapping = new PlainCustomerMapping();
 PlainCustomerMapping.Customer customer = new PlainCustomerMapping.Customer("Grace", 7);
 client.create(address, key, mapping.toMap(customer));
-DocumentResult result = client.read(address, key);
+DocumentResult result = client.read(address, key).result();
 if (result == null) throw new IllegalStateException("Document not found.");
 PlainCustomerMapping.Customer restored = mapping.fromMap(result.document());
 ```
@@ -614,7 +614,7 @@ Map<String, Object> input = Map.of(
         "largeInteger", largeInteger.toString(),
         "amount", amount.toString());
 client.upsert(address, key, input);
-DocumentResult result = client.read(address, key);
+DocumentResult result = client.read(address, key).result();
 if (result == null) throw new IllegalStateException("Document not found.");
 BigInteger restoredInteger = new BigInteger((String) result.document().get("largeInteger"));
 BigDecimal restoredAmount = new BigDecimal((String) result.document().get("amount"));
@@ -666,10 +666,12 @@ post-images for every event or native configuration.
 
 #### Migrating from beta.2
 
-Against released API **0.1.0-beta.2**, write signatures remain Maps,
+Against released API **0.1.0-beta.2**, write payload arguments remain Maps,
 `DocumentResult.document()` changes from ObjectNode to Map, and
-`ChangeEvent.data()` changes from JsonNode to Object. A missing point read still
-returns null. QueryPage remains `List<Map<String, Object>>`, including nested
+`ChangeEvent.data()` changes from JsonNode to Object. Calls now return common
+responses as described in [Response Migration](#response-migration); a missing
+point read has a null result inside its non-null response. QueryPage retains
+`List<Map<String, Object>>`, including nested
 scalar/array values and existing unsupported top-level result errors.
 
 Some no-image change-feed paths that previously synthesized an empty object or
@@ -965,15 +967,16 @@ client.create(addr, key, doc);   // Fails if document already exists
 | Operation | `createItem()` | `putItem()` with `attribute_not_exists` condition | `newInsertBuilder` mutation |
 | If exists | Throws CONFLICT | Throws CONFLICT | Throws CONFLICT |
 | If not exists | Create | Create | Create |
-| Return value | None (void) | None (void) | None (void) |
+| Return value | `OperationResponse<Void>` | `OperationResponse<Void>` | `OperationResponse<Void>` |
 
 ### read - Point Read
 
 `read()` performs a single-document read using the full key. Returns a
-`DocumentResult` wrapping a detached mutable Map, or `null` if not found.
+non-null `OperationResponse<DocumentResult>`. Its `result()` contains a detached
+mutable Map, or is null on absence; diagnostics then report `NOT_FOUND`.
 
 ```java
-DocumentResult result = client.read(addr, MulticloudDbKey.of("customer-456", "order-123"));
+DocumentResult result = client.read(addr, MulticloudDbKey.of("customer-456", "order-123")).result();
 if (result != null) {
     String status = (String) result.document().get("status");
 }
@@ -984,7 +987,7 @@ if (result != null) {
 | Behavior | Cosmos DB | DynamoDB | Spanner |
 |----------|-----------|----------|---------|
 | Operation | `readItem(id, partitionKey)` | `getItem(keyMap)` | `SELECT * WHERE partitionKey=@pk AND sortKey=@sk` |
-| Not found | Returns `null` | Returns `null` | Returns `null` |
+| Not found | Null result, `NOT_FOUND` | Null result, `NOT_FOUND` | Null result, `NOT_FOUND` |
 | Consistency | Session (default) | Eventual (default) | Strong |
 
 Point reads are always efficient because the full key is provided. The provider
@@ -1011,7 +1014,7 @@ client.update(addr, MulticloudDbKey.of("customer-456", "order-123"), updated);  
 | Operation | `replaceItem()` | `putItem()` with `attribute_exists` condition | `newUpdateBuilder` mutation |
 | If exists | Replace | Replace | Update supplied fields |
 | If not exists | Throws NOT_FOUND | Throws NOT_FOUND | Throws NOT_FOUND |
-| Return value | None (void) | None (void) | None (void) |
+| Return value | `OperationResponse<Void>` | `OperationResponse<Void>` | `OperationResponse<Void>` |
 
 ### upsert - Create or Replace
 
@@ -1033,7 +1036,7 @@ client.upsert(addr, key, doc);   // Creates or replaces the document
 | Operation | `upsertItem()` | `putItem()` (no condition) | `insertOrUpdate` mutation |
 | If exists | Replace | Replace | Replace |
 | If not exists | Create | Create | Create |
-| Return value | None (void) | None (void) | None (void) |
+| Return value | `OperationResponse<Void>` | `OperationResponse<Void>` | `OperationResponse<Void>` |
 
 ### delete - Idempotent Delete (silent on missing key)
 
@@ -1050,9 +1053,11 @@ client.delete(addr, MulticloudDbKey.of("customer-456", "order-123"));
 client.delete(addr, MulticloudDbKey.of("customer-456", "order-123"));
 ```
 
-If you need to detect whether a key exists, use `read()` — it returns
-`null` on every provider when the key does not exist, and does not mutate
-state. `update()` also throws `NOT_FOUND` on a missing key, but it
+If you need to detect whether a key exists, use `read()` — it returns a
+non-null response with `result() == null` and `diagnostics().outcome() == NOT_FOUND` when
+the key does not exist, and does not mutate state. Check
+`client.read(addr, key).result() != null`, not whether the response is non-null.
+`update()` also throws `NOT_FOUND` on a missing key, but it
 requires a document body and **overwrites the existing document on hit**,
 so it is not a safe pure existence probe.
 
@@ -1062,7 +1067,7 @@ so it is not a safe pure existence probe.
 |----------|-----------|----------|---------|
 | Operation | `deleteItem(id, partitionKey)` | `deleteItem` (no condition) | `Mutation.delete(table, key)` |
 | Not found | 404 swallowed (silent) | Silent (native) | Silent (native) |
-| Return value | None (void) | None (void) | None (void) |
+| Return value | `OperationResponse<Void>` | `OperationResponse<Void>` | `OperationResponse<Void>` |
 
 
 ### Document Field Injection
@@ -1742,7 +1747,7 @@ point-in-time read of a whole collection, use `query()`.
 |---|---|
 | `ChangeFeedCursor` | An opaque, immutable position in the stream. Persist via `cursor.toToken(serialize)` / `ChangeFeedCursor.fromToken(token, deserialize)`; the token wire format is intentionally opaque and may evolve across SDK versions. |
 | `ChangeFeedCursor.now()` | A provider-agnostic sentinel meaning "the live tip at the time of the next read". The first `readChanges` call hydrates it. |
-| `client.listCursors(address)` | Discovers the current set of provider-side partitions and returns one cursor per partition, each positioned at the live tip. Use this to seed a multi-threaded reader. On Cosmos this fetches the feed ranges and runs a one-item warmup query per range to capture a live-tip continuation, so the RU cost scales with the partition count; cache the cursors for the lifetime of your reader rather than calling `listCursors` per page. |
+| `client.listCursors(address).result()` | Discovers the current set of provider-side partitions and returns one cursor per partition, each positioned at the live tip. Use this to seed a multi-threaded reader. On Cosmos this fetches the feed ranges and runs a one-item warmup query per range to capture a live-tip continuation, so the RU cost scales with the partition count; cache the cursors for the lifetime of your reader rather than calling `listCursors` per page. |
 | `client.readChanges(address, cursor)` | Drains **one page** of events from `cursor` and returns a `ChangeFeedPage` carrying `events`, `nextCursor`, `hasMore`, and `terminal` flags. |
 | `CursorExpiredException` | Thrown when the SDK detects that a cursor can no longer be honoured (provider trimmed events, client-side 24h age cap, malformed/wrong-provider/wrong-resource token). |
 
@@ -1889,7 +1894,7 @@ A complete runnable worker-pool example will ship in a follow-up release. The
 sketch:
 
 ```java
-List<ChangeFeedCursor> cursors = client.listCursors(address);
+List<ChangeFeedCursor> cursors = client.listCursors(address).result();
 ExecutorService pool = Executors.newFixedThreadPool(cursors.size());
 for (ChangeFeedCursor seed : cursors) {
     pool.submit(() -> runWorker(client, address, seed));
@@ -2080,7 +2085,7 @@ OperationOptions opts = OperationOptions.builder()
         .includeMetadata(true)
         .build();
 
-DocumentResult result = client.read(address, key, opts);
+DocumentResult result = client.read(address, key, opts).result();
 DocumentMetadata meta = result.metadata();
 
 if (meta != null) {
@@ -2104,7 +2109,7 @@ Fields the provider cannot supply are returned as `null`. Use
 ```java
 if (client.capabilities().isSupported(Capability.WRITE_TIMESTAMP)) {
     DocumentResult r = client.read(address, key,
-            OperationOptions.builder().includeMetadata(true).build());
+            OperationOptions.builder().includeMetadata(true).build()).result();
     System.out.println(r.metadata().lastModified());
 }
 ```
@@ -2188,7 +2193,48 @@ It does not change cursor validation or provider read/query/feed parser limits.
 
 ## Provider Diagnostics
 
-Every operation can return structured diagnostics via `OperationDiagnostics`. Diagnostics are available on `QueryPage` and can be accessed after read/write operations through provider-specific logging (SLF4J).
+Point writes, point reads, cursor discovery and management calls return
+`OperationResponse<T>` with `result()` and `diagnostics()`. Query and change-feed
+calls retain `QueryPage` and `ChangeFeedPage`, each with the same
+`OperationDiagnostics` type. Database failures still throw
+`MulticloudDbException`; its diagnostics preserve the typed error and available
+native metadata. Existing ordinary Java validation exceptions are not converted
+just to attach diagnostics.
+
+### Point Diagnostics
+
+```java
+OperationResponse<DocumentResult> response = client.read(address, key);
+OperationDiagnostics diag = response.diagnostics();
+if (diag.outcome() == OperationOutcome.NOT_FOUND) {
+    // The response and diagnostics still exist; response.result() is null.
+} else {
+    Map<String, Object> document = response.result().document();
+}
+
+System.out.println(diag.startTime());
+System.out.println(diag.endTime());
+System.out.println(diag.duration());
+ResourceConsumption consumption = diag.consumption();
+if (consumption != null) {
+    System.out.printf("%s %s (coverage=%s)%n",
+            consumption.amount(), consumption.unit(), consumption.coverage());
+}
+```
+
+Times describe the public wrapper call, including native retries and result
+materialization, not an individual service request. `duration()` uses a
+monotonic clock; wall-clock start/end may move backward after a clock adjustment.
+The outcome is independent of native status: a Cosmos read miss can have
+HTTP 404 with `NOT_FOUND`, a Dynamo read miss HTTP 200 with `NOT_FOUND`, and an
+idempotent Cosmos delete HTTP 404 with `SUCCESS`.
+
+Consumption is observed RU or capacity, **not currency**. Null means unavailable;
+a present zero is a measured zero. `coverage()` is `UNKNOWN` for current point/page
+mappings: the returned amount is not a guaranteed total across hidden retries
+or internal requests. Do not combine different units. Legacy `requestCharge()`
+still uses zero for both unavailable and measured zero; old builder calls do
+not automatically populate the new consumption field.
 
 ### Query Diagnostics
 
@@ -2200,34 +2246,111 @@ QueryRequest q = QueryRequest.builder()
 
 QueryPage page = client.query(address, q);
 
-OperationDiagnostics diag = page.diagnostics();  // may be null
-if (diag != null) {
-    System.out.printf("Provider  : %s%n", diag.provider().id());
-    System.out.printf("Operation : %s%n", diag.operation());
-    System.out.printf("Latency   : %s ms%n", diag.duration().toMillis());
+OperationDiagnostics diag = page.diagnostics(); // non-null on SDK-completed pages
+System.out.printf("Provider  : %s%n", diag.provider().id());
+System.out.printf("Operation : %s%n", diag.operation());
+System.out.printf("Latency   : %s ms%n", diag.duration().toMillis());
+System.out.printf("Item count: %d%n", diag.itemCount());
+if (diag.requestId() != null) {
+    // Use according to the application's correlation-ID logging policy.
     System.out.printf("Request ID: %s%n", diag.requestId());
-    System.out.printf("RU charge : %.2f%n", diag.requestCharge());
-    System.out.printf("Item count: %d%n", diag.itemCount());
-    System.out.printf("ETag      : %s%n", diag.etag());
+}
+if (diag.statusCode() != null) {
+    System.out.printf("Status: %s %d%n", diag.statusCodeDomain(), diag.statusCode());
+}
+if (diag.consumption() != null) {
+    ResourceConsumption usage = diag.consumption();
+    System.out.printf("Usage: %s %s (%s)%n", usage.amount(), usage.unit(), usage.coverage());
 }
 ```
 
-### Provider Field Availability
+Manually constructed legacy pages/diagnostics can still have absent diagnostics
+or timing fields. Only results completed by the public client are guaranteed
+to have the common summary.
 
-| Field | Cosmos DB | DynamoDB | Spanner |
-|-------|:---------:|:--------:|:-------:|
-| `requestId` | activityId | x-amzn-RequestId | - |
-| `statusCode` | HTTP status | HTTP status | gRPC code |
-| `requestCharge` | RU cost | consumed capacity | - |
-| `etag` | `_etag` | - | commit timestamp |
-| `sessionToken` | session token | - | - |
-| `itemCount` | ✓ | ✓ | ✓ |
-| `duration` | ✓ | ✓ | ✓ |
+Change-feed pages use the same access pattern:
+
+```java
+// Use a previously acquired cursor on a provider with CHANGE_FEED support.
+ChangeFeedPage page = client.readChanges(address, cursor);
+OperationDiagnostics diag = page.diagnostics();
+System.out.printf("Outcome: %s, events: %d%n", diag.outcome(), diag.itemCount());
+cursor = page.nextCursor(); // Preserve the cursor separately from diagnostics.
+```
+
+### Populated Fields by Operation
+
+| Path | Cosmos DB | DynamoDB | Spanner |
+|---|---|---|---|
+| Common summary | Start/end, monotonic duration, outcome, provider/operation | Same | Same |
+| Point native metadata | HTTP status/Activity ID, ETag/session token, RU when returned | HTTP status/request ID, capacity when returned | No synthesized success status, ID, ETag or consumption |
+| Typed provider failure | Available HTTP status/ID and RU | Available HTTP status/ID; consumption generally unavailable | Available gRPC error code; consumption unavailable |
+| Query page | Activity/correlation ID, session token/response ETag, typed RU when returned, item count; native success status unavailable | HTTP/request ID, typed capacity when returned (Query/Scan and both PartiQL routes), item count | Wrapper summary/item count only |
+| Feed page | Observed page ID/tokens/RU and event count; native success status unavailable | GetRecords HTTP/request ID and event count; no capacity value | Wrapper summary/event count only |
+| Cursor/management | Wrapper summary only; no native aggregation | Same; ensureDatabase is a local no-op | Same |
+
+Use `statusCodeDomain()` with `statusCode()`: HTTP and gRPC numbers are different
+domains. `requestId()` is a provider identifier, not a wrapper/trace ID or a list
+of attempts. Cosmos pages prefer Activity ID and fall back to the native
+correlated activity ID when supplied. The pinned Cosmos `FeedResponse` exposes
+no public HTTP status, so successful query/feed pages do not invent HTTP 200
+or 304. A page ETag is native page metadata, not an individual document's ETag.
+DynamoDB prefers response metadata IDs, then HTTP headers; blank/`UNKNOWN`
+sentinels remain unavailable. Both PartiQL routes now request
+`ReturnConsumedCapacity.TOTAL`, matching Query/Scan and point operations.
+Empty native pages still retain their observations. When no native data page
+is produced (including local/terminal or cursor-hydration-only paths), only
+the common summary is guaranteed. Feed observations do not aggregate cursor
+discovery, shard-transition requests or hidden retries. Specialized native
+cursor-expiry and provisioning errors retain their available native diagnostics
+without changing their exception subtype/category. No additional requests,
+profile execution or polling are introduced to populate diagnostics.
+
+### Response Migration
+
+This is a **source/binary return-type change**: recompile applications and
+external provider implementations. Ignoring a write's new return value often
+still compiles, but its JVM descriptor has changed. Unwrap read/cursor results
+with `.result()`; check read absence using `outcome()` or the null result, never
+by testing whether the response itself is null. Public management calls now
+return `OperationResponse<Void>` while their behavior is unchanged. Query/feed
+page types and document ownership remain unchanged.
+
+`duration()` now consistently measures public-wrapper elapsed time rather than
+the previous adapter-only query interval, and `operation()` names the public
+method. Existing native metadata getters remain; new diagnostics extensions
+are additive. SPI point calls return carriers whose metadata is finalized at
+the public wrapper; management/cursor SPI contracts remain unchanged.
+
+### Checking Spanner Billing
+
+Spanner does not return a per-call RU-equivalent charge. Execution time,
+CPU statistics, mutation counts and provisioned Processing Units are not a
+request's monetary cost. **PROFILE is not needed to view billing**, and this
+SDK does not enable it or collect commit statistics for diagnostics.
+
+- Use [Cloud Billing Reports](https://docs.cloud.google.com/billing/docs/how-to/reports)
+  (Billing > Reports), select the billing account or permitted project, filter
+  service to Spanner and choose project/time range; group by SKU for cost
+  components. Visibility depends on billing permissions. Reporting is delayed,
+  not a synchronous per-call bill.
+- Use [Cost table](https://docs.cloud.google.com/billing/docs/how-to/cost-table)
+  (Cost management > Cost table) and invoices/statements for billing-period
+  details. Unfiltered defaults reconcile to invoice/statement totals; filters
+  change totals. Reports uses "Billing period", while Cost table uses
+  "Invoice month"; these are not necessarily calendar-month usage.
+- Optional [BigQuery billing export](https://docs.cloud.google.com/billing/docs/how-to/export-data-bigquery)
+  supports operator-managed analysis, not exact SQL-request prices.
+  Storing/querying export data incurs BigQuery charges. The SDK neither sets
+  up exports nor contacts Billing.
+
+Request/attempt detail, native verbose access, management aggregation and
+MultiCloud-owned OTel/exporter integrations remain separate follow-ups.
 
 ### Structured Logging
 
-All providers emit structured SLF4J log lines at `ERROR` (failures) and
-`DEBUG` (slow operations) levels with a consistent key=value format:
+Existing providers use SLF4J for diagnostics; levels and coverage vary by
+provider/operation. This return API does not change logging configuration:
 
 ```
 cosmos.error op=read db=mydb col=users statusCode=408 subStatus=20001 activityId=abc message=...

@@ -12,6 +12,7 @@ import com.multiclouddb.api.MulticloudDbException;
 import com.multiclouddb.api.MulticloudDbKey;
 import com.multiclouddb.api.OperationNames;
 import com.multiclouddb.api.OperationOptions;
+import com.multiclouddb.api.OperationResponse;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
@@ -36,39 +37,46 @@ import java.util.concurrent.TimeUnit;
  * Write inputs follow {@link com.multiclouddb.api.MulticloudDbClient}'s neutral
  * value contract. Implementations must not mutate or retain caller input after
  * return, and must detach returned data from retained native response state.
+ * Point methods must return a non-null {@link OperationResponse} with non-null
+ * diagnostics, including on an ordinary read miss or idempotent delete.
+ * Native metadata may be unavailable; the public wrapper finalizes timing and outcome.
  */
 public interface MulticloudDbProviderClient extends AutoCloseable {
 
     /**
      * Insert a new document. Fails if a document with the same key already exists.
      *
+     * @return non-null response with null result and available provider metadata
      * @throws MulticloudDbException with category CONFLICT if the key already exists
      */
-    void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
+    OperationResponse<Void> create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Read a document by key.
      *
-     * @return the document result (document + optional metadata), or {@code null} if not found
+     * @return a non-null response with null result on a read miss; the public wrapper finalizes timing
      */
-    DocumentResult read(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
+    OperationResponse<DocumentResult> read(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
 
     /**
      * Update an existing document. Fails if the key does not exist.
      *
+     * @return non-null response with null result and available provider metadata
      * @throws MulticloudDbException with category NOT_FOUND if the key does not exist
      */
-    void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
+    OperationResponse<Void> update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Upsert (create or replace) a document.
+     * @return non-null response with null result and available provider metadata
      */
-    void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
+    OperationResponse<Void> upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Delete a document by key.
+     * @return non-null response with null result, also when the key is absent
      */
-    void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
+    OperationResponse<Void> delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
 
     /**
      * Execute a query and return a single page of results.

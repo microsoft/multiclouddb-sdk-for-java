@@ -8,6 +8,8 @@ import com.multiclouddb.api.*;
 import java.util.Objects;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 /**
  * Conformance test harness utilities.
  * <p>
@@ -43,6 +45,38 @@ public final class ConformanceHarness {
         return new ResourceAddress(
                 ConformanceConfig.databaseFor(provider),
                 ConformanceConfig.tableFor(provider));
+    }
+
+    /** Assert only the common completed-operation contract, not optional native availability. */
+    public static void assertDiagnostics(OperationDiagnostics diagnostics, ProviderId provider,
+                                         String operation, OperationOutcome outcome) {
+        assertNotNull(diagnostics, "Completed operations must carry diagnostics");
+        assertEquals(provider, diagnostics.provider());
+        assertEquals(operation, diagnostics.operation());
+        assertEquals(outcome, diagnostics.outcome());
+        assertNotNull(diagnostics.startTime());
+        assertNotNull(diagnostics.endTime());
+        assertNotNull(diagnostics.duration());
+        assertFalse(diagnostics.duration().isNegative());
+        // Wall clocks may move backward; elapsed duration uses a monotonic clock.
+        if (diagnostics.statusCode() != null) {
+            assertNotNull(diagnostics.statusCodeDomain());
+        }
+        ResourceConsumption consumption = diagnostics.consumption();
+        if (consumption != null) {
+            assertTrue(Double.isFinite(consumption.amount()));
+            assertTrue(consumption.amount() >= 0);
+            assertNotNull(consumption.unit());
+            assertNotNull(consumption.coverage());
+        }
+    }
+
+    /** Validate a non-page response without discarding its payload. */
+    public static <T> T assertResponse(OperationResponse<T> response, ProviderId provider,
+                                       String operation, OperationOutcome outcome) {
+        assertNotNull(response, "A missing read still returns a response");
+        assertDiagnostics(response.diagnostics(), provider, operation, outcome);
+        return response.result();
     }
 
     /**

@@ -9,7 +9,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * A single page of query results with optional diagnostics metadata.
+ * A single page of query results. Public client results include common
+ * diagnostics; manually constructed legacy pages may omit them.
  */
 public final class QueryPage {
 
@@ -41,6 +42,23 @@ public final class QueryPage {
         this.continuationToken = (continuationToken != null && !continuationToken.isEmpty())
                 ? continuationToken : null;
         this.diagnostics = diagnostics;
+    }
+
+    private QueryPage(QueryPage source, OperationDiagnostics diagnostics) {
+        this.items = source.items;
+        this.continuationToken = source.continuationToken;
+        this.diagnostics = diagnostics;
+    }
+
+    /**
+     * Return a page with replacement diagnostics, reusing the already-owned
+     * unmodifiable list and row maps. Nested values retain their existing ownership.
+     *
+     * @param diagnostics replacement diagnostics, or null if unavailable
+     * @return a new page sharing this page's items and continuation token
+     */
+    public QueryPage withDiagnostics(OperationDiagnostics diagnostics) {
+        return new QueryPage(this, diagnostics);
     }
 
 

@@ -24,6 +24,10 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static com.multiclouddb.conformance.ConformanceHarness.assertDiagnostics;
+import static com.multiclouddb.conformance.ConformanceHarness.assertResponse;
+import static com.multiclouddb.api.OperationOutcome.SUCCESS;
+import static com.multiclouddb.api.OperationOutcome.FAILURE;
 
 /**
  * Conformance tests for User Story 14 — Portable Change Feed (FR-cf-001 … FR-cf-014).
@@ -109,7 +113,8 @@ public abstract class ChangeFeedConformanceTest {
     @Order(1)
     @DisplayName("FR-cf-001: listCursors returns >=1 cursor for a provisioned resource")
     void listCursorsReturnsAtLeastOne() {
-        List<ChangeFeedCursor> cursors = client.listCursors(getAddress());
+        List<ChangeFeedCursor> cursors = assertResponse(client.listCursors(getAddress()),
+                client.providerId(), "listCursors", SUCCESS);
         assertNotNull(cursors, "listCursors must never return null");
         assertFalse(cursors.isEmpty(),
                 "listCursors must return >=1 cursor for a provisioned resource");
@@ -120,7 +125,7 @@ public abstract class ChangeFeedConformanceTest {
     @Order(2)
     @DisplayName("FR-cf-002: cursor tokens round-trip (toToken / fromToken) preserve position")
     void cursorTokenRoundTrip() {
-        List<ChangeFeedCursor> cursors = client.listCursors(getAddress());
+        List<ChangeFeedCursor> cursors = client.listCursors(getAddress()).result();
         for (ChangeFeedCursor c : cursors) {
             String wire = c.toToken(com.multiclouddb.conformance.ApplicationJson::write);
             ChangeFeedCursor revived = ChangeFeedCursor.fromToken(wire, com.multiclouddb.conformance.ApplicationJson::read);
@@ -139,7 +144,7 @@ public abstract class ChangeFeedConformanceTest {
         Assumptions.assumeTrue(supportsCreateUpdateDeleteDistinction(),
                 "Provider configuration under test does not surface the "
                         + "CREATE/UPDATE distinction (e.g., Cosmos LatestVersion mode)");
-        ChangeFeedCursor[] cursors = client.listCursors(getAddress()).toArray(new ChangeFeedCursor[0]);
+        ChangeFeedCursor[] cursors = client.listCursors(getAddress()).result().toArray(new ChangeFeedCursor[0]);
         MulticloudDbKey key = ConformanceHarness.uniqueKey("cf-create");
         try {
             client.upsert(getAddress(), key, Map.of("v", 1));
@@ -169,7 +174,7 @@ public abstract class ChangeFeedConformanceTest {
     @Order(3)
     @DisplayName("FR-cf-003: a collected null-valued field remains present in the payload")
     void nullValuedFieldRemainsPresent() throws Exception {
-        ChangeFeedCursor[] cursors = client.listCursors(getAddress()).toArray(new ChangeFeedCursor[0]);
+        ChangeFeedCursor[] cursors = client.listCursors(getAddress()).result().toArray(new ChangeFeedCursor[0]);
         MulticloudDbKey key = ConformanceHarness.uniqueKey("cf-null-field");
         try {
             client.upsert(getAddress(), key, java.util.Collections.singletonMap("v", null));
@@ -190,7 +195,7 @@ public abstract class ChangeFeedConformanceTest {
     void updateEventSurfacesAfterUpsert() throws Exception {
         MulticloudDbKey key = ConformanceHarness.uniqueKey("cf-update");
         client.upsert(getAddress(), key, Map.of("v", 1));
-        ChangeFeedCursor[] cursors = client.listCursors(getAddress()).toArray(new ChangeFeedCursor[0]);
+        ChangeFeedCursor[] cursors = client.listCursors(getAddress()).result().toArray(new ChangeFeedCursor[0]);
         try {
             client.upsert(getAddress(), key, Map.of("v", 2));
             ChangeEvent ev = waitForEventByKey(cursors, key, propagationTimeout());
@@ -212,7 +217,7 @@ public abstract class ChangeFeedConformanceTest {
                         + "(e.g., Cosmos LatestVersion mode)");
         MulticloudDbKey key = ConformanceHarness.uniqueKey("cf-delete");
         client.upsert(getAddress(), key, Map.of("v", 1));
-        ChangeFeedCursor[] cursors = client.listCursors(getAddress()).toArray(new ChangeFeedCursor[0]);
+        ChangeFeedCursor[] cursors = client.listCursors(getAddress()).result().toArray(new ChangeFeedCursor[0]);
         client.delete(getAddress(), key);
         ChangeEvent ev = waitForEventByKey(cursors, key, propagationTimeout());
         assertNotNull(ev, "expected DELETE event for key " + key);
@@ -264,7 +269,7 @@ public abstract class ChangeFeedConformanceTest {
     @Order(7)
     @DisplayName("FR-cf-007: resuming from a saved nextCursor token continues after the checkpoint")
     void resumeFromSavedToken() throws Exception {
-        ChangeFeedCursor[] cursors = client.listCursors(getAddress()).toArray(new ChangeFeedCursor[0]);
+        ChangeFeedCursor[] cursors = client.listCursors(getAddress()).result().toArray(new ChangeFeedCursor[0]);
         MulticloudDbKey first = ConformanceHarness.uniqueKey("cf-resume-1");
         MulticloudDbKey second = ConformanceHarness.uniqueKey("cf-resume-2");
         try {
@@ -275,7 +280,7 @@ public abstract class ChangeFeedConformanceTest {
             // Capture the cursor *after* observing the first event.
             // Re-listCursors and drain to ensure we are caught up before the second write.
             ChangeFeedCursor[] resumeCursors = drainToCaughtUp(
-                    client.listCursors(getAddress()).toArray(new ChangeFeedCursor[0]));
+                    client.listCursors(getAddress()).result().toArray(new ChangeFeedCursor[0]));
             // Persist as wire form
             String[] wires = new String[resumeCursors.length];
             for (int i = 0; i < wires.length; i++) wires[i] = resumeCursors[i].toToken(com.multiclouddb.conformance.ApplicationJson::write);
@@ -333,6 +338,7 @@ public abstract class ChangeFeedConformanceTest {
                 () -> client.readChanges(getAddress(), cursor));
         assertEquals(CursorTokenCodec.REASON_PROVIDER_MISMATCH,
                 ex.error().providerDetails().get("reason"));
+        assertDiagnostics(ex.diagnostics(), client.providerId(), "readChanges", FAILURE);
     }
 
     // -------------------------------------------- FR-cf-010
@@ -353,6 +359,7 @@ public abstract class ChangeFeedConformanceTest {
                 () -> client.readChanges(getAddress(), cursor));
         assertEquals(CursorTokenCodec.REASON_RESOURCE_MISMATCH,
                 ex.error().providerDetails().get("reason"));
+        assertDiagnostics(ex.diagnostics(), client.providerId(), "readChanges", FAILURE);
     }
 
     // -------------------------------------------- FR-cf-011
@@ -372,11 +379,13 @@ public abstract class ChangeFeedConformanceTest {
     @DisplayName("FR-cf-012: nextCursor on an empty page is non-null and re-callable")
     void emptyPageNextCursorIsCallable() {
         ChangeFeedCursor[] cursors = drainToCaughtUp(
-                client.listCursors(getAddress()).toArray(new ChangeFeedCursor[0]));
+                client.listCursors(getAddress()).result().toArray(new ChangeFeedCursor[0]));
         for (ChangeFeedCursor c : cursors) {
             assertNotNull(c, "drained cursor must be non-null");
             // Reading from the caught-up cursor returns an empty page with a non-null nextCursor.
             ChangeFeedPage empty = client.readChanges(getAddress(), c);
+            assertDiagnostics(empty.diagnostics(), client.providerId(), "readChanges", SUCCESS);
+            assertEquals(empty.events().size(), empty.diagnostics().itemCount());
             assertNotNull(empty.nextCursor(), "empty page must still carry a non-null nextCursor");
             // And calling readChanges again must not throw.
             assertDoesNotThrow(() -> client.readChanges(getAddress(), empty.nextCursor()));
@@ -388,7 +397,7 @@ public abstract class ChangeFeedConformanceTest {
     @Order(13)
     @DisplayName("FR-cf-013: hasMore flips false once the cursor catches up")
     void hasMoreFlipsFalseOnceCaughtUp() {
-        ChangeFeedCursor[] cursors = client.listCursors(getAddress()).toArray(new ChangeFeedCursor[0]);
+        ChangeFeedCursor[] cursors = client.listCursors(getAddress()).result().toArray(new ChangeFeedCursor[0]);
         ChangeFeedCursor[] caughtUp = drainToCaughtUp(cursors);
         for (ChangeFeedCursor c : caughtUp) {
             ChangeFeedPage page = client.readChanges(getAddress(), c);
@@ -403,7 +412,7 @@ public abstract class ChangeFeedConformanceTest {
     @DisplayName("FR-cf-014: nextCursor's token issued-at is fresh, not the original mint time")
     void nextCursorIssuedAtIsFresh() {
         long beforeRead = System.currentTimeMillis();
-        ChangeFeedCursor[] cursors = client.listCursors(getAddress()).toArray(new ChangeFeedCursor[0]);
+        ChangeFeedCursor[] cursors = client.listCursors(getAddress()).result().toArray(new ChangeFeedCursor[0]);
         for (ChangeFeedCursor c : cursors) {
             ChangeFeedPage page = client.readChanges(getAddress(), c);
             long issuedAt = page.nextCursor().token().issuedAtEpochMillis();
@@ -431,6 +440,8 @@ public abstract class ChangeFeedConformanceTest {
             boolean progressed = false;
             for (int i = 0; i < live.length; i++) {
                 ChangeFeedPage page = client.readChanges(getAddress(), live[i]);
+                assertDiagnostics(page.diagnostics(), client.providerId(), "readChanges", SUCCESS);
+                assertEquals(page.events().size(), page.diagnostics().itemCount());
                 live[i] = page.nextCursor();
                 for (ChangeEvent ev : page.events()) {
                     if (ev.key().equals(key)) return ev;
@@ -463,6 +474,8 @@ public abstract class ChangeFeedConformanceTest {
             boolean progressed = false;
             for (int i = 0; i < live.length; i++) {
                 ChangeFeedPage page = client.readChanges(getAddress(), live[i]);
+                assertDiagnostics(page.diagnostics(), client.providerId(), "readChanges", SUCCESS);
+                assertEquals(page.events().size(), page.diagnostics().itemCount());
                 live[i] = page.nextCursor();
                 for (ChangeEvent ev : page.events()) {
                     sink.add(ev);
@@ -487,6 +500,8 @@ public abstract class ChangeFeedConformanceTest {
             boolean anyMore = false;
             for (int i = 0; i < live.length; i++) {
                 ChangeFeedPage page = client.readChanges(getAddress(), live[i]);
+                assertDiagnostics(page.diagnostics(), client.providerId(), "readChanges", SUCCESS);
+                assertEquals(page.events().size(), page.diagnostics().itemCount());
                 live[i] = page.nextCursor();
                 if (page.hasMore() || !page.events().isEmpty()) anyMore = true;
             }

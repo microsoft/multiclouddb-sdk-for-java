@@ -641,6 +641,11 @@ RBAC-mode database creation. Simplifies `ResourceProvisioner` sample to use sing
 
 ## Phase 16: User Story 6 — Document TTL and Write Metadata (Priority: P2)
 
+**Historical completion record:** the current diagnostics contract wraps the
+Map-based `DocumentResult` in `OperationResponse<DocumentResult>`. The tasks
+below record the earlier implementation, not the current return signature;
+see [response migration](../../docs/guide.md#response-migration).
+
 **Goal**: Applications can set a TTL on individual documents at write time (where supported) and retrieve document metadata (remaining TTL + write timestamp) on reads via an opt-in `OperationOptions` flag. `read()` returns `DocumentResult` wrapping the document and optional metadata.
 
 ### New Types for User Story 6

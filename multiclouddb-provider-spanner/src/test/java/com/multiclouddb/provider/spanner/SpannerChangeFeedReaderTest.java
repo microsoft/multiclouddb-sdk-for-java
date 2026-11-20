@@ -10,12 +10,18 @@ import com.google.cloud.spanner.Statement;
 import com.google.cloud.spanner.Struct;
 import com.google.cloud.spanner.ResultSets;
 import com.google.cloud.spanner.Value;
+import com.google.cloud.spanner.ErrorCode;
+import com.google.cloud.spanner.SpannerExceptionFactory;
 import com.google.cloud.Timestamp;
 import com.multiclouddb.api.OperationOptions;
 import com.multiclouddb.api.changefeed.ChangeEvent;
 import com.multiclouddb.api.changefeed.ChangeType;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.ResourceAddress;
+import com.multiclouddb.api.MulticloudDbException;
+import com.multiclouddb.api.MulticloudDbErrorCategory;
+import com.multiclouddb.api.StatusCodeDomain;
+import com.multiclouddb.api.changefeed.CursorExpiredException;
 import com.multiclouddb.api.changefeed.ChangeFeedCursor;
 import com.multiclouddb.api.changefeed.internal.CursorAnchor;
 import com.multiclouddb.api.changefeed.internal.CursorToken;
@@ -33,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
 /**
@@ -42,6 +49,37 @@ import static org.mockito.Mockito.when;
 class SpannerChangeFeedReaderTest {
 
     private static final ResourceAddress ADDR = new ResourceAddress("test_db", "test_collection");
+
+    @Test
+    void feedErrorsPreserveGrpcStatusWithoutChangingCategoriesOrCauses() {
+        DatabaseClient db = mock(DatabaseClient.class);
+        ReadContext context = mock(ReadContext.class);
+        when(db.singleUse()).thenReturn(context);
+        var cursor = new ChangeFeedCursor(new CursorToken(ProviderId.SPANNER, ADDR,
+                System.currentTimeMillis(), CursorAnchor.CONTINUING,
+                List.of(new PartitionPosition("partition", Timestamp.now() + "|0|0"))));
+        var reader = new SpannerChangeFeedReader(ProviderId.SPANNER, db, Map.of());
+        for (ErrorCode code : List.of(ErrorCode.OUT_OF_RANGE, ErrorCode.NOT_FOUND, ErrorCode.UNAVAILABLE)) {
+            var nativeError = SpannerExceptionFactory.newSpannerException(code, "change stream failure");
+            doThrow(nativeError).when(context).executeQuery(any(Statement.class));
+            var failure = org.junit.jupiter.api.Assertions.assertThrows(MulticloudDbException.class,
+                    () -> reader.readChanges(ADDR, cursor, OperationOptions.defaults()));
+            if (code == ErrorCode.OUT_OF_RANGE) {
+                org.junit.jupiter.api.Assertions.assertInstanceOf(CursorExpiredException.class, failure);
+                assertEquals(11, failure.diagnostics().statusCode());
+            } else if (code == ErrorCode.NOT_FOUND) {
+                assertEquals(MulticloudDbErrorCategory.UNSUPPORTED_CAPABILITY, failure.error().category());
+                assertEquals(5, failure.diagnostics().statusCode());
+            } else {
+                assertEquals(MulticloudDbErrorCategory.PROVIDER_ERROR, failure.error().category());
+                assertEquals(14, failure.diagnostics().statusCode());
+            }
+            org.junit.jupiter.api.Assertions.assertSame(nativeError, failure.getCause());
+            assertEquals(StatusCodeDomain.GRPC, failure.diagnostics().statusCodeDomain());
+            assertNull(failure.diagnostics().consumption());
+            assertNull(failure.diagnostics().requestId());
+        }
+    }
 
     @Test
     void finalEventsPreserveSelectedValuesNullEmptyAndFieldDataFiltering() {

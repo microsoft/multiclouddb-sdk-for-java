@@ -167,7 +167,7 @@ class SpannerLegacyRowUpdateEmulatorTest {
         //    place, the SDK leaves FIELD_DATA NULL on legacy rows and the
         //    reader's "no metadata => project every column" fallback returns
         //    all columns.
-        DocumentResult result = client.read(address, MulticloudDbKey.of(pk, sk), null);
+        DocumentResult result = client.read(address, MulticloudDbKey.of(pk, sk), null).result();
         assertNotNull(result, "read() must find the row that was updated");
         Map<String, Object> doc = result.document();
 
@@ -208,7 +208,7 @@ class SpannerLegacyRowUpdateEmulatorTest {
         client.update(address, MulticloudDbKey.of(pk, sk), Map.of("email", "bob@new"), null);
         client.update(address, MulticloudDbKey.of(pk, sk), Map.of("priority", 9L), null);
 
-        DocumentResult result = client.read(address, MulticloudDbKey.of(pk, sk), null);
+        DocumentResult result = client.read(address, MulticloudDbKey.of(pk, sk), null).result();
         assertNotNull(result);
         Map<String, Object> doc = result.document();
         assertEquals("Bob", text(doc, "name"),
@@ -233,7 +233,7 @@ class SpannerLegacyRowUpdateEmulatorTest {
         client.create(address, MulticloudDbKey.of(pk, sk), Map.of("name", "Cara", "email", "cara@x"), null);
         client.update(address, MulticloudDbKey.of(pk, sk), Map.of("email", "cara@new"), null);
 
-        DocumentResult result = client.read(address, MulticloudDbKey.of(pk, sk), null);
+        DocumentResult result = client.read(address, MulticloudDbKey.of(pk, sk), null).result();
         assertNotNull(result);
         Map<String, Object> doc = result.document();
         assertEquals("Cara", text(doc, "name"),

@@ -394,7 +394,8 @@ final class SpannerChangeFeedReader {
                                 + e.getMessage(),
                         providerId, "readChanges", false,
                         Map.of(CursorTokenCodec.DETAIL_REASON, CursorTokenCodec.REASON_PROVIDER_TRIMMED,
-                                "errorCode", e.getErrorCode().name())), e);
+                                "errorCode", e.getErrorCode().name())), e)
+                        .withDiagnostics(SpannerErrorMapper.diagnostics(e, OperationNames.READ_CHANGES));
             }
             // NOT_FOUND on READ_<stream> with a "change stream" message is the
             // operator forgot to provision the change stream — symmetric with
@@ -412,7 +413,8 @@ final class SpannerChangeFeedReader {
                                 + "Run: CREATE CHANGE STREAM " + streamName
                                 + " FOR <collection> OPTIONS (value_capture_type='NEW_ROW'); ",
                         providerId, "readChanges", false,
-                        Map.of("reason", "stream_not_enabled")), e);
+                        Map.of("reason", "stream_not_enabled")), e)
+                        .withDiagnostics(SpannerErrorMapper.diagnostics(e, OperationNames.READ_CHANGES));
             }
             // Other INVALID_ARGUMENT / NOT_FOUND / failures: route through the
             // shared mapper rather than blanket-mapping to CURSOR_EXPIRED.
@@ -983,6 +985,7 @@ final class SpannerChangeFeedReader {
                 || e.getErrorCode() == ErrorCode.DEADLINE_EXCEEDED;
         return new MulticloudDbException(new MulticloudDbError(
                 MulticloudDbErrorCategory.PROVIDER_ERROR, e.getMessage(),
-                providerId, operation, retryable, details), e);
+                providerId, operation, retryable, details), e)
+                .withDiagnostics(SpannerErrorMapper.diagnostics(e, operation));
     }
 }

@@ -9,6 +9,20 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **Breaking:** Point, cursor-discovery and management calls now return
+  `OperationResponse<T>`; read absence is a non-null response with null result
+  and `NOT_FOUND` outcome. Query/feed keep their page types. Recompile clients
+  and migrate point SPI implementations; see [response migration](../docs/guide.md#response-migration).
+- Add common start/end timestamps, monotonic wrapper duration, outcome,
+  HTTP/gRPC status domain and nullable unit/coverage-aware consumption.
+  Preserve legacy getters and ordinary validation exception behavior; enrich
+  typed SDK errors without replacing their subtype. Query duration now covers
+  the public wrapper. Management summaries do not aggregate child operations.
+- Attach query diagnostics without re-copying already-owned row maps;
+  public `QueryPage` constructors retain their defensive copies.
+- Keep blank/`UNKNOWN` fallback request IDs unavailable in normalized error
+  diagnostics without changing the original provider error details.
+
 - **Breaking:** Narrow cursor deserializer callback numeric results to the exact
   Byte, Short, Integer, Long, Float, Double, BigInteger and BigDecimal classes.
   Previously accepted BigInteger/BigDecimal subclasses now fail with the existing

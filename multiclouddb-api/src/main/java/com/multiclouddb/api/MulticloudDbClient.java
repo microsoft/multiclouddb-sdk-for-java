@@ -20,6 +20,9 @@ import java.util.Map;
  * <p>
  * There are no code-level escape hatches. Diagnostics and provider-specific
  * opt-ins are controlled via {@link MulticloudDbClientConfig} only.
+ * Completed operations expose common diagnostics through {@link OperationResponse},
+ * {@link QueryPage}, {@link ChangeFeedPage}, or a typed {@link MulticloudDbException}.
+ * Existing ordinary Java validation exceptions retain their behavior.
  *
  * <h2>Document values and ownership</h2>
  * The document Map passed to create, update, or upsert may contain supported
@@ -53,13 +56,13 @@ public interface MulticloudDbClient extends AutoCloseable {
      * @param options  operation options (timeout, etc.)
      * @throws MulticloudDbException with category CONFLICT if the key already exists
      */
-    void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
+    OperationResponse<Void> create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Insert a new document using default options. Fails if key already exists.
      */
-    default void create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document) {
-        create(address, key, document, OperationOptions.defaults());
+    default OperationResponse<Void> create(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document) {
+        return create(address, key, document, OperationOptions.defaults());
     }
 
     /**
@@ -69,14 +72,14 @@ public interface MulticloudDbClient extends AutoCloseable {
      * @param key     document key
      * @param options operation options; set {@link OperationOptions#includeMetadata()} to
      *                {@code true} to request provider write-metadata
-     * @return the document result (document + optional metadata), or {@code null} if not found
+     * @return a non-null response; result is null and outcome is NOT_FOUND on absence
      */
-    DocumentResult read(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
+    OperationResponse<DocumentResult> read(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
 
     /**
      * Read a document by key, using default options.
      */
-    default DocumentResult read(ResourceAddress address, MulticloudDbKey key) {
+    default OperationResponse<DocumentResult> read(ResourceAddress address, MulticloudDbKey key) {
         return read(address, key, OperationOptions.defaults());
     }
 
@@ -92,14 +95,14 @@ public interface MulticloudDbClient extends AutoCloseable {
      * @param options  operation options
      * @throws MulticloudDbException with category NOT_FOUND if the key does not exist
      */
-    void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
+    OperationResponse<Void> update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Update an existing document using default options. Fails if key does not
      * exist.
      */
-    default void update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document) {
-        update(address, key, document, OperationOptions.defaults());
+    default OperationResponse<Void> update(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document) {
+        return update(address, key, document, OperationOptions.defaults());
     }
 
     /**
@@ -110,14 +113,14 @@ public interface MulticloudDbClient extends AutoCloseable {
      * @param document document payload
      * @param options  operation options (timeout, etc.)
      */
-    void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
+    OperationResponse<Void> upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document, OperationOptions options);
 
     /**
      * Upsert (create or replace) a document identified by key, using default
      * options.
      */
-    default void upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document) {
-        upsert(address, key, document, OperationOptions.defaults());
+    default OperationResponse<Void> upsert(ResourceAddress address, MulticloudDbKey key, Map<String, Object> document) {
+        return upsert(address, key, document, OperationOptions.defaults());
     }
 
     /**
@@ -130,7 +133,7 @@ public interface MulticloudDbClient extends AutoCloseable {
      * <p>
      * Callers that need to detect whether a key exists should use
      * {@link #read(ResourceAddress, MulticloudDbKey, OperationOptions)} — it
-     * returns {@code null} on every provider when the key does not exist, and
+     * returns a response with null result on every provider when the key does not exist, and
      * does not mutate state. {@code update()} also throws {@code NOT_FOUND} on
      * a missing key, but it requires a document body and <strong>overwrites</strong>
      * the existing document on hit, so it is not a safe pure existence probe.
@@ -141,13 +144,13 @@ public interface MulticloudDbClient extends AutoCloseable {
      * @throws MulticloudDbException for any provider error; a missing key is
      *         silently ignored and does not throw
      */
-    void delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
+    OperationResponse<Void> delete(ResourceAddress address, MulticloudDbKey key, OperationOptions options);
 
     /**
      * Delete a document by key, using default options.
      */
-    default void delete(ResourceAddress address, MulticloudDbKey key) {
-        delete(address, key, OperationOptions.defaults());
+    default OperationResponse<Void> delete(ResourceAddress address, MulticloudDbKey key) {
+        return delete(address, key, OperationOptions.defaults());
     }
 
     /**
@@ -196,7 +199,7 @@ public interface MulticloudDbClient extends AutoCloseable {
      *                               {@code CONFLICT} / {@code INTERNAL_ERROR} for
      *                               other failures
      */
-    void ensureDatabase(String database);
+    OperationResponse<Void> ensureDatabase(String database);
 
     /**
      * Ensure a container (table) exists within the given database, creating it if
@@ -214,7 +217,7 @@ public interface MulticloudDbClient extends AutoCloseable {
      * @throws MulticloudDbException if the creation fails for a reason other than
      *                               the resource already existing
      */
-    void ensureContainer(ResourceAddress address);
+    OperationResponse<Void> ensureContainer(ResourceAddress address);
 
     /**
      * Provision a full schema of databases and containers in a single call.
@@ -230,7 +233,7 @@ public interface MulticloudDbClient extends AutoCloseable {
      * @param schema map of database name → list of collection/table names to ensure
      * @throws MulticloudDbException if any database or container creation fails
      */
-    void provisionSchema(java.util.Map<String, java.util.List<String>> schema);
+    OperationResponse<Void> provisionSchema(java.util.Map<String, java.util.List<String>> schema);
 
     // ── Change Feed ────────────────────────────────────────────────────────────
     // Portable pull-based change feed across Cosmos, DynamoDB, and Spanner.
@@ -257,7 +260,7 @@ public interface MulticloudDbClient extends AutoCloseable {
      * across threads.
      *
      * @param address target database + collection
-     * @return one cursor per partition; never {@code null}, never empty for a
+     * @return a response containing one cursor per partition; result is never null or empty for a
      *         provider that has provisioned change feed; ordered as the
      *         provider reports partitions (no portable ordering guarantee).
      * @throws MulticloudDbException with category
@@ -266,7 +269,7 @@ public interface MulticloudDbClient extends AutoCloseable {
      *         {@link Capability#CHANGE_FEED}); other categories for transient or
      *         permanent provider failures.
      */
-    List<ChangeFeedCursor> listCursors(ResourceAddress address);
+    OperationResponse<List<ChangeFeedCursor>> listCursors(ResourceAddress address);
 
     /**
      * Read one page of change events from the given cursor.

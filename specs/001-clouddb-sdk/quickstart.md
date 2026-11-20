@@ -60,7 +60,7 @@ MulticloudDbKey key = MulticloudDbKey.of("partitionKey-123", "sortKey-456");
 Map<String, Object> doc = Map.of("id", "123", "name", "Ada");
 
 client.upsert(resource, key, doc);
-DocumentResult got = client.read(resource, key);  // null if not found
+DocumentResult got = client.read(resource, key).result();  // null if not found
 client.delete(resource, key);
 
 // Portable query expression — works on all providers without changes
@@ -311,7 +311,7 @@ OperationOptions optionsWithMeta = OperationOptions.builder()
     .includeMetadata(true)
     .build();
 
-DocumentResult result = client.read(address, key, optionsWithMeta);
+DocumentResult result = client.read(address, key, optionsWithMeta).result();
 Map<String, Object> doc = result == null ? null : result.document();
 DocumentMetadata meta = result == null ? null : result.metadata();
 if (meta != null) {
@@ -324,7 +324,7 @@ if (meta != null) {
 
 ```java
 // Existing callers: pass OperationOptions.defaults() — no metadata overhead
-DocumentResult result = client.read(address, key, OperationOptions.defaults());
+DocumentResult result = client.read(address, key, OperationOptions.defaults()).result();
 Map<String, Object> doc = result == null ? null : result.document();
 // Null means the item was not found; a present payload is detached and mutable.
 ```

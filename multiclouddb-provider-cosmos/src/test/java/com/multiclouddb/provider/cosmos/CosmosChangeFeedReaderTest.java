@@ -4,6 +4,7 @@
 package com.multiclouddb.provider.cosmos;
 
 import com.azure.cosmos.CosmosContainer;
+import com.azure.cosmos.CosmosException;
 import com.azure.cosmos.models.CosmosChangeFeedRequestOptions;
 import com.azure.cosmos.models.FeedRange;
 import com.azure.cosmos.models.FeedResponse;
@@ -16,6 +17,9 @@ import com.multiclouddb.api.changefeed.ChangeType;
 import com.multiclouddb.api.OperationOptions;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.ResourceAddress;
+import com.multiclouddb.api.ResourceConsumption;
+import com.multiclouddb.api.StatusCodeDomain;
+import com.multiclouddb.api.changefeed.CursorExpiredException;
 import com.multiclouddb.api.changefeed.ChangeFeedCursor;
 import com.multiclouddb.api.changefeed.ChangeFeedPage;
 import com.multiclouddb.api.changefeed.internal.CursorAnchor;
@@ -41,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
 /**
@@ -68,6 +73,67 @@ class CosmosChangeFeedReaderTest {
 
     private CosmosChangeFeedReader newReader() {
         return new CosmosChangeFeedReader(ProviderId.COSMOS);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void emptyFeedPageRetainsNativeMetadataAndObservedZero() {
+        CosmosContainer container = mock(CosmosContainer.class);
+        CosmosPagedIterable<Object> pages = mock(CosmosPagedIterable.class);
+        FeedResponse<Object> response = mock(FeedResponse.class);
+        when(container.queryChangeFeed(any(CosmosChangeFeedRequestOptions.class), eq(Object.class)))
+                .thenReturn(pages);
+        when(pages.iterableByPage()).thenReturn(List.of(response));
+        when(response.getResults()).thenReturn(List.of());
+        when(response.getContinuationToken()).thenReturn("next");
+        when(response.getActivityId()).thenReturn("feed-activity");
+        when(response.getSessionToken()).thenReturn("session");
+        when(response.getResponseHeaders()).thenReturn(Map.of("x-ms-request-charge", "0", "etag", "\"feed-etag\""));
+        var cursor = new ChangeFeedCursor(new CursorToken(ProviderId.COSMOS, ADDR, System.currentTimeMillis(),
+                CursorAnchor.NOW, List.of(new PartitionPosition(FeedRange.forFullRange().toString(), "@@FROM_NOW"))));
+
+        var page = newReader().readChanges(container, ADDR, cursor, OperationOptions.defaults());
+        assertTrue(page.events().isEmpty());
+        assertEquals("next", page.nextCursor().token().partitions().get(0).continuation());
+        assertEquals("feed-activity", page.diagnostics().requestId());
+        assertEquals("session", page.diagnostics().sessionToken());
+        assertEquals("\"feed-etag\"", page.diagnostics().etag());
+        assertEquals(0, page.diagnostics().consumption().amount());
+        assertEquals(ResourceConsumption.Unit.COSMOS_REQUEST_UNIT, page.diagnostics().consumption().unit());
+        org.junit.jupiter.api.Assertions.assertNull(page.diagnostics().statusCode());
+        assertFalse(page.hasMore());
+    }
+
+    @Test
+    void specializedFeedFailuresRetainNativeMetadataAndCause() {
+        CosmosContainer container = mock(CosmosContainer.class);
+        var cursor = new ChangeFeedCursor(new CursorToken(ProviderId.COSMOS, ADDR, System.currentTimeMillis(),
+                CursorAnchor.NOW, List.of(new PartitionPosition(FeedRange.forFullRange().toString(), "@@FROM_NOW"))));
+        for (int status : List.of(410, 400)) {
+            CosmosException nativeError = mock(CosmosException.class);
+            when(nativeError.getStatusCode()).thenReturn(status);
+            when(nativeError.getMessage()).thenReturn("AllVersionsAndDeletes required");
+            when(nativeError.getActivityId()).thenReturn("error-activity");
+            when(nativeError.getRequestCharge()).thenReturn(1.5);
+            when(nativeError.getResponseHeaders()).thenReturn(Map.of(
+                    "x-ms-request-charge", "1.5", "x-ms-session-token", "session", "etag", "\"etag\""));
+            doThrow(nativeError).when(container)
+                    .queryChangeFeed(any(CosmosChangeFeedRequestOptions.class), eq(Object.class));
+            var failure = assertThrows(MulticloudDbException.class,
+                    () -> newReader().readChanges(container, ADDR, cursor, OperationOptions.defaults()));
+            if (status == 410) {
+                org.junit.jupiter.api.Assertions.assertInstanceOf(CursorExpiredException.class, failure);
+            } else {
+                assertEquals(MulticloudDbErrorCategory.UNSUPPORTED_CAPABILITY, failure.error().category());
+            }
+            org.junit.jupiter.api.Assertions.assertSame(nativeError, failure.getCause());
+            assertEquals(status, failure.diagnostics().statusCode());
+            assertEquals(StatusCodeDomain.HTTP, failure.diagnostics().statusCodeDomain());
+            assertEquals("error-activity", failure.diagnostics().requestId());
+            assertEquals(1.5, failure.diagnostics().consumption().amount());
+            assertEquals("session", failure.diagnostics().sessionToken());
+            assertEquals("\"etag\"", failure.diagnostics().etag());
+        }
     }
 
     private static FeedRange mockRange(String label) {

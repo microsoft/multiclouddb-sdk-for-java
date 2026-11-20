@@ -51,5 +51,5 @@ Providers / SDKs:
 ## Design Implications for Multicloud DB’s Portable Contract
 
 - Treat **continuation** as an opaque `continuation_token` string in the portable API, even if the provider uses a structured key (DynamoDB) or has no native token (Spanner).
-- Make **delete-by-key idempotent** in the portable contract (normalize Cosmos 404-on-delete into success). Callers needing to detect a missing key should use `read()`, which returns `null` on every provider when the key does not exist; an opt-in “strict delete” mode was considered and rejected as unnecessary given that `read()` already provides a portable, non-destructive existence probe.
+- Make **delete-by-key idempotent** in the portable contract (normalize Cosmos 404-on-delete into success). Callers needing to detect a missing key use `read()`: its current response has null result and NOT_FOUND outcome on absence. The response/diagnostics remain present; an opt-in strict delete is unnecessary for a non-destructive existence probe.
 - Model **upsert semantics explicitly** (e.g., `UPSERT_REPLACE_ALL` vs `UPSERT_PATCH_COLUMNS`) and capability-gate the stronger semantics for providers that can’t match it.

@@ -132,7 +132,7 @@ ResourceAddress todos = new ResourceAddress("mydb", "todos");
 MulticloudDbKey key = MulticloudDbKey.of("todo-1", "todo-1");
 
 client.upsert(todos, key, doc);                  // Create or replace
-DocumentResult result = client.read(todos, key); // Point read
+DocumentResult result = client.read(todos, key).result(); // null on a read miss
 Map<String, Object> document = result == null ? null : result.document(); // Null if missing
 client.delete(todos, key);                       // Delete
 }

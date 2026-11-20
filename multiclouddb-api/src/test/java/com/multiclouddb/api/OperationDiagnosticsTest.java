@@ -12,6 +12,39 @@ import static org.junit.jupiter.api.Assertions.*;
 class OperationDiagnosticsTest {
 
     @Test
+    void consumptionDistinguishesUnavailableFromZeroAndCopiesWithoutLosingUnits() {
+        var legacy = OperationDiagnostics.builder(ProviderId.DYNAMO, "read", Duration.ZERO)
+                .requestCharge(2).build();
+        assertNull(legacy.consumption());
+        var zero = new ResourceConsumption(0, ResourceConsumption.Unit.DYNAMODB_CAPACITY_UNIT,
+                ResourceConsumption.Coverage.UNKNOWN);
+        var measured = legacy.toBuilder().consumption(zero).build();
+        assertSame(zero, measured.toBuilder().build().consumption());
+        assertEquals(0, measured.requestCharge());
+        assertEquals(2, legacy.requestCharge());
+        assertNull(OperationDiagnostics.builder(ProviderId.SPANNER, "read").build().duration());
+    }
+
+    @Test
+    void consumptionRejectsInvalidAmounts() {
+        for (double invalid : new double[]{-1, Double.NaN, Double.POSITIVE_INFINITY}) {
+            assertThrows(IllegalArgumentException.class, () -> new ResourceConsumption(invalid,
+                    ResourceConsumption.Unit.COSMOS_REQUEST_UNIT, ResourceConsumption.Coverage.UNKNOWN));
+        }
+    }
+
+    @Test
+    void copyingLegacyMetadataAllowsWrapperToSupplyMissingIdentityAndTiming() {
+        var legacy = new OperationDiagnostics(null, null, null, "legacy-request");
+        var completed = legacy.toBuilder().provider(ProviderId.COSMOS).operation("read")
+                .duration(Duration.ofMillis(1)).build();
+        assertEquals("legacy-request", completed.requestId());
+        assertEquals(ProviderId.COSMOS, completed.provider());
+        assertEquals("read", completed.operation());
+        assertNull(legacy.duration());
+    }
+
+    @Test
     void builder_requiredFields_areMandatory() {
         assertThrows(NullPointerException.class,
                 () -> OperationDiagnostics.builder(null, "read", Duration.ZERO));

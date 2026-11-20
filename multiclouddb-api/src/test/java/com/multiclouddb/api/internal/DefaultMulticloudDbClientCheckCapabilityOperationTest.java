@@ -6,6 +6,7 @@ package com.multiclouddb.api.internal;
 import com.multiclouddb.api.Capability;
 import com.multiclouddb.api.CapabilitySet;
 import com.multiclouddb.api.DocumentResult;
+import com.multiclouddb.api.OperationResponse;
 import com.multiclouddb.api.MulticloudDbClient;
 import com.multiclouddb.api.MulticloudDbClientConfig;
 import com.multiclouddb.api.MulticloudDbErrorCategory;
@@ -58,11 +59,11 @@ class DefaultMulticloudDbClientCheckCapabilityOperationTest {
         @Override public ProviderId providerId() { return pid; }
         @Override public CapabilitySet capabilities() { return caps; }
 
-        @Override public void create(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) { throw new UnsupportedOperationException(); }
-        @Override public DocumentResult read(ResourceAddress a, MulticloudDbKey k, OperationOptions o) { throw new UnsupportedOperationException(); }
-        @Override public void update(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) { throw new UnsupportedOperationException(); }
-        @Override public void upsert(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) { throw new UnsupportedOperationException(); }
-        @Override public void delete(ResourceAddress a, MulticloudDbKey k, OperationOptions o) { throw new UnsupportedOperationException(); }
+        @Override public OperationResponse<Void> create(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) { throw new UnsupportedOperationException(); }
+        @Override public OperationResponse<DocumentResult> read(ResourceAddress a, MulticloudDbKey k, OperationOptions o) { throw new UnsupportedOperationException(); }
+        @Override public OperationResponse<Void> update(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) { throw new UnsupportedOperationException(); }
+        @Override public OperationResponse<Void> upsert(ResourceAddress a, MulticloudDbKey k, Map<String, Object> d, OperationOptions o) { throw new UnsupportedOperationException(); }
+        @Override public OperationResponse<Void> delete(ResourceAddress a, MulticloudDbKey k, OperationOptions o) { throw new UnsupportedOperationException(); }
         @Override public QueryPage query(ResourceAddress a, QueryRequest q, OperationOptions o) { throw new UnsupportedOperationException(); }
         @Override public void close() { }
     }

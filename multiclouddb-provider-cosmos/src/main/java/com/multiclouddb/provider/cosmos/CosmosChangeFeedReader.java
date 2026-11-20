@@ -14,6 +14,8 @@ import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.MulticloudDbException;
 import com.multiclouddb.api.MulticloudDbKey;
 import com.multiclouddb.api.OperationOptions;
+import com.multiclouddb.api.OperationDiagnostics;
+import com.multiclouddb.api.OperationNames;
 import com.multiclouddb.api.ProviderId;
 import com.multiclouddb.api.ResourceAddress;
 import com.multiclouddb.api.changefeed.ChangeEvent;
@@ -194,7 +196,8 @@ final class CosmosChangeFeedReader {
                         + "on an account that supports continuous backup. Underlying message: " + msg,
                 providerId, operation, false,
                 Map.of("reason", "avad_not_enabled",
-                        "statusCode", String.valueOf(e.getStatusCode()))), e);
+                        "statusCode", String.valueOf(e.getStatusCode()))), e)
+                .withDiagnostics(CosmosDiagnosticsMapper.from(e, operation));
     }
 
     /**
@@ -327,6 +330,7 @@ final class CosmosChangeFeedReader {
             List<ChangeEvent> events = new ArrayList<>();
             String newContinuation = pos.continuation();
             boolean hasMore = false;
+            OperationDiagnostics diagnostics = null;
 
             if (pageIter.hasNext()) {
                 FeedResponse<Object> page = pageIter.next();
@@ -337,6 +341,8 @@ final class CosmosChangeFeedReader {
                 if (c != null && !c.isBlank()) newContinuation = c;
                 // hasMore is true iff the page hit the size cap; otherwise we're caught up.
                 hasMore = page.getResults().size() >= DEFAULT_PAGE_SIZE;
+                diagnostics = CosmosDiagnosticsMapper.from(page, OperationNames.READ_CHANGES).toBuilder()
+                        .itemCount(events.size()).build();
             }
 
             partitions.set(0, new PartitionPosition(pos.partitionId(), newContinuation));
@@ -350,7 +356,7 @@ final class CosmosChangeFeedReader {
                 if (!events.isEmpty()) hasMore = true;
             }
             CursorToken nextToken = token.withPartitions(partitions, System.currentTimeMillis());
-            return new ChangeFeedPage(events, new ChangeFeedCursor(nextToken), hasMore, false);
+            return new ChangeFeedPage(events, new ChangeFeedCursor(nextToken), hasMore, false, diagnostics);
         } catch (CosmosException e) {
             // 410 GONE → cursor expired (provider trimmed events)
             if (e.getStatusCode() == 410) {
@@ -361,7 +367,8 @@ final class CosmosChangeFeedReader {
                         "readChanges",
                         false,
                         Map.of(CursorTokenCodec.DETAIL_REASON, CursorTokenCodec.REASON_PROVIDER_TRIMMED,
-                                "statusCode", String.valueOf(e.getStatusCode()))), e);
+                                "statusCode", String.valueOf(e.getStatusCode()))), e)
+                        .withDiagnostics(CosmosDiagnosticsMapper.from(e, OperationNames.READ_CHANGES));
             }
             // 400 BadRequest with the AVAD-not-enabled fingerprint maps to the
             // portable UNSUPPORTED_CAPABILITY category so callers get the same

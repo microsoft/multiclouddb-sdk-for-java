@@ -6,7 +6,9 @@ package com.multiclouddb.provider.spanner;
 import com.multiclouddb.api.MulticloudDbError;
 import com.multiclouddb.api.MulticloudDbErrorCategory;
 import com.multiclouddb.api.MulticloudDbException;
+import com.multiclouddb.api.OperationDiagnostics;
 import com.multiclouddb.api.ProviderId;
+import com.multiclouddb.api.StatusCodeDomain;
 import com.google.cloud.spanner.ErrorCode;
 import com.google.cloud.spanner.SpannerException;
 
@@ -44,7 +46,7 @@ public final class SpannerErrorMapper {
                 retryable,
                 grpcCode(errorCode),            // numeric gRPC status code
                 details);
-        return new MulticloudDbException(error, e);
+        return new MulticloudDbException(error, e).withDiagnostics(diagnostics(e, operation));
     }
 
     public static MulticloudDbException map(Exception e, String operation) {
@@ -63,6 +65,11 @@ public final class SpannerErrorMapper {
                 false,
                 details);
         return new MulticloudDbException(error, e);
+    }
+
+    static OperationDiagnostics diagnostics(SpannerException e, String operation) {
+        return OperationDiagnostics.builder(ProviderId.SPANNER, operation)
+                .statusCode(grpcCode(e.getErrorCode())).statusCodeDomain(StatusCodeDomain.GRPC).build();
     }
 
     private static MulticloudDbErrorCategory mapCategory(ErrorCode errorCode) {

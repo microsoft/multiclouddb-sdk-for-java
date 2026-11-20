@@ -13,6 +13,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -113,6 +115,22 @@ class CosmosErrorMappingTest {
 
         assertEquals("activity-123", result.error().providerDetails().get("requestId"));
         assertEquals("3.5", result.error().providerDetails().get("requestCharge"));
+    }
+
+    @Test
+    void missingResponseHeadersDoNotInventTokensOrConsumption() {
+        CosmosException cosmosEx = mockCosmosException(503, 0);
+        when(cosmosEx.getResponseHeaders()).thenReturn(null);
+        var withoutHeaders = CosmosErrorMapper.map(cosmosEx, OperationNames.READ).diagnostics();
+        assertNull(withoutHeaders.etag());
+        assertNull(withoutHeaders.sessionToken());
+        assertNull(withoutHeaders.consumption());
+
+        when(cosmosEx.getResponseHeaders()).thenReturn(Map.of());
+        var emptyHeaders = CosmosErrorMapper.map(cosmosEx, OperationNames.READ).diagnostics();
+        assertNull(emptyHeaders.etag());
+        assertNull(emptyHeaders.sessionToken());
+        assertNull(emptyHeaders.consumption());
     }
 
     @Test

@@ -241,8 +241,32 @@ Fields:
 - `document: Map<String, Object>` (required - detached mutable object payload)
 - `metadata: DocumentMetadata` — null when `OperationOptions.includeMetadata()` is false (the default)
 
-**API impact**: `MulticloudDbClient.read()` returns `DocumentResult` (or null for
-absence); `.document()` now returns a Map rather than ObjectNode.
+**API impact**: `MulticloudDbClient.read()` returns
+`OperationResponse<DocumentResult>`; the response is non-null, and its result is
+null with NOT_FOUND outcome on absence. `.result().document()` returns a Map.
+
+### OperationResponse and portable diagnostics
+
+Point writes and public management methods return `OperationResponse<Void>`;
+cursor discovery returns `OperationResponse<List<ChangeFeedCursor>>`.
+QueryPage/ChangeFeedPage remain separate carriers. All expose the same immutable
+OperationDiagnostics. The public wrapper finalizes start/end Instant,
+monotonic Duration and SUCCESS/NOT_FOUND/FAILURE outcome; SDK errors attach that
+summary while preserving their types. Ordinary validation exceptions are not
+reclassified. Caller-built legacy objects can lack the new fields.
+
+Native statusCode is paired with HTTP/GRPC statusCodeDomain. Nullable
+ResourceConsumption has amount, Unit (COSMOS_REQUEST_UNIT or
+DYNAMODB_CAPACITY_UNIT) and Coverage (COMPLETE, PARTIAL, UNKNOWN). It is not
+currency; null is unavailable and zero is observed zero. Initial point mappings
+use UNKNOWN coverage; no request/child aggregation is implied. Spanner has no
+consumption value, and commit timestamps are not ETags.
+
+Legacy requestCharge remains numeric with zero/unavailable ambiguity. Existing
+query metadata is preserved without inferring new typed consumption from a
+sentinel. Management/cursor summaries do not add native collectors. All public
+return changes require recompilation; point SPI returns also migrate, while
+management/cursor SPI methods retain their existing flow.
 
 ### OperationOptions (modified)
 

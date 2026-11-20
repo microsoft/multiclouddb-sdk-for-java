@@ -27,7 +27,7 @@ structural validation is not a storage-success guarantee.
 | **Read** | Point-read by partition key + sort key |
 | **Update** | Replace an existing document (fails if not found) |
 | **Upsert** | Create or replace - always succeeds |
-| **Delete** | Remove by key (idempotent — silent on missing; use `read()` to detect a missing key, since `read()` returns `null` on every provider) |
+| **Delete** | Remove by key (idempotent on missing); `read()` returns a non-null response with null result and `NOT_FOUND` to detect absence |
 
 ### Query - Portable Expression DSL
 
@@ -118,7 +118,8 @@ status, message, cause, provider details and diagnostics are preserved, and
 
 ## Payload and numeric limitations
 
-Point reads return `DocumentResult` or null for a missing item. Its Map payload
+Point reads return `OperationResponse<DocumentResult>` with a null result for a
+missing item. The contained DocumentResult's Map payload
 and provider-produced feed Maps/Lists are detached and mutable. QueryPage copies
 only the list and top-level row Maps as read-only containers. See
 [ownership](guide.md#input-and-result-ownership) and
