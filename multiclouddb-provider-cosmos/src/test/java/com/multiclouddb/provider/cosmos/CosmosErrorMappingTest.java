@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -29,6 +30,7 @@ class CosmosErrorMappingTest {
             "404, NOT_FOUND",
             "409, CONFLICT",
             "412, CONFLICT",
+            "413, INVALID_REQUEST",
             "429, THROTTLED",
             "449, TRANSIENT_FAILURE",
             "500, TRANSIENT_FAILURE",
@@ -56,6 +58,7 @@ class CosmosErrorMappingTest {
             "401, false",
             "404, false",
             "409, false",
+            "413, false",
             "429, true",
             "449, true",
             "500, true",
@@ -119,6 +122,35 @@ class CosmosErrorMappingTest {
         MulticloudDbException result = CosmosErrorMapper.map(cosmosEx, OperationNames.CREATE);
 
         assertSame(cosmosEx, result.getCause());
+    }
+
+    @ParameterizedTest(name = "HTTP 413 preserves error context for {0}")
+    @ValueSource(strings = {
+            OperationNames.CREATE, OperationNames.READ, OperationNames.UPDATE,
+            OperationNames.UPSERT, OperationNames.DELETE, OperationNames.QUERY,
+            OperationNames.ENSURE_DATABASE, OperationNames.ENSURE_CONTAINER,
+            OperationNames.LIST_CURSORS, OperationNames.READ_CHANGES
+    })
+    @DisplayName("HTTP 413 is an invalid request with native error context preserved")
+    void requestTooLargePreservesErrorContext(String operation) {
+        CosmosException cosmosEx = mockCosmosException(413, 1234);
+        when(cosmosEx.getActivityId()).thenReturn("size-request");
+        when(cosmosEx.getRequestCharge()).thenReturn(2.5);
+
+        MulticloudDbException result = CosmosErrorMapper.map(cosmosEx, operation);
+
+        assertEquals(MulticloudDbErrorCategory.INVALID_REQUEST, result.error().category());
+        assertFalse(result.error().retryable());
+        assertEquals(413, result.error().statusCode());
+        assertEquals(cosmosEx.getMessage(), result.getMessage());
+        assertEquals(cosmosEx.getMessage(), result.error().message());
+        assertSame(cosmosEx, result.getCause());
+        assertEquals("cosmos", result.error().provider().id());
+        assertEquals(operation, result.error().operation());
+        assertEquals("1234", result.error().providerDetails().get("subStatusCode"));
+        assertEquals("size-request", result.error().providerDetails().get("requestId"));
+        assertEquals("2.5", result.error().providerDetails().get("requestCharge"));
+        assertFalse(result.error().providerDetails().containsKey("statusCode"));
     }
 
     private CosmosException mockCosmosException(int statusCode, int subStatusCode) {
