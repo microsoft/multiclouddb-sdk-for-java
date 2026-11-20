@@ -12,6 +12,8 @@ and this module adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - **Breaking point SPI return migration:** Return portable point carriers and
   retain response/exception HTTP status, Activity ID, RU presence, ETag and
   session token. Preserve read/delete 404 semantics while retaining diagnostics.
+  Exception headers are matched case-insensitively for ETag and session token,
+  including absorbed 404s; absent headers remain unavailable.
   Consumption coverage is unknown across hidden requests; no extra read or
   verbose capture is introduced.
 

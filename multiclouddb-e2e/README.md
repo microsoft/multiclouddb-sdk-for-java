@@ -121,6 +121,11 @@ Point and management calls use `OperationResponse<T>`; reads unwrap `.result()`.
 The harness checks common diagnostics (provider, operation, outcome, start/end
 and non-negative monotonic duration) on measured point, query and management
 calls, including a non-null read-miss response with null result and `NOT_FOUND`.
+The post-delete point read retries stale successful results every 100 ms within
+a 10-second monotonic polling budget, rather than assuming immediate consistency.
+Each read still validates diagnostics; read errors, invalid diagnostics and
+interruption fail immediately. An in-flight SDK read remains subject to its own
+configured timeout. Exhausting the polling budget fails the test.
 Status domain and consumption amount/unit/coverage are checked when present.
 It does not require Spanner consumption, complete retry totals, or ordered
 wall-clock timestamps. Query pagination and payload checks remain unchanged.

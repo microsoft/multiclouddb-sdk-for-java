@@ -122,6 +122,8 @@ and all modules adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 - Point responses preserve available HTTP status, Activity ID, RU, ETag and
   session token; absorbed read/delete 404s retain observed diagnostics.
+  Exception ETag/session-token headers are matched case-insensitively and
+  remain unavailable when absent.
   Consumption requires an actual charge header and uses `UNKNOWN` coverage.
 
 - Change-feed reader backed by `CosmosContainer.queryChangeFeed(...)` and `getFeedRanges()`. `listCursors` mints one cursor per feed range at the live tip via a one-item warmup query that captures a real continuation token (with a `@@PIT:<epoch-millis>` fallback for older SDKs). `readChanges` drains one page per call, rotates the partition list across ranges so multi-range cursors are not starved, and uses All-Versions-and-Deletes (AVAD) mode so `ChangeEvent.type()` distinguishes `CREATE` / `UPDATE` / `DELETE`. The target container must be provisioned with an AVAD `ChangeFeedPolicy`. HTTP 410 GONE on `queryChangeFeed` is mapped to `CursorExpiredException(reason=PROVIDER_TRIMMED)`.

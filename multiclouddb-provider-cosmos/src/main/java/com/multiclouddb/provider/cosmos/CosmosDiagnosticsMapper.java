@@ -32,12 +32,21 @@ final class CosmosDiagnosticsMapper {
         if (status > 0) {
             builder.statusCode(status).statusCodeDomain(StatusCodeDomain.HTTP);
         }
-        // The primitive getter also returns zero when no charge header exists.
-        if (headers != null && headers.entrySet().stream()
-                .anyMatch(entry -> "x-ms-request-charge".equalsIgnoreCase(entry.getKey())
-                        && entry.getValue() != null && !entry.getValue().isBlank())) {
-            builder.consumption(new ResourceConsumption(charge,
-                    ResourceConsumption.Unit.COSMOS_REQUEST_UNIT, ResourceConsumption.Coverage.UNKNOWN));
+        if (headers != null) {
+            for (var entry : headers.entrySet()) {
+                String name = entry.getKey();
+                String value = entry.getValue();
+                if ("etag".equalsIgnoreCase(name)) {
+                    builder.etag(value);
+                } else if ("x-ms-session-token".equalsIgnoreCase(name)) {
+                    builder.sessionToken(value);
+                } else if ("x-ms-request-charge".equalsIgnoreCase(name)
+                        && value != null && !value.isBlank()) {
+                    // The primitive getter also returns zero when no charge header exists.
+                    builder.consumption(new ResourceConsumption(charge,
+                            ResourceConsumption.Unit.COSMOS_REQUEST_UNIT, ResourceConsumption.Coverage.UNKNOWN));
+                }
+            }
         }
         return builder;
     }

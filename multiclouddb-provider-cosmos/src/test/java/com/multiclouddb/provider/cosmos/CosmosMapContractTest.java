@@ -72,11 +72,14 @@ class CosmosMapContractTest {
         when(response.getActivityId()).thenReturn("activity");
         when(response.getRequestCharge()).thenReturn(0d);
         when(response.getResponseHeaders()).thenReturn(Map.of("x-ms-request-charge", "0"));
+        when(response.getETag()).thenReturn("\"written-etag\"");
+        when(response.getSessionToken()).thenReturn("0:-1#123");
         CosmosException notFound = mock(CosmosException.class);
         when(notFound.getStatusCode()).thenReturn(404);
         when(notFound.getActivityId()).thenReturn("missing");
         when(notFound.getRequestCharge()).thenReturn(1d);
-        when(notFound.getResponseHeaders()).thenReturn(Map.of("x-ms-request-charge", "1"));
+        when(notFound.getResponseHeaders()).thenReturn(Map.of(
+                "X-Ms-Request-Charge", "1", "ETag", "\"error-etag\"", "X-Ms-Session-Token", "0:-1#456"));
         when(container.readItem(anyString(), any(PartitionKey.class), any(CosmosItemRequestOptions.class), eq(Map.class)))
                 .thenThrow(notFound);
         when(container.deleteItem(anyString(), any(PartitionKey.class), any(CosmosItemRequestOptions.class)))
@@ -95,6 +98,8 @@ class CosmosMapContractTest {
                 assertEquals(201, diag.statusCode());
                 assertEquals(StatusCodeDomain.HTTP, diag.statusCodeDomain());
                 assertEquals("activity", diag.requestId());
+                assertEquals("\"written-etag\"", diag.etag());
+                assertEquals("0:-1#123", diag.sessionToken());
                 assertNotNull(diag.consumption());
                 assertEquals(0, diag.consumption().amount());
                 assertEquals(ResourceConsumption.Unit.COSMOS_REQUEST_UNIT, diag.consumption().unit());
@@ -104,13 +109,19 @@ class CosmosMapContractTest {
             var read = client.read(ADDRESS, KEY);
             assertNull(read.result());
             assertEquals(OperationOutcome.NOT_FOUND, read.diagnostics().outcome());
+            assertEquals("\"error-etag\"", read.diagnostics().etag());
+            assertEquals("0:-1#456", read.diagnostics().sessionToken());
             var delete = client.delete(ADDRESS, KEY);
             assertEquals(OperationOutcome.SUCCESS, delete.diagnostics().outcome());
             assertEquals(404, delete.diagnostics().statusCode());
             assertEquals(1, delete.diagnostics().consumption().amount());
+            assertEquals("\"error-etag\"", delete.diagnostics().etag());
+            assertEquals("0:-1#456", delete.diagnostics().sessionToken());
             when(notFound.getStatusCode()).thenReturn(503);
             var failure = assertThrows(MulticloudDbException.class, () -> client.read(ADDRESS, KEY));
             assertEquals(1, failure.diagnostics().consumption().amount());
+            assertEquals("\"error-etag\"", failure.diagnostics().etag());
+            assertEquals("0:-1#456", failure.diagnostics().sessionToken());
             when(response.getResponseHeaders()).thenReturn(Map.of());
             assertNull(client.create(ADDRESS, KEY, Map.of()).diagnostics().consumption());
             verify(container, times(2)).readItem(anyString(), any(PartitionKey.class),

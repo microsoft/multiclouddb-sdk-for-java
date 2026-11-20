@@ -15,7 +15,9 @@ import com.multiclouddb.api.QueryPage;
 import com.multiclouddb.api.QueryRequest;
 import com.multiclouddb.api.ResourceAddress;
 
+import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * End-to-end portability test for the Multicloud DB SDK.
@@ -151,9 +153,7 @@ public class Main {
         // ── DELETE ────────────────────────────────────────────────────
         System.out.println("── DELETE (prod-003) ──────────────────────────────────────────");
         delete("prod-003");
-        if (read("prod-003") != null) {
-            throw new AssertionError("Deleted prod-003 must have a null read result");
-        }
+        awaitDeletion("prod-003", Duration.ofSeconds(10));
         System.out.println();
 
         // ── LIST (confirm deletion, expect 4 items) ───────────────────
@@ -221,6 +221,27 @@ public class Main {
         System.out.printf("  client.delete(address, key(%s))%n", id);
         checkResponse(client.delete(address, key), "delete", OperationOutcome.SUCCESS);
         System.out.println("    → deleted");
+    }
+
+    void awaitDeletion(String id, Duration timeout) {
+        long start = System.nanoTime();
+        long timeoutNanos = timeout.toNanos();
+        do {
+            if (read(id) == null) {
+                return;
+            }
+            long remaining = timeoutNanos - (System.nanoTime() - start);
+            if (remaining <= 0) {
+                break;
+            }
+            try {
+                TimeUnit.NANOSECONDS.sleep(Math.min(TimeUnit.MILLISECONDS.toNanos(100), remaining));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("Interrupted while waiting for deletion of " + id, e);
+            }
+        } while (System.nanoTime() - start < timeoutNanos);
+        throw new AssertionError("Deleted " + id + " remained visible after " + timeout);
     }
 
     /** Executes a query (looping through all pages) and returns total items found. */
